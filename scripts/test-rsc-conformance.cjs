@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { spawnWithFallback } = require('./fixtures/spawn-utils.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const fixtureDir = path.join(repoRoot, 'bench', 'app-router-server');
@@ -65,13 +66,19 @@ function findBuiltActionId(serverManifest, options) {
 }
 
 async function runCommand(command, args, options) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd,
-      env: options.env || process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+  return await new Promise(async (resolve, reject) => {
+    let child;
+    try {
+      child = await spawnWithFallback(command, args, {
+        cwd: options.cwd,
+        env: options.env || process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
@@ -129,7 +136,7 @@ async function stopServer(child) {
 
 async function startServer(engineVariant, port) {
   const upstreamPort = port + 200;
-  const child = spawn(process.execPath, [vistaCli, 'start', '--engine', engineVariant], {
+  const child = await spawnWithFallback(process.execPath, [vistaCli, 'start', '--engine', engineVariant], {
     cwd: fixtureDir,
     env: {
       ...process.env,

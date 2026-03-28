@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { spawnWithFallback } = require('./fixtures/spawn-utils.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const vistaBin = path.join(repoRoot, 'packages', 'vista', 'bin', 'vista.js');
@@ -94,7 +95,7 @@ async function stopServer(child) {
 }
 
 async function startDevServer(port) {
-  const child = spawn(process.execPath, [vistaBin, 'dev', '--engine', 'flashpack'], {
+  const child = await spawnWithFallback(process.execPath, [vistaBin, 'dev', '--engine', 'flashpack'], {
     cwd: appDir,
     env: {
       ...process.env,

@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { spawnWithFallback } = require('./fixtures/spawn-utils.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const vistaBin = path.join(repoRoot, 'packages', 'vista', 'bin', 'vista.js');
@@ -41,13 +42,19 @@ function copyFixture(sourceDir, targetDir) {
 }
 
 function runNode(args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
-      cwd: options.cwd || repoRoot,
-      env: { ...process.env, ...(options.env || {}) },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+  return new Promise(async (resolve, reject) => {
+    let child;
+    try {
+      child = await spawnWithFallback(process.execPath, args, {
+        cwd: options.cwd || repoRoot,
+        env: { ...process.env, ...(options.env || {}) },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
@@ -108,20 +115,16 @@ async function buildVistaPackageDist() {
 }
 
 async function startServer(appDir, variant, port) {
-  const child = spawn(
-    process.execPath,
-    [vistaBin, 'start', '--engine', variant],
-    {
-      cwd: appDir,
-      env: {
-        ...process.env,
-        NODE_ENV: 'production',
-        PORT: String(port),
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    }
-  );
+  const child = await spawnWithFallback(process.execPath, [vistaBin, 'start', '--engine', variant], {
+    cwd: appDir,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
 
   let output = '';
   child.stdout.on('data', (chunk) => {

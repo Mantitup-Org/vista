@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { spawnWithFallback } = require('./fixtures/spawn-utils.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const vistaBin = path.join(repoRoot, 'packages', 'vista', 'bin', 'vista.js');
@@ -64,13 +65,19 @@ function readJson(filePath) {
 }
 
 function runNode(args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
-      cwd: options.cwd || repoRoot,
-      env: { ...process.env, ...(options.env || {}) },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+  return new Promise(async (resolve, reject) => {
+    let child;
+    try {
+      child = await spawnWithFallback(process.execPath, args, {
+        cwd: options.cwd || repoRoot,
+        env: { ...process.env, ...(options.env || {}) },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
 
     let stdout = '';
     let stderr = '';
@@ -124,7 +131,7 @@ async function waitForHttp(url, child, timeoutMs = 30000) {
 }
 
 async function startServer(appDir, port) {
-  const child = spawn(process.execPath, [vistaBin, 'start', '--engine', 'flashpack'], {
+  const child = await spawnWithFallback(process.execPath, [vistaBin, 'start', '--engine', 'flashpack'], {
     cwd: appDir,
     env: {
       ...process.env,

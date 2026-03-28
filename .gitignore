@@ -4,6 +4,8 @@ node_modules/
 dist/
 !packages/vista/dist/
 build/
+!packages/vista/src/build/
+!packages/vista/src/build/**
 !packages/vista/dist/build/
 .next/
 out/
