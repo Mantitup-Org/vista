@@ -31,5 +31,8 @@ jobs:
       - name: Install
         run: npm install
 
+      - name: Install Vista package deps
+        run: npm install --prefix packages/vista
+
       - name: Runtime Platform Gate
         run: npm run test:runtime:platform-gate
