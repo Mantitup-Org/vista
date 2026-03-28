@@ -62,7 +62,7 @@ try {
 
 export interface RouteNode {
   segment: string;
-  kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group';
+  kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group' | 'parallel' | 'interception';
   indexPath?: string;
   layoutPath?: string;
   loadingPath?: string;
@@ -96,7 +96,16 @@ export function getRouteTree(appDir: string): RouteNode {
 function classifySegment(segment: string): RouteNode['kind'] {
   if (segment.startsWith('[[...') && segment.endsWith(']]')) return 'optional-catch-all';
   if (segment.startsWith('[...')) return 'catch-all';
+  if (
+    segment.startsWith('(.)') ||
+    segment.startsWith('(..)') ||
+    segment.startsWith('(..)(..)') ||
+    segment.startsWith('(...)')
+  ) {
+    return 'interception';
+  }
   if (segment.startsWith('(') && segment.endsWith(')')) return 'group';
+  if (segment.startsWith('@')) return 'parallel';
   if (segment.startsWith('[')) return 'dynamic';
   return 'static';
 }

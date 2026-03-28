@@ -1,0 +1,9 @@
+[package]
+name = "flashpack-dev-server"
+version = "0.1.0"
+edition = "2021"
+description = "Development server hooks for Flashpack"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }
+flashpack-node = { path = "../flashpack-node" }

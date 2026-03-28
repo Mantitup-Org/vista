@@ -8,6 +8,8 @@
 export declare const FRAMEWORK_NAME = "vista";
 /** Hidden build output directory name */
 export declare const BUILD_DIR = ".vista";
+/** Flashpack workspace/runtime directory name */
+export declare const FLASH_DIR = ".flash";
 /** Base URL prefix for all framework-served assets */
 export declare const URL_PREFIX = "/_vista";
 /** Static chunks URL path */

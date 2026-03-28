@@ -11,6 +11,8 @@ import webpack from 'webpack';
 export interface RSCEngineOptions {
     port?: number;
     compiler?: webpack.Compiler | null;
+    projectRoot?: string;
+    runtimeRoot?: string;
 }
 export declare function startRSCServer(options?: RSCEngineOptions): void;
 export { startRSCServer as default };

@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-ecmascript-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Runtime module contracts for Flashpack ECMAScript execution"
+
+[dependencies]

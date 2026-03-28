@@ -43,6 +43,12 @@ export interface ReadonlyHeaders {
  * Note: This is a simplified implementation - in production, integrate with actual request.
  */
 export declare function headers(): ReadonlyHeaders;
+export interface DraftMode {
+    isEnabled: boolean;
+    enable(): void;
+    disable(): void;
+}
+export declare function draftMode(): DraftMode;
 export type RedirectType = 'push' | 'replace';
 export declare class RedirectError extends Error {
     readonly url: string;
@@ -93,3 +99,4 @@ export interface NextRequest extends Request {
     cookies: CookieStore;
     headers: Headers;
 }
+export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';

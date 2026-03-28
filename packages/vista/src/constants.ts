@@ -19,6 +19,9 @@ export const FRAMEWORK_NAME = 'vista';
 /** Hidden build output directory name */
 export const BUILD_DIR = '.vista';
 
+/** Flashpack workspace/runtime directory name */
+export const FLASH_DIR = '.flash';
+
 // ============================================================================
 // URL Prefixes (/_vista/ — equivalent to Next.js /_next/)
 // ============================================================================

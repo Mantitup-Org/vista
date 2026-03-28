@@ -18,13 +18,20 @@ import {
 import {
   createVistaDirectories,
   getBuildId,
+  pruneEmptyVistaDirectories,
   writeCanonicalVistaArtifacts,
+  writeReservedVistaArtifacts,
 } from '../build/manifest';
 import { generateClientManifestWithRoots } from '../build/rsc/client-manifest';
 import { generateServerManifest } from '../build/rsc/server-manifest';
 import { scanAppDirectory, isNativeAvailable, getVersion } from './file-scanner';
-import { loadConfig, resolveStructureValidationConfig } from '../config';
-import { HYDRATE_DOCUMENT_FLAG, SSE_ENDPOINT } from '../constants';
+import {
+  loadConfig,
+  resolveCacheComponentsConfig,
+  resolveAndApplyEngineVariant,
+  resolveStructureValidationConfig,
+} from '../config';
+import { FLASH_DIR, HYDRATE_DOCUMENT_FLAG, SSE_ENDPOINT } from '../constants';
 import {
   validateAppStructure,
   type StructureValidationResult,
@@ -34,6 +41,8 @@ import { logValidationResult, formatBuildFailTable } from '../server/structure-l
 import { getDevToolsIndicatorBootstrapSource } from './devtools-indicator-snippet';
 import { getDevErrorOverlayBootstrapSource } from './dev-error-overlay-snippet';
 import { generateDeploymentOutputs } from './deploy-output';
+import { validateModuleBoundaries } from '../server/module-boundary-validator';
+import { generateStandaloneOutput } from '../build/standalone';
 
 const _debug = !!process.env.VISTA_DEBUG;
 
@@ -258,7 +267,7 @@ ${
       if (indicator && typeof indicator.pulse === 'function') {
         indicator.pulse('hmr', 460);
       }
-      setTimeout(() => window.location.reload(), 180);
+      setTimeout(() => window.location.reload(), 80);
     } else {
       try {
         const msg = JSON.parse(e.data);
@@ -335,7 +344,10 @@ export async function buildRSC(watch: boolean = false): Promise<{
   // Pre-build Structure Validation
   // ========================================================================
   const vistaConfig = loadConfig(cwd);
+  const engineVariant = resolveAndApplyEngineVariant(vistaConfig);
   const structureConfig = resolveStructureValidationConfig(vistaConfig);
+  const cacheComponentsConfig = resolveCacheComponentsConfig(vistaConfig);
+  if (_debug) console.log(`[vista:build] Engine variant: ${engineVariant}`);
 
   if (structureConfig.enabled) {
     const result: StructureValidationResult = validateAppStructure({ cwd });
@@ -412,32 +424,28 @@ export async function buildRSC(watch: boolean = false): Promise<{
     }
 
     // Check for errors (using client hooks without 'use client')
-    const scanErrors = [
-      ...scanResult.errors,
-      ...(componentsScanResult?.errors || []).map((error) => ({
-        ...error,
-        file: `components/${error.file}`,
-      })),
-    ];
+    const scanErrors = validateModuleBoundaries({
+      appDir,
+      extraRoots: fs.existsSync(componentsDir) ? [componentsDir] : [],
+      cacheComponentsEnabled: cacheComponentsConfig.enabled,
+    }).issues;
 
     if (scanErrors.length > 0) {
-      console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer Component Violations\x1b[0m');
+      console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer/Segment Violations\x1b[0m');
       console.log('');
 
       for (const error of scanErrors) {
-        console.log(`\x1b[31m✗\x1b[0m ${error.file}`);
-        console.log(
-          `  Using: \x1b[33m${error.hooks.slice(0, 3).join(', ')}\x1b[0m in a Server Component`
-        );
+        console.log(`\x1b[31m✗\x1b[0m ${path.relative(cwd, error.filePath)}`);
+        console.log(`  ${error.message}`);
         console.log('');
-        console.log(
-          `  \x1b[36mTo fix:\x1b[0m Add \x1b[33m'use client'\x1b[0m at the top of the file`
-        );
-        console.log('');
+        if (error.fix) {
+          console.log(`  \x1b[36mTo fix:\x1b[0m ${error.fix}`);
+          console.log('');
+        }
       }
 
       if (!watch) {
-        console.log('\x1b[31mBuild failed due to Server Component violations.\x1b[0m');
+        console.log('\x1b[31mBuild failed due to server/segment violations.\x1b[0m');
         process.exit(1);
       }
     }
@@ -496,6 +504,11 @@ export async function buildRSC(watch: boolean = false): Promise<{
       type: route.type,
     }))
   );
+  writeReservedVistaArtifacts(vistaDirs.root, {
+    buildId,
+    engineVariant,
+    imagesConfig: vistaConfig.images,
+  });
 
   // Generate client entry
   generateRSCClientEntry(cwd, vistaDirs.root, watch);
@@ -506,6 +519,7 @@ export async function buildRSC(watch: boolean = false): Promise<{
     isDev: watch,
     vistaDirs,
     buildId,
+    engineVariant,
     clientReferenceFiles,
   };
 
@@ -522,7 +536,10 @@ export async function buildRSC(watch: boolean = false): Promise<{
     // plugin ran will skip the parser hook entirely, causing empty Flight
     // manifests.  Clearing on every dev-start is the safest approach –
     // first-compile is ~1s longer but guarantees correct manifests.
-    const cacheDir = path.join(vistaDirs.root, 'cache');
+    const cacheDir =
+      engineVariant === 'flashpack'
+        ? path.join(cwd, FLASH_DIR, 'cache', 'webpack')
+        : path.join(vistaDirs.root, 'cache');
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true });
       if (_debug) console.log('[Vista JS RSC] Cleared stale webpack cache');
@@ -659,11 +676,19 @@ export async function buildRSC(watch: boolean = false): Promise<{
     const prerenderManifestPath = path.join(vistaDirs.root, 'prerender-manifest.json');
     fs.writeFileSync(prerenderManifestPath, JSON.stringify(ssgResult.manifest, null, 2));
     console.log('[Vista JS RSC] Wrote prerender-manifest.json');
+    generateStandaloneOutput({
+      cwd,
+      vistaDir: vistaDirs.root,
+      buildId,
+      serverManifest,
+      debug: _debug,
+    });
     generateDeploymentOutputs({
       cwd,
       vistaDir: vistaDirs.root,
       debug: _debug,
     });
+    pruneEmptyVistaDirectories(vistaDirs.root);
     console.log('');
 
     console.log('╔══════════════════════════════════════════════════════════════╗');
@@ -673,7 +698,15 @@ export async function buildRSC(watch: boolean = false): Promise<{
     console.log('  Output directory: .vista/');
     console.log('    ├── server/     (Server-side bundle - NEVER sent to client)');
     console.log('    ├── static/     (Client assets - only client components)');
-    console.log('    └── cache/      (Build cache for faster rebuilds)');
+    if (engineVariant === 'flashpack') {
+      console.log('    └── cache/      (metadata bridge to the active Flashpack cache)');
+      console.log('  Flashpack directory: .flash/');
+      console.log('    ├── cache/      (Flashpack runtime cache)');
+      console.log('    ├── graph/      (Rust pipeline graph snapshots)');
+      console.log('    └── logs/       (Flashpack phase logs)');
+    } else {
+      console.log('    └── cache/      (Build cache for faster rebuilds)');
+    }
     console.log('');
 
     return { serverCompiler: null, clientCompiler: null };

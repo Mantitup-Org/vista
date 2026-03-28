@@ -1,0 +1,8 @@
+[package]
+name = "vista-api"
+version = "0.1.0"
+edition = "2021"
+description = "Rust API surface for Vista internals"
+
+[dependencies]
+vista-core = { path = "../vista-core" }

@@ -56,8 +56,26 @@ function isClientComponent(filePath) {
     }
     try {
         const content = fs.readFileSync(filePath, 'utf-8');
-        const isClient = content.trimStart().startsWith("'use client'") ||
-            content.trimStart().startsWith('"use client"');
+        let trimmed = content;
+        while (true) {
+            trimmed = trimmed.trimStart();
+            if (trimmed.startsWith('//')) {
+                const newlineIndex = trimmed.indexOf('\n');
+                trimmed = newlineIndex === -1 ? '' : trimmed.slice(newlineIndex + 1);
+                continue;
+            }
+            if (trimmed.startsWith('/*')) {
+                const commentEndIndex = trimmed.indexOf('*/');
+                if (commentEndIndex === -1) {
+                    break;
+                }
+                trimmed = trimmed.slice(commentEndIndex + 2);
+                continue;
+            }
+            break;
+        }
+        const isClient = trimmed.startsWith("'use client'") ||
+            trimmed.startsWith('"use client"');
         clientComponentCache.set(filePath, isClient);
         return isClient;
     }

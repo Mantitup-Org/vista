@@ -1,19 +1,5 @@
 import { docsCategoryConfig } from './categories';
-import { createAndGenerateDoc } from './cli-workflow/create-and-generate';
-import { apiRoutesVsTypedApiDoc } from './core-concepts/api-routes-vs-typed-api';
-import { dynamicRoutesAndSlugsDoc } from './core-concepts/dynamic-routes-and-slugs';
-import { routingOverviewDoc } from './core-concepts/routing-overview';
-import { typedApiRuntimeFlowDoc } from './core-concepts/typed-api-runtime-flow';
-import { renderDeploymentDoc } from './deployment/render-deployment';
-import { vercelDeploymentDoc } from './deployment/vercel-deployment';
-import { firstStepsDoc } from './getting-started/first-steps';
-import { projectStructureDoc } from './getting-started/project-structure';
-import { typedApiQuickstartDoc } from './getting-started/typed-api-quickstart';
-import { architectureOfSimplicityDoc } from './introduction/architecture-of-simplicity';
-import { theBeginningOfVistaDoc } from './introduction/the-beginning-of-vista';
-import { projectFileStructureDoc } from './reference/project-file-structure';
-import { typedClientReferenceDoc } from './reference/typed-client-reference';
-import { vistaConfigReferenceDoc } from './reference/vista-config-reference';
+import { loadMarkdownDoc } from './markdown';
 import type { CollectedDoc, CollectedHeading, DocsDocSource } from './types';
 
 function slugify(value: string): string {
@@ -49,21 +35,25 @@ function extractHeadings(sections: DocsDocSource['sections']): CollectedHeading[
 }
 
 const docsSource: DocsDocSource[] = [
-  theBeginningOfVistaDoc,
-  architectureOfSimplicityDoc,
-  firstStepsDoc,
-  projectStructureDoc,
-  typedApiQuickstartDoc,
-  routingOverviewDoc,
-  dynamicRoutesAndSlugsDoc,
-  apiRoutesVsTypedApiDoc,
-  typedApiRuntimeFlowDoc,
-  createAndGenerateDoc,
-  vistaConfigReferenceDoc,
-  projectFileStructureDoc,
-  typedClientReferenceDoc,
-  renderDeploymentDoc,
-  vercelDeploymentDoc,
+  loadMarkdownDoc('./introduction/the-beginning-of-vista.md'),
+  loadMarkdownDoc('./introduction/architecture-of-simplicity.md'),
+  loadMarkdownDoc('./getting-started/first-steps.md'),
+  loadMarkdownDoc('./getting-started/project-structure.md'),
+  loadMarkdownDoc('./getting-started/typed-api-quickstart.md'),
+  loadMarkdownDoc('./core-concepts/routing-overview.md'),
+  loadMarkdownDoc('./core-concepts/dynamic-routes-and-slugs.md'),
+  loadMarkdownDoc('./core-concepts/api-routes-vs-typed-api.md'),
+  loadMarkdownDoc('./core-concepts/typed-api-runtime-flow.md'),
+  loadMarkdownDoc('./cli-workflow/create-and-generate.md'),
+  loadMarkdownDoc('./reference/vista-config-reference.md'),
+  loadMarkdownDoc('./reference/project-file-structure.md'),
+  loadMarkdownDoc('./reference/typed-client-reference.md'),
+  loadMarkdownDoc('./reference/bench-architecture.md'),
+  loadMarkdownDoc('./reference/engine-variants-default-vs-flashpack.md'),
+  loadMarkdownDoc('./reference/flashpack-architecture.md'),
+  loadMarkdownDoc('./reference/rust-crates-and-napi-bridge.md'),
+  loadMarkdownDoc('./deployment/render-deployment.md'),
+  loadMarkdownDoc('./deployment/vercel-deployment.md'),
 ];
 
 export const allDocs: CollectedDoc[] = docsSource.map((doc) => ({

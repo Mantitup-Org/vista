@@ -340,6 +340,36 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       };
     }
 
+    document.addEventListener('vista:ppr-shell', function () {
+      pulse('ppr-shell', 420);
+    });
+    document.addEventListener('vista:ppr-resume', function (event) {
+      var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+      begin('ppr-' + (detail.mode || 'resume'));
+    });
+    document.addEventListener('vista:ppr-complete', function (event) {
+      var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+      pulse('ppr-' + (detail.mode || 'complete'), 520);
+      clearError();
+      setRoute();
+    });
+    document.addEventListener('vista:ppr-error', function (event) {
+      var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+      setError(detail.message || 'ppr-resume', 1);
+    });
+    document.addEventListener('vista:rsc-resume-start', function () {
+      begin('flight-resume');
+    });
+    document.addEventListener('vista:rsc-resume-complete', function () {
+      pulse('flight-ready', 480);
+      clearError();
+      setRoute();
+    });
+    document.addEventListener('vista:rsc-resume-error', function (event) {
+      var detail = event && event.detail && typeof event.detail === 'object' ? event.detail : {};
+      setError(detail.message || 'flight-resume', 1);
+    });
+
     setRoute();
     setState(false, 'idle');
 

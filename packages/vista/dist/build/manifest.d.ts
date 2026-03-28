@@ -3,6 +3,8 @@
  *
  * Generates build manifests, BUILD_ID, and manages .vista output structure.
  */
+import type { VistaEngineVariant } from '../config';
+import type { ImageConfig } from '../image/image-config';
 /**
  * Generate a unique build ID based on timestamp and random bytes.
  */
@@ -14,6 +16,7 @@ export declare function getBuildId(vistaDir: string, forceNew?: boolean): string
 export interface VistaDirs {
     root: string;
     cache: string;
+    imageCache: string;
     server: string;
     static: string;
     chunks: string;
@@ -48,6 +51,10 @@ export interface ArtifactManifest {
         requiredServerFiles: string;
         reactClientManifest: string;
         reactServerManifest: string;
+        serverManifest?: string;
+        runtimeManifest?: string;
+        fileTrace?: string;
+        standaloneServer?: string;
     };
 }
 /**
@@ -61,10 +68,16 @@ interface RouteLike {
 }
 export declare function generateAppPathRoutesManifest(vistaDir: string, routes?: RouteLike[]): Record<string, string>;
 export declare function generatePrerenderManifest(vistaDir: string): void;
-export declare function generateRequiredServerFilesManifest(cwd: string, vistaDir: string): void;
+export declare function generateRequiredServerFilesManifest(cwd: string, vistaDir: string, extraFiles?: string[], appDir?: string): void;
 export declare function ensureJsonFile(vistaDir: string, relativePath: string, fallback?: unknown): void;
-export declare function writeArtifactManifest(vistaDir: string, buildId: string): ArtifactManifest;
+export declare function writeArtifactManifest(vistaDir: string, buildId: string, extraManifestEntries?: Partial<ArtifactManifest['manifests']>): ArtifactManifest;
 export declare function writeCanonicalVistaArtifacts(cwd: string, vistaDir: string, buildId: string, routes?: RouteLike[]): ArtifactManifest;
+interface WriteReservedVistaArtifactsOptions {
+    buildId: string;
+    engineVariant?: VistaEngineVariant;
+    imagesConfig?: Partial<ImageConfig> | undefined;
+}
+export declare function writeReservedVistaArtifacts(vistaDir: string, options: WriteReservedVistaArtifactsOptions): void;
 export interface RouteInfo {
     page: string;
     regex: string;
@@ -109,7 +122,7 @@ export declare function generateServerComponentsManifest(vistaDir: string, serve
 /**
  * Get Webpack cache configuration for persistent caching.
  */
-export declare function getWebpackCacheConfig(vistaDir: string, buildId: string, name: string): {
+export declare function getWebpackCacheConfig(vistaDir: string, buildId: string, name: string, engineVariant?: VistaEngineVariant, cwd?: string): {
     type: "filesystem";
     version: string;
     cacheDirectory: string;
@@ -122,4 +135,5 @@ export declare function getWebpackCacheConfig(vistaDir: string, buildId: string,
  * Clean old cache entries (keeps last N builds).
  */
 export declare function cleanOldCache(vistaDir: string, keepBuilds?: number): void;
+export declare function pruneEmptyVistaDirectories(vistaDir: string): void;
 export {};

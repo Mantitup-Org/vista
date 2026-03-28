@@ -165,6 +165,18 @@ function run() {
       path.join(vistaSrcRoot, 'server', 'rsc-upstream.ts'),
       'utf8'
     );
+    const staticGeneratorSource = fs.readFileSync(
+      path.join(vistaSrcRoot, 'server', 'static-generator.ts'),
+      'utf8'
+    );
+    const flashpackCommandSource = fs.readFileSync(
+      path.join(vistaSrcRoot, 'flashpack', 'command.ts'),
+      'utf8'
+    );
+    const spawnPermissionSource = fs.readFileSync(
+      path.join(vistaSrcRoot, 'server', 'spawn-permissions.ts'),
+      'utf8'
+    );
 
     assert(
       engineSource.includes('resolveNotFoundComponent'),
@@ -177,6 +189,27 @@ function run() {
     assert(
       rscUpstreamSource.includes('resolveNotFoundComponent'),
       'RSC upstream must resolve not-found component contract.'
+    );
+
+    assert(
+      spawnPermissionSource.includes('isPermissionDeniedSpawnError'),
+      'spawn-permissions.ts must centralize permission-denied detection.'
+    );
+    assert(
+      rscEngineSource.includes('upstreamUnavailableReason'),
+      'RSC engine must track upstream unavailability instead of crashing.'
+    );
+    assert(
+      rscEngineSource.includes('spawn blocked by environment permissions'),
+      'RSC engine must surface permission-denied spawn failures clearly.'
+    );
+    assert(
+      staticGeneratorSource.includes("from './spawn-permissions'"),
+      'static-generator must share the centralized spawn permission helper.'
+    );
+    assert(
+      flashpackCommandSource.includes('isPermissionDeniedSpawnError'),
+      'flashpack command runner must use centralized spawn permission handling.'
     );
 
     // 5) Structure validator source invariants

@@ -18,6 +18,7 @@ triples = [
 ]
 
 [dependencies]
+vista-api = { path = "../vista-api" }
 vista-transforms = { path = "../vista-transforms" }
 napi = { workspace = true }
 napi-derive = { workspace = true }

@@ -7,11 +7,13 @@
  */
 import webpack from 'webpack';
 import { VistaDirs } from '../manifest';
+import type { VistaEngineVariant } from '../../config';
 export interface RSCCompilerOptions {
     cwd: string;
     isDev: boolean;
     vistaDirs: VistaDirs;
     buildId: string;
+    engineVariant?: VistaEngineVariant;
     clientReferenceFiles?: string[];
 }
 /**

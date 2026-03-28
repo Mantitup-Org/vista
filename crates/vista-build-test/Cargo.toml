@@ -1,0 +1,8 @@
+[package]
+name = "vista-build-test"
+version = "0.1.0"
+edition = "2021"
+description = "Build test harness crate for Vista"
+
+[dependencies]
+vista-build = { path = "../vista-build" }

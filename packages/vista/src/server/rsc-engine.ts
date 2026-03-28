@@ -21,6 +21,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import { runMiddleware, applyMiddlewareResult } from './middleware-runner';
 import { createImageHandler } from './image-optimizer';
+import { resolvePprRequestMode } from './ppr';
 import { getAllFontHTML as getFontHeadHTML } from '../font/registry';
 import { printServerReady, requestLogger, logInfo, logEvent, logError } from './logger';
 import { getStyledNotFoundHTML } from './not-found-page';
@@ -30,8 +31,11 @@ import {
   isRevalidating,
   markRevalidating,
   clearRevalidating,
+  invalidateCachedPage,
+  invalidateCachedPagesByTag,
 } from './static-cache';
 import { revalidatePath } from './static-generator';
+import { normalizeReactServerConsumerManifest } from '../build/rsc/react-client-reference-manifest';
 import {
   BUILD_DIR,
   URL_PREFIX,
@@ -101,11 +105,19 @@ type FlightSSRClient = {
 
 type Thenable<T> = Promise<T> & { status?: string; value?: T };
 
-import { loadConfig, resolveStructureValidationConfig, resolveTypedApiConfig } from '../config';
+import {
+  resolveCacheComponentsConfig,
+  loadConfig,
+  resolveAndApplyEngineVariant,
+  resolveStructureValidationConfig,
+  resolveTypedApiConfig,
+} from '../config';
 import { ErrorOverlay, renderErrorHTML } from '../dev-error';
 import type { RouteEntry, ServerManifest } from '../build/rsc/server-manifest';
 import { assertVistaArtifacts } from './artifact-validator';
 import { resolveNotFoundComponent, resolveRootLayout, type RootRenderMode } from './root-resolver';
+import { resolveRuntimeProjectRoot } from './runtime-artifacts';
+import { getErrorMessage, isPermissionDeniedSpawnError } from './spawn-permissions';
 import { StructureWatcher, type StructureWatchEvent } from './structure-watch';
 import type { StructureValidationResult } from './structure-validator';
 import {
@@ -118,10 +130,21 @@ import {
 import { RouteErrorBoundary } from '../components/error-boundary';
 import { RouteSuspense } from '../components/route-suspense';
 import {
+  resolveLegacyRouteHandlerPath,
   resolveLegacyApiRoutePath,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
+import { installModuleCompileHook } from './module-compile-hook';
+import { runWithRequestContext, setCurrentSegmentConfig } from './request-context';
+import {
+  resolveConventionModule,
+  resolveDirectoryChain,
+  resolveNearestSegmentNotFoundPath,
+  resolveParallelSlotMatches,
+} from './app-router-runtime';
+import { installSegmentFetchPolicyShim } from './fetch-policy';
+import { resolveVistaSourceRequest } from './vista-import-map';
 
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
@@ -137,7 +160,7 @@ require.extensions['.css'] = (m: any, filename: string) => {
  * Includes the PostCSS globals and CSS Modules extracted stylesheet.
  */
 function getCSSLinks(projectRoot?: string): string {
-  const root = projectRoot || process.cwd();
+  const root = projectRoot || process.env.VISTA_ARTIFACT_ROOT || process.cwd();
   const links = ['<link rel="stylesheet" href="/styles.css" />'];
   // Check for extracted CSS modules (from MiniCssExtractPlugin)
   const chunksDir = path.join(root, BUILD_DIR, 'static', 'chunks');
@@ -166,6 +189,60 @@ function resolvePort(raw: string, fallback: number): number {
     throw new Error(`Invalid port: ${raw}`);
   }
   return value;
+}
+
+function removeStaticArtifacts(vistaDirRoot: string, urlPath: string): void {
+  const staticDir = path.join(vistaDirRoot, 'static', 'pages');
+  const safePath = urlPath === '/' ? '/index' : urlPath;
+  const artifactPaths = ['.html', '.meta.json', '.rsc'].map((extension) =>
+    path.join(staticDir, `${safePath}${extension}`)
+  );
+
+  for (const absolutePath of artifactPaths) {
+    try {
+      if (fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
+    } catch {
+      // ignore cache cleanup failures
+    }
+  }
+}
+
+function parseRevalidationHeader(rawValue: string | null): string[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed) ? parsed.map((entry) => String(entry || '').trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function applyUpstreamRevalidations(
+  upstream: Response,
+  vistaDirRoot: string
+): void {
+  const revalidatedPaths = parseRevalidationHeader(
+    upstream.headers.get('x-vista-revalidated-paths')
+  );
+  for (const urlPath of revalidatedPaths) {
+    invalidateCachedPage(urlPath);
+    removeStaticArtifacts(vistaDirRoot, urlPath);
+  }
+
+  const revalidatedTags = parseRevalidationHeader(
+    upstream.headers.get('x-vista-revalidated-tags')
+  );
+  for (const tag of revalidatedTags) {
+    const affectedPaths = invalidateCachedPagesByTag(tag);
+    for (const urlPath of affectedPaths) {
+      removeStaticArtifacts(vistaDirRoot, urlPath);
+    }
+  }
 }
 
 function normalizeModuleCachePath(filePath: string): string {
@@ -213,15 +290,24 @@ function resolveFromWorkspace(specifier: string, cwd: string): string {
 
 function setupTypeScriptRuntime(cwd: string): void {
   try {
-    const swcPath = require.resolve('@swc-node/register', { paths: [cwd] });
-    require(swcPath);
+    const swcRegisterPath = resolveFromWorkspace('@swc-node/register/register', cwd);
+    const typescriptPath = resolveFromWorkspace('typescript', cwd);
+    const { register } = require(swcRegisterPath) as { register: (options?: Record<string, any>) => void };
+    const ts = require(typescriptPath) as typeof import('typescript');
+    register({
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.ReactJSX,
+      moduleResolution: ts.ModuleResolutionKind.Node16,
+      esModuleInterop: true,
+      allowJs: true,
+    });
     return;
   } catch {
     // fallback
   }
 
   try {
-    const tsNodePath = require.resolve('ts-node', { paths: [cwd] });
+    const tsNodePath = resolveFromWorkspace('ts-node', cwd);
     require(tsNodePath).register({
       transpileOnly: true,
       compilerOptions: {
@@ -229,6 +315,7 @@ function setupTypeScriptRuntime(cwd: string): void {
         jsx: 'react-jsx',
         moduleResolution: 'node16',
         esModuleInterop: true,
+        allowJs: true,
       },
     });
     return;
@@ -237,8 +324,8 @@ function setupTypeScriptRuntime(cwd: string): void {
   }
 
   try {
-    require.resolve('tsx', { paths: [cwd] });
-    require('tsx/cjs');
+    const tsxPath = resolveFromWorkspace('tsx/cjs', cwd);
+    require(tsxPath);
     return;
   } catch (e) {
     console.log('Failed to setup TypeScript runtime:', e);
@@ -248,6 +335,10 @@ function setupTypeScriptRuntime(cwd: string): void {
 
 let reactResolutionInstalled = false;
 let originalResolveFilename: any = null;
+
+function resolveVistaInternalRequest(request: string): string | null {
+  return resolveVistaSourceRequest(request, path.resolve(__dirname, '..'));
+}
 
 function installSingleReactResolution(cwd: string): void {
   if (reactResolutionInstalled) return;
@@ -273,6 +364,8 @@ function installSingleReactResolution(cwd: string): void {
     isMain: boolean,
     options: unknown
   ) {
+    const vistaResolvedPath = resolveVistaInternalRequest(request);
+    if (vistaResolvedPath) return vistaResolvedPath;
     if (request === 'react') return reactPath;
     if (request === 'react-dom') return reactDomPath;
 
@@ -428,7 +521,9 @@ function normalizeSSRManifest(manifest: SSRManifest): SSRManifest {
 }
 
 function loadSSRManifestFromDisk(absolutePath: string): SSRManifest {
-  const manifest = JSON.parse(fs.readFileSync(absolutePath, 'utf-8')) as SSRManifest;
+  const manifest = normalizeReactServerConsumerManifest(
+    JSON.parse(fs.readFileSync(absolutePath, 'utf-8')) as SSRManifest
+  ) as SSRManifest;
   return normalizeSSRManifest(manifest);
 }
 
@@ -499,6 +594,175 @@ function extractParams(pathname: string, route: RouteEntry): Record<string, stri
   return params;
 }
 
+async function createRenderableRouteModuleElement(
+  modulePath: string,
+  context: {
+    params: Record<string, string>;
+    searchParams: Record<string, string>;
+    req: express.Request;
+  },
+  options: {
+    evaluateMetadata?: boolean;
+  } = {}
+): Promise<React.ReactElement> {
+  const { params, searchParams, req } = context;
+  const RouteModule = require(modulePath);
+  const RouteComponent = RouteModule.default;
+  if (!RouteComponent) {
+    throw new Error(`Route module does not export default component: ${modulePath}`);
+  }
+
+  if (options.evaluateMetadata && typeof RouteModule.generateMetadata === 'function') {
+    await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
+  }
+
+  const routeProps =
+    typeof RouteModule.getServerProps === 'function'
+      ? await RouteModule.getServerProps({ query: req.query, params, req })
+      : {};
+
+  const moduleStem = path.basename(modulePath).replace(/\.[jt]sx?$/, '');
+  if (moduleStem === 'default' || moduleStem === 'not-found') {
+    const eagerResult = await RouteComponent({
+      ...routeProps,
+      params,
+      searchParams,
+    });
+    return React.isValidElement(eagerResult)
+      ? (eagerResult as React.ReactElement)
+      : (React.createElement(React.Fragment, null, eagerResult) as React.ReactElement);
+  }
+
+  return React.createElement(RouteComponent, {
+    ...routeProps,
+    params,
+    searchParams,
+  }) as React.ReactElement;
+}
+
+function applySegmentBoundaries(dir: string, element: React.ReactElement): React.ReactElement {
+  const loadingPath = resolveConventionModule(dir, 'loading');
+  const errorPath = resolveConventionModule(dir, 'error');
+
+  const loadingComponent = loadingPath
+    ? (() => {
+        try {
+          return require(loadingPath).default;
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
+  const errorComponent = errorPath
+    ? (() => {
+        try {
+          return require(errorPath).default;
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
+
+  let wrappedElement = element;
+
+  if (loadingComponent) {
+    wrappedElement = React.createElement(RouteSuspense, {
+      loadingComponent,
+      children: wrappedElement,
+    } as any) as React.ReactElement;
+  }
+
+  if (errorComponent) {
+    wrappedElement = React.createElement(RouteErrorBoundary, {
+      fallbackComponent: errorComponent,
+      children: wrappedElement,
+    } as any) as React.ReactElement;
+  }
+
+  return wrappedElement;
+}
+
+async function renderAppSubtreeElement(input: {
+  subtreeRootDir: string;
+  entryFilePath: string;
+  pathname: string;
+  params: Record<string, string>;
+  searchParams: Record<string, string>;
+  req: express.Request;
+  cwd: string;
+  evaluateLeafMetadata?: boolean;
+  disableParallelSlots?: boolean;
+}): Promise<React.ReactElement> {
+  const appDir = path.join(input.cwd, 'app');
+  let element = await createRenderableRouteModuleElement(
+    input.entryFilePath,
+    {
+      params: input.params,
+      searchParams: input.searchParams,
+      req: input.req,
+    },
+    {
+      evaluateMetadata: input.evaluateLeafMetadata,
+    }
+  );
+
+  const directoryChain = resolveDirectoryChain(input.subtreeRootDir, input.entryFilePath);
+
+  for (let i = directoryChain.length - 1; i >= 0; i--) {
+    const dir = directoryChain[i];
+    element = applySegmentBoundaries(dir, element);
+
+    const layoutPath =
+      resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout');
+    if (!layoutPath || path.resolve(layoutPath) === path.resolve(input.entryFilePath)) {
+      continue;
+    }
+
+    const LayoutModule = require(layoutPath);
+    const LayoutComponent = LayoutModule.default;
+    if (!LayoutComponent) {
+      continue;
+    }
+
+    const slotProps: Record<string, React.ReactNode> = {};
+    if (!input.disableParallelSlots) {
+      const slotMatches = resolveParallelSlotMatches({
+        appDir,
+        layoutPath,
+        pathname: input.pathname,
+      });
+
+      for (const slotMatch of slotMatches) {
+        slotProps[slotMatch.slotName] = await renderAppSubtreeElement({
+          subtreeRootDir: slotMatch.slotRootDir,
+          entryFilePath: slotMatch.filePath,
+          pathname: input.pathname,
+          params: {
+            ...input.params,
+            ...slotMatch.params,
+          },
+          searchParams: input.searchParams,
+          req: input.req,
+          cwd: input.cwd,
+          evaluateLeafMetadata: true,
+        });
+      }
+    }
+
+    element = React.createElement(
+      LayoutComponent,
+      {
+        params: input.params,
+        searchParams: input.searchParams,
+        ...slotProps,
+      },
+      element
+    ) as React.ReactElement;
+  }
+
+  return element;
+}
+
 async function createRouteElement(
   route: RouteEntry,
   context: {
@@ -508,91 +772,38 @@ async function createRouteElement(
   },
   isDev: boolean,
   rootLayout: ReturnType<typeof resolveRootLayout>,
-  cwd: string
+  runtimeRoot: string,
+  options: {
+    disableParallelSlots?: boolean;
+  } = {}
 ): Promise<{ element: React.ReactElement; metadata: any; rootMode: RootRenderMode }> {
   const { params, searchParams, req } = context;
 
   if (isDev) {
-    clearProjectRequireCache(cwd);
+    clearProjectRequireCache(runtimeRoot);
   }
 
   const PageModule = require(route.pagePath);
-  const PageComponent = PageModule.default;
-  if (!PageComponent) {
-    throw new Error(`Page module does not export default component: ${route.pagePath}`);
-  }
-
-  const pageProps =
-    typeof PageModule.getServerProps === 'function'
-      ? await PageModule.getServerProps({ query: req.query, params, req })
-      : {};
-
   let metadata: any = { ...(rootLayout.metadata || {}) };
   if (PageModule.metadata) {
     metadata = { ...metadata, ...PageModule.metadata };
   }
   if (typeof PageModule.generateMetadata === 'function') {
-    try {
-      const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-      metadata = { ...metadata, ...dynamicMeta };
-    } catch (error) {
-      console.error('[vista:rsc] Error in generateMetadata:', error);
-    }
+    const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+    metadata = { ...metadata, ...dynamicMeta };
   }
 
-  let element = React.createElement(PageComponent, {
-    ...pageProps,
+  const element = await renderAppSubtreeElement({
+    subtreeRootDir: path.join(runtimeRoot, 'app'),
+    entryFilePath: route.pagePath,
+    pathname: req.path,
     params,
     searchParams,
-  }) as React.ReactElement;
-
-  // Wrap page in loading/error boundaries if discovered
-  if (route.loadingPath || route.errorPath) {
-    const loadingComponent = route.loadingPath
-      ? (() => {
-          try {
-            return require(route.loadingPath!).default;
-          } catch {
-            return undefined;
-          }
-        })()
-      : undefined;
-    const errorComponent = route.errorPath
-      ? (() => {
-          try {
-            return require(route.errorPath!).default;
-          } catch {
-            return undefined;
-          }
-        })()
-      : undefined;
-
-    if (loadingComponent) {
-      element = React.createElement(RouteSuspense, {
-        loadingComponent,
-        children: element,
-      } as any) as React.ReactElement;
-    }
-
-    if (errorComponent) {
-      element = React.createElement(RouteErrorBoundary, {
-        fallbackComponent: errorComponent,
-        children: element,
-      } as any) as React.ReactElement;
-    }
-  }
-
-  for (let i = route.layoutPaths.length - 1; i >= 0; i--) {
-    const layoutPath = route.layoutPaths[i];
-    const LayoutModule = require(layoutPath);
-    const LayoutComponent = LayoutModule.default;
-    if (!LayoutComponent) continue;
-    element = React.createElement(
-      LayoutComponent,
-      { params, searchParams },
-      element
-    ) as React.ReactElement;
-  }
+    req,
+    cwd: runtimeRoot,
+    evaluateLeafMetadata: false,
+    disableParallelSlots: options.disableParallelSlots,
+  });
 
   return { element, metadata, rootMode: rootLayout.mode };
 }
@@ -651,15 +862,28 @@ function createHtmlDocument(
 </html>`;
 }
 
+function appendVaryHeader(existing: unknown, nextValue: string): string {
+  const values = String(existing || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (!values.includes(nextValue)) {
+    values.push(nextValue);
+  }
+
+  return values.join(', ');
+}
+
 async function handleApiRoute(
   req: express.Request,
   res: express.Response,
-  cwd: string,
+  runtimeRoot: string,
   isDev: boolean,
   typedApiConfig: ReturnType<typeof resolveTypedApiConfig>
 ): Promise<void> {
   try {
-    const legacyApiPath = resolveLegacyApiRoutePath(cwd, req.path);
+    const legacyApiPath = resolveLegacyApiRoutePath(runtimeRoot, req.path);
     if (legacyApiPath) {
       await runLegacyApiRoute({
         req,
@@ -673,7 +897,7 @@ async function handleApiRoute(
     const typedHandled = await runTypedApiRoute({
       req,
       res,
-      cwd,
+      cwd: runtimeRoot,
       isDev,
       config: typedApiConfig,
     });
@@ -688,21 +912,40 @@ async function handleApiRoute(
   }
 }
 
-function spawnUpstream(cwd: string, upstreamPort: number): ChildProcessWithoutNullStreams {
+function spawnUpstream(
+  cwd: string,
+  runtimeRoot: string,
+  upstreamPort: number
+) {
   const upstreamScript = path.join(__dirname, 'rsc-upstream.js');
-  return spawn(
-    process.execPath,
-    ['--conditions', 'react-server', upstreamScript, '--port', String(upstreamPort)],
-    {
-      cwd,
-      env: {
-        ...process.env,
-        NODE_ENV: process.env.NODE_ENV || 'development',
-        RSC_UPSTREAM_PORT: String(upstreamPort),
-      },
-      stdio: 'pipe',
+  try {
+    return {
+      child: spawn(
+        process.execPath,
+        ['--conditions', 'react-server', upstreamScript, '--port', String(upstreamPort)],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            NODE_ENV: process.env.NODE_ENV || 'development',
+            RSC_UPSTREAM_PORT: String(upstreamPort),
+            VISTA_ARTIFACT_ROOT: cwd,
+            VISTA_RUNTIME_ROOT: runtimeRoot,
+          },
+          stdio: 'pipe',
+        }
+      ),
+      unavailableReason: null as string | null,
+    };
+  } catch (error) {
+    if (isPermissionDeniedSpawnError(error)) {
+      return {
+        child: null,
+        unavailableReason: `spawn blocked by environment permissions (${getErrorMessage(error)})`,
+      };
     }
-  );
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -739,14 +982,6 @@ async function renderFlightToHTMLStream(
 
   if (!upstream.ok && upstream.status !== 404) {
     throw new Error(`Upstream returned ${upstream.status}: ${await upstream.text()}`);
-  }
-
-  // Short-circuit 404: serve the styled standalone page directly
-  // (the Flight element is a bare <div> with no document shell, so streaming it
-  //  would produce HTML without <html>/<body> tags → browser default margins)
-  if (upstream.status === 404) {
-    res.status(404).type('text/html').send(getStyledNotFoundHTML());
-    return;
   }
 
   if (!upstream.body) {
@@ -949,14 +1184,22 @@ function renderCompilePendingHTML(): string {
 export interface RSCEngineOptions {
   port?: number;
   compiler?: webpack.Compiler | null;
+  projectRoot?: string;
+  runtimeRoot?: string;
 }
 
 export function startRSCServer(options: RSCEngineOptions = {}): void {
   const app = express();
-  const cwd = process.cwd();
+  const cwd = path.resolve(options.projectRoot || process.env.VISTA_ARTIFACT_ROOT || process.cwd());
+  const runtimeRoot = resolveRuntimeProjectRoot(cwd, options.runtimeRoot);
   const isDev = process.env.NODE_ENV !== 'production';
-  const vistaConfig = loadConfig(cwd);
+  const vistaConfig = loadConfig(runtimeRoot);
+  const cacheComponentsConfig = resolveCacheComponentsConfig(vistaConfig);
+  const engineVariant = resolveAndApplyEngineVariant(vistaConfig);
   const typedApiConfig = resolveTypedApiConfig(vistaConfig);
+  if (process.env.VISTA_DEBUG) {
+    logInfo(`Engine variant: ${engineVariant}`);
+  }
 
   // Clean stale hot-update files from previous runs
   cleanHotUpdateFiles(cwd);
@@ -968,8 +1211,13 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
   const upstreamPort = resolvePort(String(process.env.RSC_UPSTREAM_PORT || port + 1), port + 1);
   const upstreamOrigin = `http://127.0.0.1:${upstreamPort}`;
 
-  installSingleReactResolution(cwd);
-  setupTypeScriptRuntime(cwd);
+  installSingleReactResolution(runtimeRoot);
+  setupTypeScriptRuntime(runtimeRoot);
+  installModuleCompileHook({
+    cwd: runtimeRoot,
+    cacheComponentsEnabled: cacheComponentsConfig.enabled,
+  });
+  installSegmentFetchPolicyShim();
   installSSRWebpackShim();
 
   const serverManifestPath = path.join(cwd, BUILD_DIR, 'server', 'server-manifest.json');
@@ -980,7 +1228,9 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     process.exit(1);
   }
   try {
-    assertVistaArtifacts(cwd, 'rsc');
+    if (!isDev || !options.compiler) {
+      assertVistaArtifacts(cwd, 'rsc');
+    }
   } catch (error) {
     console.error((error as Error).message);
     process.exit(1);
@@ -1047,32 +1297,39 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     }
   }
 
-  const upstreamChild = spawnUpstream(cwd, upstreamPort);
-
-  upstreamChild.stdout.setEncoding('utf8');
-  upstreamChild.stderr.setEncoding('utf8');
-  // Always capture stderr so we can log crash reasons
   let upstreamStderr = '';
-  if (process.env.VISTA_DEBUG) {
-    upstreamChild.stdout.on('data', (chunk: string) => process.stdout.write(chunk));
-    upstreamChild.stderr.on('data', (chunk: string) => {
-      upstreamStderr += chunk;
-      process.stderr.write(chunk);
-    });
-  } else {
-    upstreamChild.stdout.on('data', () => {}); // drain
-    upstreamChild.stderr.on('data', (chunk: string) => {
-      upstreamStderr += chunk;
-    });
-  }
-  upstreamChild.on('exit', (code, signal) => {
-    if (code !== 0 && code !== null) {
-      logError(`Upstream exited unexpectedly (code=${code}, signal=${signal ?? 'null'})`);
-      if (upstreamStderr.trim()) {
-        logError(`Upstream stderr:\n${upstreamStderr.trim()}`);
-      }
+  const upstreamLaunch = spawnUpstream(cwd, runtimeRoot, upstreamPort);
+  const upstreamChild = upstreamLaunch.child as ChildProcessWithoutNullStreams | null;
+  let upstreamUnavailableReason = upstreamLaunch.unavailableReason;
+
+  if (upstreamChild) {
+    upstreamChild.stdout.setEncoding('utf8');
+    upstreamChild.stderr.setEncoding('utf8');
+    // Always capture stderr so we can log crash reasons
+    if (process.env.VISTA_DEBUG) {
+      upstreamChild.stdout.on('data', (chunk: string) => process.stdout.write(chunk));
+      upstreamChild.stderr.on('data', (chunk: string) => {
+        upstreamStderr += chunk;
+        process.stderr.write(chunk);
+      });
+    } else {
+      upstreamChild.stdout.on('data', () => {}); // drain
+      upstreamChild.stderr.on('data', (chunk: string) => {
+        upstreamStderr += chunk;
+      });
     }
-  });
+    upstreamChild.on('exit', (code, signal) => {
+      if (code !== 0 || (code === null && !shutdownCalled)) {
+        upstreamUnavailableReason = `process exited unexpectedly (code=${code ?? 'unknown'}, signal=${signal ?? 'null'})`;
+        logError(`Upstream exited unexpectedly (code=${code}, signal=${signal ?? 'null'})`);
+        if (upstreamStderr.trim()) {
+          logError(`Upstream stderr:\n${upstreamStderr.trim()}`);
+        }
+      }
+    });
+  } else if (upstreamUnavailableReason) {
+    logError(`[vista:rsc] ${upstreamUnavailableReason}`);
+  }
 
   // Graceful shutdown — populated after all resources are created
   let shutdownCalled = false;
@@ -1084,7 +1341,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     shutdownCalled = true;
 
     // 1. Kill upstream RSC child
-    if (!upstreamChild.killed) {
+    if (upstreamChild && !upstreamChild.killed) {
       upstreamChild.kill('SIGTERM');
       setTimeout(() => {
         if (!upstreamChild.killed) upstreamChild.kill('SIGKILL');
@@ -1172,7 +1429,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       reloadTimer = setTimeout(() => {
         logEvent('Source changed, reloading...');
         pushSSE('reload');
-      }, 140);
+      }, 70);
     };
 
     try {
@@ -1350,13 +1607,18 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
   });
 
   // Image optimization endpoint
-  const imageHandler = createImageHandler(cwd, isDev);
+  const imageHandler = createImageHandler(runtimeRoot, isDev);
   app.get(IMAGE_ENDPOINT, imageHandler);
 
-  app.use(express.static(path.join(cwd, 'public')));
+  app.use(express.static(path.join(runtimeRoot, 'public')));
   app.use(`${URL_PREFIX}/static`, express.static(path.join(cwd, BUILD_DIR, 'static')));
   app.use(URL_PREFIX, express.static(path.join(cwd, BUILD_DIR)));
   app.use(express.static(path.join(cwd, BUILD_DIR)));
+
+  const getUpstreamUnavailableMessage = () =>
+    `RSC upstream unavailable (${upstreamOrigin}/rsc): ${
+      upstreamUnavailableReason || 'upstream process is not running'
+    }`;
 
   const proxyRSCRequest = async (req: express.Request, res: express.Response) => {
     if (isDev && options.compiler) {
@@ -1368,6 +1630,11 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         res.status(500).type('text/plain').send(clientCompileErrors.join('\n\n'));
         return;
       }
+    }
+
+    if (upstreamUnavailableReason) {
+      res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
+      return;
     }
 
     try {
@@ -1397,6 +1664,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
 
       const upstream = await withTimeout(`${upstreamOrigin}${req.originalUrl}`, fetchOptions);
+      applyUpstreamRevalidations(upstream, vistaDirRoot);
 
       res.status(upstream.status);
       const contentType = upstream.headers.get('content-type');
@@ -1410,10 +1678,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
 
       Readable.fromWeb(upstream.body as unknown as NodeReadableStream).pipe(res);
     } catch (error) {
-      res
-        .status(503)
-        .type('text/plain')
-        .send(`RSC upstream unavailable (${upstreamOrigin}/rsc): ${(error as Error).message}`);
+      res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
     }
   };
 
@@ -1438,7 +1703,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       return next();
     }
 
-    const result = await runMiddleware(req, cwd, isDev);
+    const result = await runMiddleware(req, runtimeRoot, isDev);
     const finalized = applyMiddlewareResult(result, req, res);
     if (finalized) return; // response already sent (redirect / short-circuit)
     next();
@@ -1455,6 +1720,16 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     ) {
       return next();
     }
+
+    await runWithRequestContext(
+      {
+        req,
+        res,
+        cwd: runtimeRoot,
+        vistaDirRoot,
+        urlPath: req.path,
+      },
+      async () => {
 
     // ======================================================================
     // Structure validation gate (strict-block in dev)
@@ -1495,10 +1770,30 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
     }
 
+    const routeHandlerPath = resolveLegacyRouteHandlerPath(runtimeRoot, req.path);
+    if (routeHandlerPath) {
+      try {
+        await runLegacyApiRoute({
+          req,
+          res,
+          apiPath: routeHandlerPath,
+          isDev,
+        });
+        return;
+      } catch (error) {
+        console.error('[vista:rsc] Route handler error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+        return;
+      }
+    }
+
     if (req.path.startsWith('/api/')) {
-      await handleApiRoute(req, res, cwd, isDev, typedApiConfig);
+      await handleApiRoute(req, res, runtimeRoot, isDev, typedApiConfig);
       return;
     }
+
+    const currentRoute = matchRoute(req.path, serverManifest.routes);
+    setCurrentSegmentConfig(currentRoute?.segmentConfig);
 
     // ==================================================================
     // Static / ISR Cache Check
@@ -1512,22 +1807,45 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       if (cached.page) {
         if (cached.stale) {
           // ISR: serve stale page immediately, revalidate in background
-          const route = matchRoute(req.path, serverManifest.routes);
+          const route = currentRoute;
           if (route && !isRevalidating(req.path)) {
             const urlPath = req.path;
             // Fire-and-forget background revalidation
-            revalidatePath(urlPath, route, undefined, cwd, vistaDirRoot).catch((err) => {
+            revalidatePath(urlPath, route, undefined, runtimeRoot, vistaDirRoot).catch((err) => {
               console.error('[vista:isr] Background revalidation error:', err);
             });
           }
         }
+        const pprRequestMode = resolvePprRequestMode({
+          headerValue: req.headers['x-vista-prerender'],
+          queryValue: (req.query as any)?.__vista_prerender,
+        });
+        const servePprShell = pprRequestMode === 'shell' && Boolean(cached.page.shellHtml);
+        const responseHtml = servePprShell ? cached.page.shellHtml! : cached.page.html;
         res
           .status(200)
           .type('text/html')
-          .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT')
-          .send(cached.page.html);
+          .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT');
+        if (cached.page.ppr?.enabled) {
+          const responseMode =
+            pprRequestMode === 'resume' ? 'RESUME' : servePprShell ? 'SHELL' : 'PPR';
+          res.setHeader('X-Vista-Prerender', responseMode);
+          res.setHeader('X-Vista-Prerender-Resume', cached.page.ppr.resumePath);
+          res.setHeader('X-Vista-Prerender-Strategy', cached.page.ppr.strategy);
+          res.setHeader(
+            'Vary',
+            appendVaryHeader(res.getHeader('Vary'), 'x-vista-prerender')
+          );
+        }
+        res.setHeader('X-Vista-Route-Runtime', currentRoute?.segmentConfig.runtime ?? 'nodejs');
+        res.send(responseHtml);
         return;
       }
+    }
+
+    if (upstreamUnavailableReason) {
+      res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
+      return;
     }
 
     // ==================================================================
@@ -1550,13 +1868,13 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         }
 
         // Metadata extraction: still done locally so we have <head> content
-        const rootLayout = resolveRootLayout(cwd, isDev);
-        const route = matchRoute(req.path, serverManifest.routes);
+        const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+        const route = currentRoute;
 
         let metadataHtml = '';
         if (route) {
           if (isDev) {
-            clearProjectRequireCache(cwd);
+            clearProjectRequireCache(runtimeRoot);
           }
           const PageModule = require(route.pagePath);
           let metadata: any = { ...(rootLayout.metadata || {}) };
@@ -1568,15 +1886,11 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
             const searchParams = Object.fromEntries(
               new URLSearchParams(req.query as any).entries()
             );
-            try {
-              const dynamicMeta = await PageModule.generateMetadata(
-                { params, searchParams },
-                metadata
-              );
-              metadata = { ...metadata, ...dynamicMeta };
-            } catch (metaErr) {
-              console.error('[vista:rsc] Error in generateMetadata:', metaErr);
-            }
+            const dynamicMeta = await PageModule.generateMetadata(
+              { params, searchParams },
+              metadata
+            );
+            metadata = { ...metadata, ...dynamicMeta };
           }
           const { generateMetadataHtml } = require('../metadata/generate');
           metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
@@ -1597,6 +1911,55 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         );
         return;
       } catch (flightError: any) {
+        if (flightError?.name === 'NotFoundError' && !res.headersSent) {
+          try {
+            const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+            const route = currentRoute;
+            if (route) {
+              const segmentNotFoundPath = resolveNearestSegmentNotFoundPath(
+                path.join(runtimeRoot, 'app'),
+                route.routeDir
+              );
+              if (segmentNotFoundPath) {
+                const params = extractParams(req.path, route);
+                const searchParams = Object.fromEntries(
+                  new URLSearchParams(req.query as any).entries()
+                );
+                const notFoundResult = await createRouteElement(
+                  {
+                    ...route,
+                    pagePath: segmentNotFoundPath,
+                  },
+                  { params, searchParams, req },
+                  isDev,
+                  rootLayout,
+                  runtimeRoot,
+                  { disableParallelSlots: true }
+                );
+                const html = renderToString(notFoundResult.element);
+                const { generateMetadataHtml } = require('../metadata/generate');
+                const metadataHtml = notFoundResult.metadata
+                  ? generateMetadataHtml(notFoundResult.metadata)
+                  : '';
+                res
+                  .status(404)
+                  .type('text/html')
+                  .send(
+                    createHtmlDocument(
+                      html,
+                      metadataHtml,
+                      findChunkFiles(cwd, isDev),
+                      notFoundResult.rootMode
+                    )
+                  );
+                return;
+              }
+            }
+          } catch (notFoundError) {
+            console.error('[vista:rsc] Failed to render segment not-found fallback:', notFoundError);
+          }
+        }
+
         console.error('[vista:rsc] Flight SSR failed:', flightError.message);
 
         // If headers haven't been sent yet, show the error overlay directly.
@@ -1648,18 +2011,16 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         3000
       );
     } catch (error) {
-      res
-        .status(503)
-        .type('text/plain')
-        .send(`RSC upstream unavailable (${upstreamOrigin}/rsc): ${(error as Error).message}`);
+      res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
       return;
     }
 
     try {
-      const rootLayout = resolveRootLayout(cwd, isDev);
-      const route = matchRoute(req.path, serverManifest.routes);
+      const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+      const route = currentRoute;
+      setCurrentSegmentConfig(route?.segmentConfig);
       if (!route) {
-        const resolvedNotFound = resolveNotFoundComponent(cwd, rootLayout, isDev);
+        const resolvedNotFound = resolveNotFoundComponent(runtimeRoot, rootLayout, isDev);
         if (resolvedNotFound) {
           const notFoundElement = React.createElement(resolvedNotFound.component, {
             params: {},
@@ -1688,7 +2049,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         { params, searchParams, req },
         isDev,
         rootLayout,
-        cwd
+        runtimeRoot
       );
       const appHtml = renderToString(element);
       const { generateMetadataHtml } = require('../metadata/generate');
@@ -1700,8 +2061,50 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     } catch (error: any) {
       if (error?.name === 'NotFoundError') {
         try {
-          const rootLayout = resolveRootLayout(cwd, isDev);
-          const resolvedNotFound = resolveNotFoundComponent(cwd, rootLayout, isDev);
+          const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+          const route = currentRoute;
+          setCurrentSegmentConfig(route?.segmentConfig);
+          if (route) {
+            const segmentNotFoundPath = resolveNearestSegmentNotFoundPath(
+              path.join(runtimeRoot, 'app'),
+              route.routeDir
+            );
+            if (segmentNotFoundPath) {
+              const params = extractParams(req.path, route);
+              const searchParams = Object.fromEntries(
+                new URLSearchParams(req.query as any).entries()
+              );
+              const notFoundResult = await createRouteElement(
+                {
+                  ...route,
+                  pagePath: segmentNotFoundPath,
+                },
+                { params, searchParams, req },
+                isDev,
+                rootLayout,
+                runtimeRoot,
+                { disableParallelSlots: true }
+              );
+              const html = renderToString(notFoundResult.element);
+              const { generateMetadataHtml } = require('../metadata/generate');
+              const metadataHtml = notFoundResult.metadata
+                ? generateMetadataHtml(notFoundResult.metadata)
+                : '';
+              res
+                .status(404)
+                .type('text/html')
+                .send(
+                  createHtmlDocument(
+                    html,
+                    metadataHtml,
+                    findChunkFiles(cwd, isDev),
+                    notFoundResult.rootMode
+                  )
+                );
+              return;
+            }
+          }
+          const resolvedNotFound = resolveNotFoundComponent(runtimeRoot, rootLayout, isDev);
           if (resolvedNotFound) {
             const notFoundElement = React.createElement(resolvedNotFound.component, {
               params: {},
@@ -1737,6 +2140,8 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         res.status(500).send('<h1>Internal Server Error</h1>');
       }
     }
+      }
+    );
   });
 
   const server = app.listen(port, () => {

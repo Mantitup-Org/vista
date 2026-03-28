@@ -1,0 +1,7 @@
+[package]
+name = "flash-tasks-env"
+version = "0.1.0"
+edition = "2021"
+description = "Environment snapshot helpers for Flash tasks"
+
+[dependencies]

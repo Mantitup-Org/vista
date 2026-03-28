@@ -15,6 +15,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const vistaSrcRoot = path.join(repoRoot, 'packages', 'vista', 'src');
 const napiRoot = path.join(repoRoot, 'crates', 'vista-napi');
+const rootPackageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
 let passCount = 0;
 let failCount = 0;
@@ -174,9 +175,9 @@ test('.gitignore has .vista/', () => {
   assert(gitignore.includes('.vista/'), '.gitignore missing .vista/');
 });
 
-test('turbo.json has .vista/**', () => {
-  const turbo = fs.readFileSync(path.join(repoRoot, 'turbo.json'), 'utf8');
-  assert(turbo.includes('.vista/**'), 'turbo.json missing .vista/**');
+test('flashrepo.json has .vista/**', () => {
+  const flashrepo = fs.readFileSync(path.join(repoRoot, 'flashrepo.json'), 'utf8');
+  assert(flashrepo.includes('.vista/**'), 'flashrepo.json missing .vista/**');
 });
 
 test('eslint.config.mjs ignores .vista', () => {
@@ -189,6 +190,12 @@ test('package.json has bin.vista', () => {
     fs.readFileSync(path.join(repoRoot, 'packages', 'vista', 'package.json'), 'utf8')
   );
   assert(pkg.bin && pkg.bin.vista, 'Missing bin.vista command');
+  assert(pkg.exports && pkg.exports['./server'], 'Missing ./server export in vista package');
+  assert(pkg.exports && pkg.exports['./cache'], 'Missing ./cache export in vista package');
+  assert(
+    pkg.exports && pkg.exports['./server/runtime-actions'],
+    'Missing ./server/runtime-actions export in vista package'
+  );
 });
 
 // ============================================================================
@@ -226,6 +233,229 @@ test('manifest.ts imports generateBuildWatermark', () => {
 test('manifest.ts embeds __integrity in artifact manifest', () => {
   assert(manifestSource.includes('__integrity'), 'Missing __integrity in artifact manifest');
 });
+
+// ============================================================================
+// 8. Flashpack architecture scaffold exists and is wired
+// ============================================================================
+
+console.log('\n\x1b[1m[Layer 8] Flashpack Scaffold\x1b[0m');
+
+const cargoToml = fs.readFileSync(path.join(repoRoot, 'Cargo.toml'), 'utf8');
+
+const requiredFlashpackPaths = [
+  'flashpack/crates/flashpack',
+  'flashpack/crates/flashpack-analyze',
+  'flashpack/crates/flashpack-core',
+  'flashpack/crates/flashpack-cli-utils',
+  'flashpack/crates/flashpack-create-test-app',
+  'flashpack/crates/flashpack-dev-server',
+  'flashpack/crates/flashpack-ecmascript-hmr-protocol',
+  'flashpack/crates/flashpack-ecmascript-runtime',
+  'flashpack/crates/flashpack-image',
+  'flashpack/crates/flashpack-node',
+  'flashpack/crates/flashpack-static',
+  'flashpack/crates/flashpack-tracing',
+  'flashpack/crates/flashpack-resolve',
+  'flashpack/crates/README.md',
+  'flashpack/xtask',
+];
+
+for (const relPath of requiredFlashpackPaths) {
+  test(`Scaffold path exists: ${relPath}`, () => {
+    assert(fs.existsSync(path.join(repoRoot, relPath)), `Missing ${relPath}`);
+  });
+}
+
+test('Workspace members include flashpack crates glob', () => {
+  assert(
+    cargoToml.includes('"flashpack/crates/*"'),
+    'Cargo workspace must include flashpack/crates/*'
+  );
+});
+
+test('Workspace members include flashpack xtask', () => {
+  assert(cargoToml.includes('"flashpack/xtask"'), 'Cargo workspace must include flashpack/xtask');
+});
+
+test('Workspace excludes standalone Vista error-code plugin crate', () => {
+  assert(
+    cargoToml.includes('"crates/vista-error-code-swc-plugin"'),
+    'Cargo workspace should declare the standalone Vista error-code plugin exclusion'
+  );
+});
+
+test('Vista error-code plugin crate exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'crates', 'vista-error-code-swc-plugin')),
+    'Missing crates/vista-error-code-swc-plugin'
+  );
+});
+
+test('Flashpack README reflects Rust CLI orchestration', () => {
+  const flashpackReadme = fs.readFileSync(path.join(repoRoot, 'flashpack', 'README.md'), 'utf8');
+  assert(
+    flashpackReadme.includes('flashpack-cli'),
+    'flashpack/README.md must describe flashpack-cli orchestration'
+  );
+});
+
+// ============================================================================
+// 9. Engine Selection Wiring
+// ============================================================================
+
+console.log('\n\x1b[1m[Layer 9] Engine Selection Wiring\x1b[0m');
+
+const vistaBinSource = fs.readFileSync(
+  path.join(repoRoot, 'packages', 'vista', 'bin', 'vista.js'),
+  'utf8'
+);
+const createVistaAppSource = fs.readFileSync(
+  path.join(repoRoot, 'packages', 'create-vista-app', 'bin', 'cli.js'),
+  'utf8'
+);
+const vistaConfigSource = fs.readFileSync(path.join(vistaSrcRoot, 'config.ts'), 'utf8');
+
+test('Vista CLI supports --engine flag', () => {
+  assert(vistaBinSource.includes('--engine <default|flashpack>'), 'vista CLI missing --engine option');
+});
+
+test('Vista CLI resolves config-driven engine', () => {
+  assert(vistaBinSource.includes('const { loadConfig } = require(\'../dist/config\')'), 'vista CLI must read project config for engine');
+});
+
+test('create-vista-app supports --engine flag', () => {
+  assert(createVistaAppSource.includes('--engine <default|flashpack>'), 'create-vista-app missing --engine option');
+});
+
+test('create-vista-app writes engine block to vista.config.ts', () => {
+  assert(
+    createVistaAppSource.includes('applyEngineToVistaConfig'),
+    'create-vista-app must persist selected engine in vista.config.ts'
+  );
+});
+
+test('Runtime config exports resolveAndApplyEngineVariant', () => {
+  assert(
+    vistaConfigSource.includes('resolveAndApplyEngineVariant'),
+    'config.ts must expose resolveAndApplyEngineVariant'
+  );
+});
+
+test('Root repo scripts use flash-run wrapper', () => {
+  assert(
+    String(rootPackageJson.scripts?.build || '').includes('scripts/flash-run.cjs'),
+    'root build script must route through scripts/flash-run.cjs'
+  );
+});
+
+test('Repo task cache avoids legacy-named .flash folders', () => {
+  const flashRunnerSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'flash-run.cjs'), 'utf8');
+  assert(!flashRunnerSource.includes('.flash/turbo'), 'flash-run must not write .flash/turbo');
+  assert(
+    !flashRunnerSource.includes('.flash/cache/turbo'),
+    'flash-run must not write .flash/cache/turbo'
+  );
+});
+
+test('Flash runner script exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'scripts', 'flash-run.cjs')),
+    'Missing scripts/flash-run.cjs wrapper'
+  );
+});
+
+test('flashrepo.json exists', () => {
+  assert(fs.existsSync(path.join(repoRoot, 'flashrepo.json')), 'Missing flashrepo.json');
+});
+
+test('Root package.json does not depend on turbo', () => {
+  assert(!rootPackageJson.devDependencies?.turbo, 'package.json should not depend on turbo');
+});
+
+test('Flashpack wrapper build file exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'packages', 'vista', 'src', 'bin', 'build-rsc-flashpack.ts')),
+    'Missing flashpack build wrapper'
+  );
+});
+
+test('Flashpack wrapper server file exists', () => {
+  assert(
+    fs.existsSync(
+      path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'rsc-engine-flashpack.ts')
+    ),
+    'Missing flashpack server wrapper'
+  );
+});
+
+test('Flashpack command runner file exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'packages', 'vista', 'src', 'flashpack', 'command.ts')),
+    'Missing flashpack command runner'
+  );
+});
+
+test('Flashpack bin runner file exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'packages', 'vista', 'src', 'bin', 'flashpack-runner.ts')),
+    'Missing flashpack bin runner'
+  );
+});
+
+test('Runtime platform gate script exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, 'scripts', 'test-runtime-platform-gate.cjs')),
+    'Missing scripts/test-runtime-platform-gate.cjs'
+  );
+});
+
+test('Runtime platform gate workflow exists', () => {
+  assert(
+    fs.existsSync(path.join(repoRoot, '.github', 'workflows', 'runtime-platform-gate.yml')),
+    'Missing .github/workflows/runtime-platform-gate.yml'
+  );
+});
+
+test('Root package.json exposes runtime platform gate', () => {
+  assert(
+    String(rootPackageJson.scripts?.['test:runtime:platform-gate'] || '').includes(
+      'scripts/test-runtime-platform-gate.cjs'
+    ),
+    'package.json must expose test:runtime:platform-gate'
+  );
+});
+
+// ============================================================================
+// 10. Rust crate module surface is split beyond lib.rs
+// ============================================================================
+
+console.log('\n\x1b[1m[Layer 10] Rust Crate Surface\x1b[0m');
+
+const requiredRustModulePaths = [
+  'crates/vista-core/src/config.rs',
+  'crates/vista-core/src/engine.rs',
+  'crates/vista-core/src/manifest.rs',
+  'crates/vista-core/src/platform.rs',
+  'crates/vista-core/src/route.rs',
+  'crates/vista-api/src/analyze.rs',
+  'crates/vista-api/src/project.rs',
+  'crates/vista-api/src/server_actions.rs',
+  'crates/vista-build/src/pipeline.rs',
+  'crates/vista-build/src/standalone.rs',
+  'crates/vista-taskless/src/runtime.rs',
+  'crates/vista-build-test/src/fixtures.rs',
+  'crates/vista-wasm/src/bindings.rs',
+  'crates/vista-transforms/src/chain_transforms.rs',
+  'crates/vista-transforms/src/linter.rs',
+  'crates/vista-transforms/src/react_compiler.rs',
+  'crates/vista-transforms/src/transforms/mod.rs',
+];
+
+for (const relPath of requiredRustModulePaths) {
+  test(`Rust module exists: ${relPath}`, () => {
+    assert(fs.existsSync(path.join(repoRoot, relPath)), `Missing ${relPath}`);
+  });
+}
 
 // ============================================================================
 // Results

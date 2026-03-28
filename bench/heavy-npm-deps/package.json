@@ -1,0 +1,23 @@
+{
+  "name": "bench-heavy-npm-deps",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build-application": "vista build",
+    "start-application": "vista start",
+    "dev-flashpack": "vista dev",
+    "dev-default": "vista dev --legacy",
+    "build-flashpack": "vista build",
+    "build-default": "vista build --legacy",
+    "start-flashpack": "vista start",
+    "start-default": "vista start --legacy"
+  },
+  "dependencies": {
+    "@mantine/core": "^7.10.1",
+    "lodash-es": "^4.17.21",
+    "lucide-react": "^0.383.0",
+    "mermaid": "^10.9.1",
+    "vista": "file:../../packages/vista",
+    "tailwindcss": "3.2.7"
+  }
+}

@@ -11,7 +11,14 @@
 
 pub mod naming;
 pub mod client_directive;
+pub mod chain_transforms;
+pub mod linter;
+pub mod react_compiler;
 pub mod rsc;
+pub mod transforms;
 
 pub use client_directive::*;
+pub use chain_transforms::*;
+pub use linter::*;
+pub use react_compiler::*;
 pub use rsc::*;

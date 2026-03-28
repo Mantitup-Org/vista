@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-swc-utils"
+version = "0.1.0"
+edition = "2021"
+description = "SWC helper contracts for Flashpack transforms"
+
+[dependencies]

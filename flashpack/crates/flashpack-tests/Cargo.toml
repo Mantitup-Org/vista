@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-crate Flashpack test catalog"
+
+[dependencies]

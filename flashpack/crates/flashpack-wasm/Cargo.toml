@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM target bridge for Flashpack"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

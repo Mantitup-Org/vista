@@ -1,0 +1,15 @@
+[package]
+name = "flashpack"
+version = "0.1.0"
+edition = "2021"
+description = "Unified Flashpack facade crate"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }
+flashpack-resolve = { path = "../flashpack-resolve" }
+flashpack-css = { path = "../flashpack-css" }
+flashpack-ecmascript = { path = "../flashpack-ecmascript" }
+flashpack-node = { path = "../flashpack-node" }
+flashpack-nodejs = { path = "../flashpack-nodejs" }
+flashpack-browser = { path = "../flashpack-browser" }
+flashpack-dev-server = { path = "../flashpack-dev-server" }

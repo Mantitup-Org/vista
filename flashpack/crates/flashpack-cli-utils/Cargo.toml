@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-cli-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Shared CLI helpers for Flashpack commands"
+
+[dependencies]

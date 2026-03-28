@@ -9,6 +9,7 @@
  * - Have access to server resources (DB, file system, env vars)
  * - Contribute 0kb to the client JavaScript bundle
  */
+import { type ResolvedSegmentConfig, type SegmentConfig } from '../../server/segment-config';
 export interface ServerComponentEntry {
     /** Unique ID for this component */
     id: string;
@@ -16,8 +17,8 @@ export interface ServerComponentEntry {
     path: string;
     /** Absolute file path */
     absolutePath: string;
-    /** Component type: page, layout, loading, error, component */
-    type: 'page' | 'layout' | 'loading' | 'error' | 'not-found' | 'component';
+    /** Component type: page, layout, loading, error, default, component */
+    type: 'page' | 'layout' | 'loading' | 'error' | 'not-found' | 'default' | 'component';
     /** Has static metadata export */
     hasMetadata: boolean;
     /** Has generateMetadata function */
@@ -28,6 +29,8 @@ export interface ServerComponentEntry {
     renderMode: 'static' | 'dynamic' | 'auto';
     /** ISR revalidate interval in seconds (from export const revalidate) */
     revalidate?: number;
+    /** Segment config exports parsed from the module */
+    segmentConfig: SegmentConfig;
     /** List of client components this server component imports */
     clientDependencies: string[];
 }
@@ -40,12 +43,28 @@ export interface ServerManifest {
     pathToId: Record<string, string>;
     /** Routes discovered */
     routes: RouteEntry[];
+    /** Discovered server actions keyed by action id */
+    serverActions: Record<string, ServerActionEntry>;
+}
+export interface ServerActionEntry {
+    /** Stable action id used by the runtime */
+    id: string;
+    /** Absolute file path containing the action */
+    filePath: string;
+    /** Whether the action came from a module directive or inline directive */
+    kind: 'module-export' | 'inline';
+    /** Export or inline symbol name */
+    exportName: string;
 }
 export interface RouteEntry {
     /** URL path pattern */
     pattern: string;
     /** Page component path */
     pagePath: string;
+    /** Absolute directory that contains the page component */
+    routeDir: string;
+    /** Raw filesystem segments from app/ to the page directory */
+    sourceSegments: string[];
     /** Layout component paths (from root to this route) */
     layoutPaths: string[];
     /** Loading component path if exists */
@@ -60,6 +79,8 @@ export interface RouteEntry {
     revalidate?: number;
     /** Whether page exports generateStaticParams */
     hasGenerateStaticParams: boolean;
+    /** Merged segment config from ancestor layouts + page */
+    segmentConfig: ResolvedSegmentConfig;
 }
 /**
  * Generate the server component manifest

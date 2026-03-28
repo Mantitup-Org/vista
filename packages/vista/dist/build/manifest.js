@@ -18,11 +18,13 @@ exports.generateRequiredServerFilesManifest = generateRequiredServerFilesManifes
 exports.ensureJsonFile = ensureJsonFile;
 exports.writeArtifactManifest = writeArtifactManifest;
 exports.writeCanonicalVistaArtifacts = writeCanonicalVistaArtifacts;
+exports.writeReservedVistaArtifacts = writeReservedVistaArtifacts;
 exports.generateRoutesManifest = generateRoutesManifest;
 exports.generateClientComponentsManifest = generateClientComponentsManifest;
 exports.generateServerComponentsManifest = generateServerComponentsManifest;
 exports.getWebpackCacheConfig = getWebpackCacheConfig;
 exports.cleanOldCache = cleanOldCache;
+exports.pruneEmptyVistaDirectories = pruneEmptyVistaDirectories;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const crypto_1 = __importDefault(require("crypto"));
@@ -62,6 +64,7 @@ function createVistaDirectories(cwd, mode = 'legacy') {
     const dirs = {
         root,
         cache: path_1.default.join(root, 'cache'),
+        imageCache: path_1.default.join(root, 'cache', 'images'),
         server: path_1.default.join(root, 'server'),
         static: path_1.default.join(root, 'static'),
         chunks: path_1.default.join(root, 'static', 'chunks'),
@@ -71,19 +74,9 @@ function createVistaDirectories(cwd, mode = 'legacy') {
     // Always create root
     fs_1.default.mkdirSync(root, { recursive: true });
     if (mode === 'rsc') {
-        // RSC mode: create only currently-used directories.
-        // Keep css/media paths reserved in `dirs` for future use, but do not
-        // create empty folders unless the build actually emits files there.
-        [dirs.root, dirs.cache, dirs.server, dirs.static, dirs.chunks].forEach((dir) => {
+        [dirs.root, dirs.cache, dirs.imageCache, dirs.server, dirs.static, dirs.chunks, dirs.media].forEach((dir) => {
             fs_1.default.mkdirSync(dir, { recursive: true });
         });
-        // Cache subdirectories
-        fs_1.default.mkdirSync(path_1.default.join(dirs.cache, 'webpack'), { recursive: true });
-        fs_1.default.mkdirSync(path_1.default.join(dirs.cache, 'swc'), { recursive: true });
-        fs_1.default.mkdirSync(path_1.default.join(dirs.cache, 'images'), { recursive: true });
-        // Server subdirectories
-        fs_1.default.mkdirSync(path_1.default.join(dirs.server, 'app'), { recursive: true });
-        fs_1.default.mkdirSync(path_1.default.join(dirs.server, 'chunks'), { recursive: true });
     }
     // Legacy mode: only root dir is created — webpack outputs directly into .vista/
     return dirs;
@@ -159,18 +152,21 @@ function generatePrerenderManifest(vistaDir) {
     };
     fs_1.default.writeFileSync(path_1.default.join(vistaDir, 'prerender-manifest.json'), JSON.stringify(manifest, null, 2));
 }
-function generateRequiredServerFilesManifest(cwd, vistaDir) {
+function generateRequiredServerFilesManifest(cwd, vistaDir, extraFiles = [], appDir = cwd) {
+    const files = Array.from(new Set([
+        `${constants_1.BUILD_DIR}/BUILD_ID`,
+        `${constants_1.BUILD_DIR}/build-manifest.json`,
+        `${constants_1.BUILD_DIR}/routes-manifest.json`,
+        `${constants_1.BUILD_DIR}/app-path-routes-manifest.json`,
+        `${constants_1.BUILD_DIR}/server/server-manifest.json`,
+        ...extraFiles,
+    ]));
     const manifest = {
         version: 1,
         config: {},
-        appDir: cwd,
-        relativeAppDir: '.',
-        files: [
-            `${constants_1.BUILD_DIR}/BUILD_ID`,
-            `${constants_1.BUILD_DIR}/build-manifest.json`,
-            `${constants_1.BUILD_DIR}/routes-manifest.json`,
-            `${constants_1.BUILD_DIR}/app-path-routes-manifest.json`,
-        ],
+        appDir,
+        relativeAppDir: path_1.default.relative(cwd, appDir) || '.',
+        files,
     };
     fs_1.default.writeFileSync(path_1.default.join(vistaDir, 'required-server-files.json'), JSON.stringify(manifest, null, 2));
 }
@@ -180,7 +176,7 @@ function ensureJsonFile(vistaDir, relativePath, fallback = {}) {
         fs_1.default.writeFileSync(absolutePath, JSON.stringify(fallback, null, 2));
     }
 }
-function writeArtifactManifest(vistaDir, buildId) {
+function writeArtifactManifest(vistaDir, buildId, extraManifestEntries = {}) {
     const artifactManifest = {
         schemaVersion: 1,
         buildId,
@@ -194,6 +190,7 @@ function writeArtifactManifest(vistaDir, buildId) {
             requiredServerFiles: 'required-server-files.json',
             reactClientManifest: 'react-client-manifest.json',
             reactServerManifest: 'react-server-manifest.json',
+            ...extraManifestEntries,
         },
     };
     fs_1.default.writeFileSync(path_1.default.join(vistaDir, 'artifact-manifest.json'), JSON.stringify(artifactManifest, null, 2));
@@ -211,6 +208,59 @@ function writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, routes = []) {
     ensureJsonFile(vistaDir, 'react-client-manifest.json', {});
     ensureJsonFile(vistaDir, 'react-server-manifest.json', {});
     return writeArtifactManifest(vistaDir, buildId);
+}
+function writeReservedVistaArtifacts(vistaDir, options) {
+    const engineVariant = options.engineVariant || 'default';
+    const generatedAt = new Date().toISOString();
+    const cacheDir = path_1.default.join(vistaDir, 'cache');
+    const imageCacheDir = path_1.default.join(cacheDir, 'images');
+    const mediaDir = path_1.default.join(vistaDir, 'static', 'media');
+    fs_1.default.mkdirSync(cacheDir, { recursive: true });
+    fs_1.default.mkdirSync(imageCacheDir, { recursive: true });
+    fs_1.default.mkdirSync(mediaDir, { recursive: true });
+    fs_1.default.writeFileSync(path_1.default.join(cacheDir, 'cache-manifest.json'), JSON.stringify({
+        schemaVersion: 1,
+        buildId: options.buildId,
+        generatedAt,
+        engine: engineVariant,
+        activeCacheRoot: engineVariant === 'flashpack' ? '.flash/cache' : '.vista/cache/webpack',
+        directories: {
+            localCache: '.vista/cache',
+            webpack: engineVariant === 'flashpack' ? '.flash/cache/webpack' : '.vista/cache/webpack',
+            images: '.vista/cache/images',
+        },
+        notes: [
+            engineVariant === 'flashpack'
+                ? 'Flashpack stores its hot build cache in .flash while .vista/cache keeps framework metadata.'
+                : 'Default engine stores framework metadata here and may add webpack cache artifacts during rebuilds.',
+        ],
+    }, null, 2));
+    fs_1.default.writeFileSync(path_1.default.join(imageCacheDir, 'manifest.json'), JSON.stringify({
+        schemaVersion: 1,
+        buildId: options.buildId,
+        generatedAt,
+        endpoint: constants_1.IMAGE_ENDPOINT,
+        cacheDirectory: '.vista/cache/images',
+        config: options.imagesConfig || {},
+        behavior: {
+            optimization: 'on-demand',
+            staticImportsEmitInto: '.vista/static/media',
+            publicReferencesStayIn: 'public/',
+        },
+    }, null, 2));
+    const emittedMedia = fs_1.default
+        .readdirSync(mediaDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name !== 'media-manifest.json')
+        .map((entry) => entry.name)
+        .sort();
+    fs_1.default.writeFileSync(path_1.default.join(mediaDir, 'media-manifest.json'), JSON.stringify({
+        schemaVersion: 1,
+        buildId: options.buildId,
+        generatedAt,
+        mediaDirectory: '.vista/static/media',
+        emittedFiles: emittedMedia,
+        note: 'This directory is reserved for emitted media assets. Public file references are served from public/ and may leave this list empty.',
+    }, null, 2));
 }
 /**
  * Generate routes-manifest.json from route tree.
@@ -257,11 +307,14 @@ function generateServerComponentsManifest(vistaDir, serverModules = {}) {
 /**
  * Get Webpack cache configuration for persistent caching.
  */
-function getWebpackCacheConfig(vistaDir, buildId, name) {
+function getWebpackCacheConfig(vistaDir, buildId, name, engineVariant = 'default', cwd = process.cwd()) {
+    const cacheDirectory = engineVariant === 'flashpack'
+        ? path_1.default.join(cwd, constants_1.FLASH_DIR, 'cache', 'webpack')
+        : path_1.default.join(vistaDir, 'cache', 'webpack');
     return {
         type: 'filesystem',
         version: buildId,
-        cacheDirectory: path_1.default.join(vistaDir, 'cache', 'webpack'),
+        cacheDirectory,
         name: name,
         buildDependencies: {
             config: [__filename],
@@ -288,4 +341,27 @@ function cleanOldCache(vistaDir, keepBuilds = 5) {
     entries.slice(keepBuilds).forEach((entry) => {
         fs_1.default.rmSync(entry.path, { recursive: true, force: true });
     });
+}
+function pruneEmptyVistaDirectories(vistaDir) {
+    if (!fs_1.default.existsSync(vistaDir))
+        return;
+    const prune = (absolutePath) => {
+        const entries = fs_1.default.readdirSync(absolutePath, { withFileTypes: true });
+        for (const entry of entries) {
+            if (!entry.isDirectory())
+                continue;
+            const childPath = path_1.default.join(absolutePath, entry.name);
+            prune(childPath);
+        }
+        // Never remove the root .vista directory itself.
+        if (absolutePath === vistaDir)
+            return false;
+        const remaining = fs_1.default.readdirSync(absolutePath);
+        if (remaining.length === 0) {
+            fs_1.default.rmdirSync(absolutePath);
+            return true;
+        }
+        return false;
+    };
+    prune(vistaDir);
 }

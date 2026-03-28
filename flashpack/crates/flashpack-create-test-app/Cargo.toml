@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-create-test-app"
+version = "0.1.0"
+edition = "2021"
+description = "Fixture app recipes for Flashpack smoke tests"
+
+[dependencies]

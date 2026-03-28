@@ -16,7 +16,13 @@ import {
   BUILD_DIR,
 } from '../constants';
 import { RouterProvider } from '../index';
-import { loadConfig, resolveStructureValidationConfig, resolveTypedApiConfig } from '../config';
+import {
+  loadConfig,
+  resolveCacheComponentsConfig,
+  resolveAndApplyEngineVariant,
+  resolveStructureValidationConfig,
+  resolveTypedApiConfig,
+} from '../config';
 import { ErrorOverlay, renderErrorHTML } from '../dev-error';
 import { assertVistaArtifacts } from './artifact-validator';
 import {
@@ -30,10 +36,12 @@ import { StructureWatcher, type StructureWatchEvent } from './structure-watch';
 import { runMiddleware, applyMiddlewareResult } from './middleware-runner';
 import { createImageHandler } from './image-optimizer';
 import { getCachedPage, loadStaticPagesFromDisk, isRevalidating } from './static-cache';
+import { resolvePprRequestMode } from './ppr';
 import { revalidatePath } from './static-generator';
 import { getAllFontHTML as getFontHeadHTML } from '../font/registry';
 import { getStyledNotFoundHTML } from './not-found-page';
 import {
+  resolveLegacyRouteHandlerPath,
   resolveLegacyApiRoutePath,
   runLegacyApiRoute,
   runTypedApiRoute,
@@ -55,6 +63,8 @@ import {
   logWatcherStart,
   formatIssuesForOverlay,
 } from './structure-log';
+import { installModuleCompileHook } from './module-compile-hook';
+import { runWithRequestContext } from './request-context';
 
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
@@ -68,12 +78,27 @@ require.extensions['.css'] = (m: any, filename: string) => {
 // Use SWC for faster server-side TypeScript compilation
 try {
   // Try to resolve from project's node_modules first (where apps install their deps)
-  const swcPath = require.resolve('@swc-node/register', { paths: [process.cwd()] });
-  require(swcPath);
+  const swcRegisterPath = require.resolve('@swc-node/register/register', {
+    paths: [process.cwd(), path.resolve(process.cwd(), '..'), path.resolve(process.cwd(), '..', '..')],
+  });
+  const typescriptPath = require.resolve('typescript', {
+    paths: [process.cwd(), path.resolve(process.cwd(), '..'), path.resolve(process.cwd(), '..', '..')],
+  });
+  const { register } = require(swcRegisterPath) as { register: (options?: Record<string, any>) => void };
+  const ts = require(typescriptPath) as typeof import('typescript');
+  register({
+    module: ts.ModuleKind.CommonJS,
+    jsx: ts.JsxEmit.ReactJSX,
+    moduleResolution: ts.ModuleResolutionKind.Node16,
+    esModuleInterop: true,
+    allowJs: true,
+  });
 } catch (e) {
   // Fallback to ts-node if @swc-node not available
   try {
-    const tsNodePath = require.resolve('ts-node', { paths: [process.cwd()] });
+    const tsNodePath = require.resolve('ts-node', {
+      paths: [process.cwd(), path.resolve(process.cwd(), '..'), path.resolve(process.cwd(), '..', '..')],
+    });
     require(tsNodePath).register({
       transpileOnly: true,
       compilerOptions: {
@@ -81,12 +106,15 @@ try {
         jsx: 'react-jsx',
         moduleResolution: 'node16',
         esModuleInterop: true,
+        allowJs: true,
       },
     });
   } catch (e2) {
     // No TypeScript compiler found
   }
 }
+
+installModuleCompileHook({ cwd: process.cwd() });
 
 // ============================================================================
 // RSC: Auto-wrap client components with hydration markers
@@ -238,9 +266,19 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
   const app = express();
   const cwd = process.cwd();
   const vistaConfig = loadConfig(cwd);
+  const cacheComponentsConfig = resolveCacheComponentsConfig(vistaConfig);
+  const engineVariant = resolveAndApplyEngineVariant(vistaConfig);
   const typedApiConfig = resolveTypedApiConfig(vistaConfig);
   const isDev = process.env.NODE_ENV !== 'production';
   const appDir = path.join(cwd, 'app');
+  if (process.env.VISTA_DEBUG) {
+    logInfo(`Engine variant: ${engineVariant}`);
+  }
+
+  installModuleCompileHook({
+    cwd,
+    cacheComponentsEnabled: cacheComponentsConfig.enabled,
+  });
 
   // Allow port override from config
   const finalPort = vistaConfig.server?.port || port;
@@ -340,7 +378,7 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
         sseClients.forEach((client) => {
           client.write('data: reload\n\n');
         });
-      }, 100);
+      }, 60);
     };
 
     // Push compile errors to browser via SSE
@@ -486,6 +524,16 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
       return next();
     }
 
+    await runWithRequestContext(
+      {
+        req,
+        res,
+        cwd,
+        vistaDirRoot,
+        urlPath: req.path,
+      },
+      async () => {
+
     // ====================================================================
     // Structure validation gate (strict-block in dev)
     // ====================================================================
@@ -511,6 +559,24 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     const middlewareResult = await runMiddleware(req, cwd, isDev);
     const finalized = applyMiddlewareResult(middlewareResult, req, res);
     if (finalized) return;
+
+    const routeHandlerPath = resolveLegacyRouteHandlerPath(cwd, req.path);
+    if (routeHandlerPath) {
+      try {
+        await runLegacyApiRoute({
+          req,
+          res,
+          apiPath: routeHandlerPath,
+          isDev,
+        });
+        return;
+      } catch (error) {
+        console.error(
+          `[vista:ssr] Route handler error: ${(error as Error)?.message ?? String(error)}`
+        );
+        return res.status(500).json({ error: 'Internal Server Error in route handler' });
+      }
+    }
 
     // API ROUTES SUPPORT - Next.js App Router Style
     if (req.path.startsWith('/api/')) {
@@ -553,11 +619,29 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     {
       const cached = getCachedPage(req.path);
       if (cached.page) {
+        const pprRequestMode = resolvePprRequestMode({
+          headerValue: req.headers['x-vista-prerender'],
+          queryValue: (req.query as any)?.__vista_prerender,
+        });
+        const servePprShell = pprRequestMode === 'shell' && Boolean(cached.page.shellHtml);
+        const responseHtml = servePprShell ? cached.page.shellHtml! : cached.page.html;
         res
           .status(200)
           .type('text/html')
-          .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT')
-          .send(cached.page.html);
+          .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT');
+        if (cached.page.ppr?.enabled) {
+          const responseMode =
+            pprRequestMode === 'resume' ? 'RESUME' : servePprShell ? 'SHELL' : 'PPR';
+          res.setHeader('X-Vista-Prerender', responseMode);
+          res.setHeader('X-Vista-Prerender-Resume', cached.page.ppr.resumePath);
+          res.setHeader('X-Vista-Prerender-Strategy', cached.page.ppr.strategy);
+          res.setHeader(
+            'Vary',
+            appendVaryHeader(res.getHeader('Vary'), 'x-vista-prerender')
+          );
+        }
+        res.setHeader('X-Vista-Route-Runtime', 'nodejs');
+        res.send(responseHtml);
         return;
       }
     }
@@ -739,6 +823,8 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
 
       res.status(500).send(renderErrorHTML([errorInfo]));
     }
+      }
+    );
   });
 
   const server = app.listen(finalPort, () => {
@@ -911,4 +997,17 @@ function renderApp(
       }
     },
   });
+}
+
+function appendVaryHeader(existing: unknown, nextValue: string): string {
+  const values = String(existing || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  if (!values.includes(nextValue)) {
+    values.push(nextValue);
+  }
+
+  return values.join(', ');
 }

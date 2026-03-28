@@ -70,6 +70,13 @@ export interface MetadataInfo {
   hasStaticMetadata: boolean
   hasGenerateMetadata: boolean
 }
+export interface VistaImportResolutionInfo {
+  normalizedRequest: string
+  subpath: string
+  candidateBases: Array<string>
+  resolvedPath?: string
+}
+export declare function resolveVistaSourceImport(request: string, packageRoot: string): VistaImportResolutionInfo | null
 /** Analyze source file for metadata exports */
 export declare function analyzeMetadata(source: string): MetadataInfo
 /** Scanned component info for NAPI */

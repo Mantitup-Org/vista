@@ -12,8 +12,9 @@ const server_component_plugin_1 = require("./server-component-plugin");
 const vista_flight_plugin_1 = require("../build/webpack/plugins/vista-flight-plugin");
 const constants_1 = require("../constants");
 function createWebpackConfig(options) {
-    const { cwd, isDev } = options;
+    const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false } = options;
     const vistaDir = path_1.default.join(cwd, constants_1.BUILD_DIR);
+    const flashDir = path_1.default.join(cwd, constants_1.FLASH_DIR);
     const entryPoint = path_1.default.join(vistaDir, 'client.tsx');
     // Find React - check local node_modules first, then traverse up for monorepo hoisting
     const findModulePath = (moduleName) => {
@@ -56,7 +57,9 @@ function createWebpackConfig(options) {
         cache: isDev
             ? {
                 type: 'filesystem',
-                cacheDirectory: path_1.default.join(cwd, 'node_modules', '.cache', 'vista-webpack'),
+                cacheDirectory: engineVariant === 'flashpack'
+                    ? path_1.default.join(flashDir, 'cache', 'webpack')
+                    : path_1.default.join(cwd, 'node_modules', '.cache', 'vista-webpack'),
                 buildDependencies: {
                     config: [__filename],
                 },
@@ -143,7 +146,11 @@ function createWebpackConfig(options) {
         },
         plugins: [
             // Server Component enforcement - runs on every compile
-            new server_component_plugin_1.VistaServerComponentPlugin({ appDir: path_1.default.join(cwd, 'app') }),
+            new server_component_plugin_1.VistaServerComponentPlugin({
+                appDir: path_1.default.join(cwd, 'app'),
+                componentsDir: path_1.default.join(cwd, 'components'),
+                cacheComponentsEnabled,
+            }),
             // Vista Flight Plugin - RSC bundle separation and manifest
             new vista_flight_plugin_1.VistaFlightPlugin({ appDir: path_1.default.join(cwd, 'app'), dev: isDev }),
             ...(isDev
@@ -156,6 +163,8 @@ function createWebpackConfig(options) {
                 : []),
             new webpack_1.default.DefinePlugin({
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+                'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
+                'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
             }),
             new mini_css_extract_plugin_1.default({
                 filename: isDev ? 'modules.css' : 'modules-[contenthash:8].css',

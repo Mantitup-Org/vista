@@ -1,0 +1,26 @@
+{
+  "name": "bench-nested-deps-app-router",
+  "scripts": {
+    "build-application": "vista build",
+    "build-nocache": "rimraf .vista .flash && pnpm build-application",
+    "dev-application": "vista dev",
+    "dev-cpuprofile-nocache": "rimraf .vista .flash && node --cpu-prof ../../packages/vista/bin/vista.js dev",
+    "dev-nocache": "rimraf .vista .flash && pnpm dev-application",
+    "prepare-bench": "rimraf components && fuzzponent -d 2 -s 206 -o components",
+    "start": "vista start",
+    "dev-flashpack": "vista dev",
+    "dev-default": "vista dev --legacy",
+    "build-flashpack": "vista build",
+    "build-default": "vista build --legacy",
+    "start-flashpack": "vista start",
+    "start-default": "vista start --legacy",
+    "start-application": "vista start"
+  },
+  "devDependencies": {
+    "fuzzponent": "file:../fuzzponent",
+    "cross-env": "^7.0.3",
+    "pretty-ms": "^7.0.1",
+    "rimraf": "^3.0.2",
+    "vista": "file:../../packages/vista"
+  }
+}

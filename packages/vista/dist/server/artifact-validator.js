@@ -19,7 +19,13 @@ const BASE_REQUIRED_FILES = [
     'react-client-manifest.json',
     'react-server-manifest.json',
 ];
-const RSC_REQUIRED_FILES = [...BASE_REQUIRED_FILES, path_1.default.join('server', 'server-manifest.json')];
+const RSC_REQUIRED_FILES = [
+    ...BASE_REQUIRED_FILES,
+    path_1.default.join('server', 'server-manifest.json'),
+    path_1.default.join('server', 'runtime-manifest.json'),
+    path_1.default.join('server', 'file-trace.json'),
+    path_1.default.join('standalone', 'server.js'),
+];
 const LEGACY_REQUIRED_FILES = [...BASE_REQUIRED_FILES, 'client.js'];
 function readJsonSafe(absolutePath) {
     try {
@@ -46,6 +52,20 @@ function validateVistaArtifacts(cwd, mode) {
     const artifactManifest = readJsonSafe(artifactPath);
     if (fs_1.default.existsSync(artifactPath) && (!artifactManifest || artifactManifest.schemaVersion !== 1)) {
         missing.push('artifact-manifest.json (invalid schemaVersion)');
+    }
+    const runtimeManifestPath = path_1.default.join(vistaDir, 'server', 'runtime-manifest.json');
+    const runtimeManifest = readJsonSafe(runtimeManifestPath);
+    if (mode === 'rsc' &&
+        fs_1.default.existsSync(runtimeManifestPath) &&
+        (!runtimeManifest || runtimeManifest.schemaVersion !== 1)) {
+        missing.push('server/runtime-manifest.json (invalid schemaVersion)');
+    }
+    const fileTracePath = path_1.default.join(vistaDir, 'server', 'file-trace.json');
+    const fileTrace = readJsonSafe(fileTracePath);
+    if (mode === 'rsc' &&
+        fs_1.default.existsSync(fileTracePath) &&
+        (!fileTrace || fileTrace.schemaVersion !== 1 || !Array.isArray(fileTrace.copiedFiles))) {
+        missing.push('server/file-trace.json (invalid schemaVersion)');
     }
     return missing;
 }

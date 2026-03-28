@@ -1,0 +1,10 @@
+[package]
+name = "vista-error-code-swc-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Vista SWC plugin surface for framework error codes"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]

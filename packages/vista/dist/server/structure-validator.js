@@ -20,7 +20,6 @@ const path_1 = __importDefault(require("path"));
 // ============================================================================
 const FILE_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
 const RESERVED_INTERNAL_SEGMENTS = new Set(['[not-found]']);
-const VALID_SEGMENT_PATTERN = /^[a-zA-Z0-9_\-]+$|^\[\[\.\.\.[\w\-]+\]\]$|^\[[\w\-]+\]$|^\[\.\.\.[\w\-]+\]$|^\([\w\-]+\)$/;
 const CONVENTION_FILES = new Set([
     'page',
     'layout',
@@ -41,9 +40,28 @@ function fileExistsWithExtensions(dir, stem) {
     }
     return null;
 }
+function isParallelSegment(name) {
+    return /^@[\w-]+$/.test(name);
+}
+function isInterceptionSegment(name) {
+    return /^(?:\(\.\)|\(\.\.\)|\(\.\.\)\(\.\.\)|\(\.\.\.\))(?:[\w-]+|\[[^\]]+\]|\[\[\.\.\.[^\]]+\]\])$/.test(name);
+}
+function isValidSegmentName(name) {
+    return (/^[a-zA-Z0-9_\-]+$/.test(name) ||
+        /^\[\[\.\.\.[\w\-]+\]\]$/.test(name) ||
+        /^\[[\w\-]+\]$/.test(name) ||
+        /^\[\.\.\.[\w\-]+\]$/.test(name) ||
+        /^\([\w\-]+\)$/.test(name) ||
+        isParallelSegment(name) ||
+        isInterceptionSegment(name));
+}
 function classifySegment(name) {
     if (RESERVED_INTERNAL_SEGMENTS.has(name))
         return 'reserved-internal';
+    if (isParallelSegment(name))
+        return 'parallel';
+    if (isInterceptionSegment(name))
+        return 'interception';
     if (name.startsWith('(') && name.endsWith(')'))
         return 'group';
     if (name.startsWith('[[...') && name.endsWith(']]'))
@@ -67,7 +85,7 @@ function segmentToPattern(segment, kind) {
         const param = segment.slice(5, -2); // [[...slug]] -> slug
         return `:${param}*?`;
     }
-    if (kind === 'group')
+    if (kind === 'group' || kind === 'parallel' || kind === 'interception')
         return '';
     return segment;
 }
@@ -105,6 +123,9 @@ function buildRouteGraph(dir, parentPattern = '') {
 }
 function collectPatterns(nodes, acc = new Map()) {
     for (const node of nodes) {
+        if (node.kind === 'parallel' || node.kind === 'interception') {
+            continue;
+        }
         if (node.hasPage && node.kind !== 'reserved-internal') {
             // Normalize dynamic params so /blog/:id and /blog/:slug collide
             const normalizedPattern = node.pattern.replace(/:[^/]+/g, ':_dynamic_');
@@ -198,13 +219,13 @@ function checkInvalidSegmentNames(dir, issues) {
         // Skip hidden directories and reserved
         if (name.startsWith('.') || name === 'node_modules')
             continue;
-        if (!VALID_SEGMENT_PATTERN.test(name) && !RESERVED_INTERNAL_SEGMENTS.has(name)) {
+        if (!isValidSegmentName(name) && !RESERVED_INTERNAL_SEGMENTS.has(name)) {
             issues.push({
                 code: 'INVALID_SEGMENT_NAME',
                 severity: 'error',
-                message: `Invalid route segment name: "${name}". Segments must be alphanumeric/dashes, [param], [...param], or (group).`,
+                message: `Invalid route segment name: "${name}". Segments must be alphanumeric/dashes, [param], [...param], (group), @slot, or interception syntax.`,
                 filePath: path_1.default.join(dir, name),
-                fix: `Rename "${name}" to a valid segment pattern (e.g., lowercase-dashed, [dynamic], (group)).`,
+                fix: `Rename "${name}" to a valid segment pattern (e.g., lowercase-dashed, [dynamic], (group), @modal, or (.)target).`,
             });
         }
         // Recurse into children

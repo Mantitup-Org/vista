@@ -1,6 +1,6 @@
 {
   "name": "create-vista-app",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Create Vista applications with one command",
   "bin": {
     "create-vista-app": "./bin/cli.js"

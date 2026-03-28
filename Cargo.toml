@@ -4,6 +4,18 @@ resolver = "2"
 members = [
     "crates/vista-transforms",
     "crates/vista-napi",
+    "crates/vista-api",
+    "crates/vista-build",
+    "crates/vista-build-test",
+    "crates/vista-core",
+    "crates/vista-taskless",
+    "crates/vista-wasm",
+    "flashpack/crates/*",
+    "flashpack/xtask",
+]
+
+exclude = [
+    "crates/vista-error-code-swc-plugin",
 ]
 
 [workspace.dependencies]
@@ -25,6 +37,50 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
 rustc-hash = "2.1"
+
+# Vista Rust crates
+vista-api = { path = "crates/vista-api" }
+vista-build = { path = "crates/vista-build" }
+vista-build-test = { path = "crates/vista-build-test" }
+vista-core = { path = "crates/vista-core" }
+vista-taskless = { path = "crates/vista-taskless" }
+vista-wasm = { path = "crates/vista-wasm" }
+
+# Flashpack crates
+flash-tasks = { path = "flashpack/crates/flash-tasks" }
+flash-tasks-backend = { path = "flashpack/crates/flash-tasks-backend" }
+flash-tasks-env = { path = "flashpack/crates/flash-tasks-env" }
+flash-tasks-fetch = { path = "flashpack/crates/flash-tasks-fetch" }
+flash-tasks-fs = { path = "flashpack/crates/flash-tasks-fs" }
+flashpack = { path = "flashpack/crates/flashpack" }
+flashpack-analyze = { path = "flashpack/crates/flashpack-analyze" }
+flashpack-browser = { path = "flashpack/crates/flashpack-browser" }
+flashpack-cli = { path = "flashpack/crates/flashpack-cli" }
+flashpack-cli-utils = { path = "flashpack/crates/flashpack-cli-utils" }
+flashpack-core = { path = "flashpack/crates/flashpack-core" }
+flashpack-create-test-app = { path = "flashpack/crates/flashpack-create-test-app" }
+flashpack-css = { path = "flashpack/crates/flashpack-css" }
+flashpack-dev-server = { path = "flashpack/crates/flashpack-dev-server" }
+flashpack-ecmascript = { path = "flashpack/crates/flashpack-ecmascript" }
+flashpack-ecmascript-hmr-protocol = { path = "flashpack/crates/flashpack-ecmascript-hmr-protocol" }
+flashpack-ecmascript-plugins = { path = "flashpack/crates/flashpack-ecmascript-plugins" }
+flashpack-ecmascript-runtime = { path = "flashpack/crates/flashpack-ecmascript-runtime" }
+flashpack-env = { path = "flashpack/crates/flashpack-env" }
+flashpack-image = { path = "flashpack/crates/flashpack-image" }
+flashpack-json = { path = "flashpack/crates/flashpack-json" }
+flashpack-mdx = { path = "flashpack/crates/flashpack-mdx" }
+flashpack-nft = { path = "flashpack/crates/flashpack-nft" }
+flashpack-node = { path = "flashpack/crates/flashpack-node" }
+flashpack-nodejs = { path = "flashpack/crates/flashpack-nodejs" }
+flashpack-resolve = { path = "flashpack/crates/flashpack-resolve" }
+flashpack-static = { path = "flashpack/crates/flashpack-static" }
+flashpack-swc-utils = { path = "flashpack/crates/flashpack-swc-utils" }
+flashpack-test-utils = { path = "flashpack/crates/flashpack-test-utils" }
+flashpack-tests = { path = "flashpack/crates/flashpack-tests" }
+flashpack-trace-server = { path = "flashpack/crates/flashpack-trace-server" }
+flashpack-trace-utils = { path = "flashpack/crates/flashpack-trace-utils" }
+flashpack-tracing = { path = "flashpack/crates/flashpack-tracing" }
+flashpack-wasm = { path = "flashpack/crates/flashpack-wasm" }
 
 [profile.release]
 lto = true

@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-analyze"
+version = "0.1.0"
+edition = "2021"
+description = "Analysis helpers for Flashpack graphs and bundles"
+
+[dependencies]

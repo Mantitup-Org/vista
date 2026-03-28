@@ -23,11 +23,14 @@ const structure_watch_1 = require("./structure-watch");
 const middleware_runner_1 = require("./middleware-runner");
 const image_optimizer_1 = require("./image-optimizer");
 const static_cache_1 = require("./static-cache");
+const ppr_1 = require("./ppr");
 const registry_1 = require("../font/registry");
 const not_found_page_1 = require("./not-found-page");
 const typed_api_runtime_1 = require("./typed-api-runtime");
 const logger_1 = require("./logger");
 const structure_log_1 = require("./structure-log");
+const module_compile_hook_1 = require("./module-compile-hook");
+const request_context_1 = require("./request-context");
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
 // - .module.css: return empty class mapping (webpack build handles real mappings)
@@ -39,13 +42,28 @@ require.extensions['.css'] = (m, filename) => {
 // Use SWC for faster server-side TypeScript compilation
 try {
     // Try to resolve from project's node_modules first (where apps install their deps)
-    const swcPath = require.resolve('@swc-node/register', { paths: [process.cwd()] });
-    require(swcPath);
+    const swcRegisterPath = require.resolve('@swc-node/register/register', {
+        paths: [process.cwd(), path_1.default.resolve(process.cwd(), '..'), path_1.default.resolve(process.cwd(), '..', '..')],
+    });
+    const typescriptPath = require.resolve('typescript', {
+        paths: [process.cwd(), path_1.default.resolve(process.cwd(), '..'), path_1.default.resolve(process.cwd(), '..', '..')],
+    });
+    const { register } = require(swcRegisterPath);
+    const ts = require(typescriptPath);
+    register({
+        module: ts.ModuleKind.CommonJS,
+        jsx: ts.JsxEmit.ReactJSX,
+        moduleResolution: ts.ModuleResolutionKind.Node16,
+        esModuleInterop: true,
+        allowJs: true,
+    });
 }
 catch (e) {
     // Fallback to ts-node if @swc-node not available
     try {
-        const tsNodePath = require.resolve('ts-node', { paths: [process.cwd()] });
+        const tsNodePath = require.resolve('ts-node', {
+            paths: [process.cwd(), path_1.default.resolve(process.cwd(), '..'), path_1.default.resolve(process.cwd(), '..', '..')],
+        });
         require(tsNodePath).register({
             transpileOnly: true,
             compilerOptions: {
@@ -53,6 +71,7 @@ catch (e) {
                 jsx: 'react-jsx',
                 moduleResolution: 'node16',
                 esModuleInterop: true,
+                allowJs: true,
             },
         });
     }
@@ -60,6 +79,7 @@ catch (e) {
         // No TypeScript compiler found
     }
 }
+(0, module_compile_hook_1.installModuleCompileHook)({ cwd: process.cwd() });
 // ============================================================================
 // RSC: Auto-wrap client components with hydration markers
 // ============================================================================
@@ -189,9 +209,18 @@ function startServer(port = 3003, compiler) {
     const app = (0, express_1.default)();
     const cwd = process.cwd();
     const vistaConfig = (0, config_1.loadConfig)(cwd);
+    const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)(vistaConfig);
+    const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const typedApiConfig = (0, config_1.resolveTypedApiConfig)(vistaConfig);
     const isDev = process.env.NODE_ENV !== 'production';
     const appDir = path_1.default.join(cwd, 'app');
+    if (process.env.VISTA_DEBUG) {
+        (0, logger_1.logInfo)(`Engine variant: ${engineVariant}`);
+    }
+    (0, module_compile_hook_1.installModuleCompileHook)({
+        cwd,
+        cacheComponentsEnabled: cacheComponentsConfig.enabled,
+    });
     // Allow port override from config
     const finalPort = vistaConfig.server?.port || port;
     // Request logger — logs GET/POST with timing (skip internal webpack requests)
@@ -273,7 +302,7 @@ function startServer(port = 3003, compiler) {
                 sseClients.forEach((client) => {
                     client.write('data: reload\n\n');
                 });
-            }, 100);
+            }, 60);
         };
         // Push compile errors to browser via SSE
         const pushCompileError = (errorMessages) => {
@@ -401,168 +430,152 @@ function startServer(port = 3003, compiler) {
         if (req.path.startsWith('/styles.css') || req.path.startsWith('/__webpack_hmr')) {
             return next();
         }
-        // ====================================================================
-        // Structure validation gate (strict-block in dev)
-        // ====================================================================
-        if (isDev &&
-            structureConfig.enabled &&
-            structureConfig.mode === 'strict' &&
-            currentStructureState?.state === 'error') {
-            const overlayMessage = (0, structure_log_1.formatIssuesForOverlay)(currentStructureState, structureConfig.includeWarningsInOverlay);
-            const errorInfo = {
-                type: 'build',
-                message: `Structure Validation Failed\n\n${overlayMessage}`,
-            };
-            res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
-            return;
-        }
-        // MIDDLEWARE SUPPORT
-        const middlewareResult = await (0, middleware_runner_1.runMiddleware)(req, cwd, isDev);
-        const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
-        if (finalized)
-            return;
-        // API ROUTES SUPPORT - Next.js App Router Style
-        if (req.path.startsWith('/api/')) {
-            const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
-            if (legacyApiPath) {
+        await (0, request_context_1.runWithRequestContext)({
+            req,
+            res,
+            cwd,
+            vistaDirRoot,
+            urlPath: req.path,
+        }, async () => {
+            // ====================================================================
+            // Structure validation gate (strict-block in dev)
+            // ====================================================================
+            if (isDev &&
+                structureConfig.enabled &&
+                structureConfig.mode === 'strict' &&
+                currentStructureState?.state === 'error') {
+                const overlayMessage = (0, structure_log_1.formatIssuesForOverlay)(currentStructureState, structureConfig.includeWarningsInOverlay);
+                const errorInfo = {
+                    type: 'build',
+                    message: `Structure Validation Failed\n\n${overlayMessage}`,
+                };
+                res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
+                return;
+            }
+            // MIDDLEWARE SUPPORT
+            const middlewareResult = await (0, middleware_runner_1.runMiddleware)(req, cwd, isDev);
+            const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
+            if (finalized)
+                return;
+            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(cwd, req.path);
+            if (routeHandlerPath) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: legacyApiPath,
+                        apiPath: routeHandlerPath,
                         isDev,
                     });
                     return;
                 }
                 catch (error) {
-                    console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
-                    return res.status(500).json({ error: 'Internal Server Error in API' });
+                    console.error(`[vista:ssr] Route handler error: ${error?.message ?? String(error)}`);
+                    return res.status(500).json({ error: 'Internal Server Error in route handler' });
                 }
             }
-            const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
-                req,
-                res,
-                cwd,
-                isDev,
-                config: typedApiConfig,
-            });
-            if (typedHandled) {
-                return;
-            }
-            return res.status(404).json({ error: 'API Route Not Found' });
-        }
-        // ==================================================================
-        // Static / ISR Cache Check
-        // ==================================================================
-        {
-            const cached = (0, static_cache_1.getCachedPage)(req.path);
-            if (cached.page) {
-                res
-                    .status(200)
-                    .type('text/html')
-                    .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT')
-                    .send(cached.page.html);
-                return;
-            }
-        }
-        try {
-            let pagePath;
-            let params = {};
-            // Route Matching Logic
-            const getExactPath = (p) => {
-                if (p === '/' || p === '/index')
-                    return path_1.default.resolve(cwd, 'app', 'index.tsx');
-                return path_1.default.resolve(cwd, 'app', p.substring(1), 'page.tsx');
-            };
-            const tryPath = getExactPath(req.path);
-            // Clear require cache for hot reloading in dev
-            if (isDev) {
-                Object.keys(require.cache).forEach((key) => {
-                    if (key.includes(cwd) && key.includes('app')) {
-                        delete require.cache[key];
+            // API ROUTES SUPPORT - Next.js App Router Style
+            if (req.path.startsWith('/api/')) {
+                const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
+                if (legacyApiPath) {
+                    try {
+                        await (0, typed_api_runtime_1.runLegacyApiRoute)({
+                            req,
+                            res,
+                            apiPath: legacyApiPath,
+                            isDev,
+                        });
+                        return;
                     }
+                    catch (error) {
+                        console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
+                        return res.status(500).json({ error: 'Internal Server Error in API' });
+                    }
+                }
+                const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
+                    req,
+                    res,
+                    cwd,
+                    isDev,
+                    config: typedApiConfig,
                 });
+                if (typedHandled) {
+                    return;
+                }
+                return res.status(404).json({ error: 'API Route Not Found' });
             }
-            if (fs_1.default.existsSync(tryPath)) {
-                pagePath = tryPath;
+            // ==================================================================
+            // Static / ISR Cache Check
+            // ==================================================================
+            {
+                const cached = (0, static_cache_1.getCachedPage)(req.path);
+                if (cached.page) {
+                    const pprRequestMode = (0, ppr_1.resolvePprRequestMode)({
+                        headerValue: req.headers['x-vista-prerender'],
+                        queryValue: req.query?.__vista_prerender,
+                    });
+                    const servePprShell = pprRequestMode === 'shell' && Boolean(cached.page.shellHtml);
+                    const responseHtml = servePprShell ? cached.page.shellHtml : cached.page.html;
+                    res
+                        .status(200)
+                        .type('text/html')
+                        .setHeader('X-Vista-Cache', cached.stale ? 'STALE' : 'HIT');
+                    if (cached.page.ppr?.enabled) {
+                        const responseMode = pprRequestMode === 'resume' ? 'RESUME' : servePprShell ? 'SHELL' : 'PPR';
+                        res.setHeader('X-Vista-Prerender', responseMode);
+                        res.setHeader('X-Vista-Prerender-Resume', cached.page.ppr.resumePath);
+                        res.setHeader('X-Vista-Prerender-Strategy', cached.page.ppr.strategy);
+                        res.setHeader('Vary', appendVaryHeader(res.getHeader('Vary'), 'x-vista-prerender'));
+                    }
+                    res.setHeader('X-Vista-Route-Runtime', 'nodejs');
+                    res.send(responseHtml);
+                    return;
+                }
             }
-            else {
-                // Dynamic Route Matching
-                const segments = req.path.split('/').filter(Boolean);
-                const appDir = path_1.default.resolve(cwd, 'app');
-                if (segments.length === 2) {
-                    const [section, paramVal] = segments;
-                    const sectionPath = path_1.default.join(appDir, section);
-                    if (fs_1.default.existsSync(sectionPath) && fs_1.default.statSync(sectionPath).isDirectory()) {
-                        const subEntries = fs_1.default.readdirSync(sectionPath, { withFileTypes: true });
-                        const dynamicFolder = subEntries.find((d) => d.isDirectory() &&
-                            d.name.startsWith('[') &&
-                            d.name.endsWith(']') &&
-                            d.name !== '[not-found]');
-                        if (dynamicFolder) {
-                            const paramName = dynamicFolder.name.slice(1, -1);
-                            params[paramName] = paramVal;
-                            pagePath = path_1.default.join(sectionPath, dynamicFolder.name, 'page.tsx');
+            try {
+                let pagePath;
+                let params = {};
+                // Route Matching Logic
+                const getExactPath = (p) => {
+                    if (p === '/' || p === '/index')
+                        return path_1.default.resolve(cwd, 'app', 'index.tsx');
+                    return path_1.default.resolve(cwd, 'app', p.substring(1), 'page.tsx');
+                };
+                const tryPath = getExactPath(req.path);
+                // Clear require cache for hot reloading in dev
+                if (isDev) {
+                    Object.keys(require.cache).forEach((key) => {
+                        if (key.includes(cwd) && key.includes('app')) {
+                            delete require.cache[key];
+                        }
+                    });
+                }
+                if (fs_1.default.existsSync(tryPath)) {
+                    pagePath = tryPath;
+                }
+                else {
+                    // Dynamic Route Matching
+                    const segments = req.path.split('/').filter(Boolean);
+                    const appDir = path_1.default.resolve(cwd, 'app');
+                    if (segments.length === 2) {
+                        const [section, paramVal] = segments;
+                        const sectionPath = path_1.default.join(appDir, section);
+                        if (fs_1.default.existsSync(sectionPath) && fs_1.default.statSync(sectionPath).isDirectory()) {
+                            const subEntries = fs_1.default.readdirSync(sectionPath, { withFileTypes: true });
+                            const dynamicFolder = subEntries.find((d) => d.isDirectory() &&
+                                d.name.startsWith('[') &&
+                                d.name.endsWith(']') &&
+                                d.name !== '[not-found]');
+                            if (dynamicFolder) {
+                                const paramName = dynamicFolder.name.slice(1, -1);
+                                params[paramName] = paramVal;
+                                pagePath = path_1.default.join(sectionPath, dynamicFolder.name, 'page.tsx');
+                            }
                         }
                     }
                 }
-            }
-            const rootLayout = (0, root_resolver_1.resolveRootLayout)(cwd, isDev);
-            // 404 Handling
-            if (!pagePath || !fs_1.default.existsSync(pagePath)) {
-                const resolvedNotFound = (0, root_resolver_1.resolveNotFoundComponent)(cwd, rootLayout, isDev);
-                if (resolvedNotFound) {
-                    renderApp(req, res, resolvedNotFound.component, rootLayout.component, {}, { ...(rootLayout.metadata || {}), title: '404 Not Found' }, vistaConfig, 404, isDev, rootLayout.mode);
-                    return;
-                }
-                res.status(404).type('text/html').send((0, not_found_page_1.getStyledNotFoundHTML)());
-                return;
-            }
-            // Load Modules
-            const PageModule = require(pagePath);
-            const PageComponent = PageModule.default;
-            const RootComponent = rootLayout.component;
-            if (!PageComponent) {
-                res.status(500).send('<h1>Page does not export default component</h1>');
-                return;
-            }
-            // Data Fetching
-            let props = {};
-            if (PageModule.getServerProps) {
-                props = await PageModule.getServerProps({ query: req.query, params, req });
-            }
-            // Resolve the full nested layout chain (root → page directory)
-            const pageDir = path_1.default.dirname(pagePath);
-            const layouts = (0, root_resolver_1.resolveLayoutChain)(cwd, pageDir, isDev);
-            // Metadata extraction - merge all layout metadata + page metadata
-            let metadata = {};
-            for (const layout of layouts) {
-                if (layout.metadata) {
-                    metadata = { ...metadata, ...layout.metadata };
-                }
-            }
-            // Get page static metadata (overrides layouts)
-            if (PageModule.metadata) {
-                metadata = { ...metadata, ...PageModule.metadata };
-            }
-            // Get dynamic metadata from generateMetadata function
-            if (typeof PageModule.generateMetadata === 'function') {
-                try {
-                    const dynamicMeta = await PageModule.generateMetadata({ params, searchParams: req.query }, metadata // parent metadata
-                    );
-                    metadata = { ...metadata, ...dynamicMeta };
-                }
-                catch (e) {
-                    console.error('Error in generateMetadata:', e);
-                }
-            }
-            // Render with nested layouts
-            renderApp(req, res, PageComponent, RootComponent, { ...props, params }, metadata, vistaConfig, 200, isDev, rootLayout.mode, layouts.length > 0 ? layouts : undefined);
-        }
-        catch (err) {
-            if (err?.name === 'NotFoundError') {
-                try {
-                    const rootLayout = (0, root_resolver_1.resolveRootLayout)(cwd, isDev);
+                const rootLayout = (0, root_resolver_1.resolveRootLayout)(cwd, isDev);
+                // 404 Handling
+                if (!pagePath || !fs_1.default.existsSync(pagePath)) {
                     const resolvedNotFound = (0, root_resolver_1.resolveNotFoundComponent)(cwd, rootLayout, isDev);
                     if (resolvedNotFound) {
                         renderApp(req, res, resolvedNotFound.component, rootLayout.component, {}, { ...(rootLayout.metadata || {}), title: '404 Not Found' }, vistaConfig, 404, isDev, rootLayout.mode);
@@ -571,23 +584,77 @@ function startServer(port = 3003, compiler) {
                     res.status(404).type('text/html').send((0, not_found_page_1.getStyledNotFoundHTML)());
                     return;
                 }
-                catch (notFoundError) {
-                    console.error(`[vista:ssr] Failed to render NotFoundError fallback: ${notFoundError?.message ?? String(notFoundError)}`);
+                // Load Modules
+                const PageModule = require(pagePath);
+                const PageComponent = PageModule.default;
+                const RootComponent = rootLayout.component;
+                if (!PageComponent) {
+                    res.status(500).send('<h1>Page does not export default component</h1>');
+                    return;
                 }
+                // Data Fetching
+                let props = {};
+                if (PageModule.getServerProps) {
+                    props = await PageModule.getServerProps({ query: req.query, params, req });
+                }
+                // Resolve the full nested layout chain (root → page directory)
+                const pageDir = path_1.default.dirname(pagePath);
+                const layouts = (0, root_resolver_1.resolveLayoutChain)(cwd, pageDir, isDev);
+                // Metadata extraction - merge all layout metadata + page metadata
+                let metadata = {};
+                for (const layout of layouts) {
+                    if (layout.metadata) {
+                        metadata = { ...metadata, ...layout.metadata };
+                    }
+                }
+                // Get page static metadata (overrides layouts)
+                if (PageModule.metadata) {
+                    metadata = { ...metadata, ...PageModule.metadata };
+                }
+                // Get dynamic metadata from generateMetadata function
+                if (typeof PageModule.generateMetadata === 'function') {
+                    try {
+                        const dynamicMeta = await PageModule.generateMetadata({ params, searchParams: req.query }, metadata // parent metadata
+                        );
+                        metadata = { ...metadata, ...dynamicMeta };
+                    }
+                    catch (e) {
+                        console.error('Error in generateMetadata:', e);
+                    }
+                }
+                // Render with nested layouts
+                renderApp(req, res, PageComponent, RootComponent, { ...props, params }, metadata, vistaConfig, 200, isDev, rootLayout.mode, layouts.length > 0 ? layouts : undefined);
             }
-            console.error(`[vista:ssr] Render error: ${err?.message || 'Unknown error'}`);
-            if (process.env.VISTA_DEBUG) {
-                console.error(err);
+            catch (err) {
+                if (err?.name === 'NotFoundError') {
+                    try {
+                        const rootLayout = (0, root_resolver_1.resolveRootLayout)(cwd, isDev);
+                        const resolvedNotFound = (0, root_resolver_1.resolveNotFoundComponent)(cwd, rootLayout, isDev);
+                        if (resolvedNotFound) {
+                            renderApp(req, res, resolvedNotFound.component, rootLayout.component, {}, { ...(rootLayout.metadata || {}), title: '404 Not Found' }, vistaConfig, 404, isDev, rootLayout.mode);
+                            return;
+                        }
+                        res.status(404).type('text/html').send((0, not_found_page_1.getStyledNotFoundHTML)());
+                        return;
+                    }
+                    catch (notFoundError) {
+                        console.error(`[vista:ssr] Failed to render NotFoundError fallback: ${notFoundError?.message ?? String(notFoundError)}`);
+                    }
+                }
+                console.error(`[vista:ssr] Render error: ${err?.message || 'Unknown error'}`);
+                if (process.env.VISTA_DEBUG) {
+                    console.error(err);
+                }
+                // Render Server-Side Error Overlay
+                const errorInfo = {
+                    type: 'runtime',
+                    message: err.message || 'Unknown Server Error',
+                    stack: err.stack,
+                    file: (err.message.match && err.message.match(/(app\/.*?):(\d+):(\d+)/)?.[1]) || undefined,
+                };
+                res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
             }
-            // Render Server-Side Error Overlay
-            const errorInfo = {
-                type: 'runtime',
-                message: err.message || 'Unknown Server Error',
-                stack: err.stack,
-                file: (err.message.match && err.message.match(/(app\/.*?):(\d+):(\d+)/)?.[1]) || undefined,
-            };
-            res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
-        }
+        });
     });
     const server = app.listen(finalPort, () => {
         (0, logger_1.printServerReady)({ port: finalPort, mode: 'legacy' });
@@ -720,4 +787,14 @@ layouts) {
             }
         },
     });
+}
+function appendVaryHeader(existing, nextValue) {
+    const values = String(existing || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    if (!values.includes(nextValue)) {
+        values.push(nextValue);
+    }
+    return values.join(', ');
 }

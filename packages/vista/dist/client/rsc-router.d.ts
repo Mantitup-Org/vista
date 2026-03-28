@@ -38,6 +38,37 @@ export interface RSCNavigationState {
 export interface NavigationOptions {
     scroll?: boolean;
 }
+declare global {
+    interface Window {
+        __VISTA_RUNTIME_TRACE__?: {
+            events: Array<{
+                type: string;
+                detail: Record<string, unknown>;
+                at: number;
+            }>;
+            lastEvent: {
+                type: string;
+                detail: Record<string, unknown>;
+                at: number;
+            } | null;
+            pushEvent: (type: string, detail?: Record<string, unknown>) => {
+                type: string;
+                detail: Record<string, unknown>;
+                at: number;
+            };
+        };
+        __VISTA_RSC_ROUTER__?: {
+            refresh: () => void;
+            prefetch: (url: string) => void;
+            resume: (url: string) => void;
+            getState: () => {
+                pathname: string;
+                search: string;
+                isPending: boolean;
+            };
+        };
+    }
+}
 export declare const RSCRouterContext: React.Context<RSCNavigationState>;
 export interface RSCRouterProps {
     /** Initial Flight response created during hydration */

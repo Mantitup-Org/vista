@@ -8,9 +8,12 @@
  * - Cache invalidation for updated pages
  */
 import type { RouteEntry } from '../build/rsc/server-manifest';
+import type { PartialPrerenderInfo } from './ppr';
 export interface CachedPage {
     /** Pre-rendered HTML string */
     html: string;
+    /** PPR shell HTML generated from the loading boundary */
+    shellHtml?: string;
     /** Flight payload (RSC serialized stream data) */
     flightData?: string;
     /** When this page was generated (epoch ms) */
@@ -21,6 +24,10 @@ export interface CachedPage {
     routePattern: string;
     /** Route params used to generate this page */
     params?: Record<string, string | string[]>;
+    /** Cache tags collected while generating the page */
+    tags?: string[];
+    /** Partial prerender metadata when the route has a generated shell */
+    ppr?: PartialPrerenderInfo;
 }
 export interface PrerenderManifest {
     /** Map of URL path to prerender info */
@@ -37,6 +44,8 @@ export interface PrerenderRoute {
     srcRoute: string;
     /** Data route for Flight payload */
     dataRoute: string;
+    /** Optional partial prerender metadata for loading-boundary shell output */
+    ppr?: PartialPrerenderInfo;
 }
 export interface DynamicPrerenderRoute {
     /** Route pattern with :param placeholders */
@@ -45,6 +54,8 @@ export interface DynamicPrerenderRoute {
     dataRoutePattern: string;
     /** Fallback: 'blocking' | false | string (HTML) */
     fallback: 'blocking' | false | string;
+    /** Optional partial prerender metadata for loading-boundary shell output */
+    ppr?: PartialPrerenderInfo;
 }
 /**
  * Get a cached page for the given URL path.
@@ -63,6 +74,7 @@ export declare function setCachedPage(urlPath: string, page: CachedPage): void;
  * Remove a cached page (for on-demand revalidation).
  */
 export declare function invalidateCachedPage(urlPath: string): boolean;
+export declare function invalidateCachedPagesByTag(tag: string): string[];
 /**
  * Check if a path is currently being revalidated.
  */
@@ -86,7 +98,9 @@ export declare function writeStaticPageToDisk(vistaDirRoot: string, urlPath: str
 /**
  * Generate the prerender manifest from route entries.
  */
-export declare function generatePrerenderManifest(routes: RouteEntry[], cachedPages?: Map<string, CachedPage>): PrerenderManifest;
+export declare function generatePrerenderManifest(routes: RouteEntry[], cachedPages?: Map<string, CachedPage> | undefined, options?: {
+    appPprEnabled?: boolean;
+}): PrerenderManifest;
 /**
  * Get cache statistics.
  */

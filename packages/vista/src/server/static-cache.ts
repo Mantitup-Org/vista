@@ -11,6 +11,8 @@
 import path from 'path';
 import fs from 'fs';
 import type { RouteEntry } from '../build/rsc/server-manifest';
+import type { PartialPrerenderInfo } from './ppr';
+import { createPartialPrerenderInfo, isRoutePPREligible } from './ppr';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,6 +21,8 @@ import type { RouteEntry } from '../build/rsc/server-manifest';
 export interface CachedPage {
   /** Pre-rendered HTML string */
   html: string;
+  /** PPR shell HTML generated from the loading boundary */
+  shellHtml?: string;
   /** Flight payload (RSC serialized stream data) */
   flightData?: string;
   /** When this page was generated (epoch ms) */
@@ -29,6 +33,10 @@ export interface CachedPage {
   routePattern: string;
   /** Route params used to generate this page */
   params?: Record<string, string | string[]>;
+  /** Cache tags collected while generating the page */
+  tags?: string[];
+  /** Partial prerender metadata when the route has a generated shell */
+  ppr?: PartialPrerenderInfo;
 }
 
 export interface PrerenderManifest {
@@ -47,6 +55,8 @@ export interface PrerenderRoute {
   srcRoute: string;
   /** Data route for Flight payload */
   dataRoute: string;
+  /** Optional partial prerender metadata for loading-boundary shell output */
+  ppr?: PartialPrerenderInfo;
 }
 
 export interface DynamicPrerenderRoute {
@@ -56,6 +66,8 @@ export interface DynamicPrerenderRoute {
   dataRoutePattern: string;
   /** Fallback: 'blocking' | false | string (HTML) */
   fallback: 'blocking' | false | string;
+  /** Optional partial prerender metadata for loading-boundary shell output */
+  ppr?: PartialPrerenderInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +76,40 @@ export interface DynamicPrerenderRoute {
 
 const pageCache = new Map<string, CachedPage>();
 const revalidatingPaths = new Set<string>();
+const tagToPaths = new Map<string, Set<string>>();
+
+function normalizeTags(tags: string[] | undefined): string[] {
+  if (!Array.isArray(tags) || tags.length === 0) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => String(tag || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function removePathFromTagIndex(urlPath: string, tags: string[] | undefined): void {
+  for (const tag of normalizeTags(tags)) {
+    const paths = tagToPaths.get(tag);
+    if (!paths) continue;
+    paths.delete(urlPath);
+    if (paths.size === 0) {
+      tagToPaths.delete(tag);
+    }
+  }
+}
+
+function addPathToTagIndex(urlPath: string, tags: string[] | undefined): void {
+  for (const tag of normalizeTags(tags)) {
+    const paths = tagToPaths.get(tag) ?? new Set<string>();
+    paths.add(urlPath);
+    tagToPaths.set(tag, paths);
+  }
+}
 
 /**
  * Get a cached page for the given URL path.
@@ -96,14 +142,43 @@ export function getCachedPage(urlPath: string): {
  * Store a pre-rendered page in the cache.
  */
 export function setCachedPage(urlPath: string, page: CachedPage): void {
-  pageCache.set(urlPath, page);
+  const previous = pageCache.get(urlPath);
+  if (previous) {
+    removePathFromTagIndex(urlPath, previous.tags);
+  }
+
+  const normalizedPage: CachedPage = {
+    ...page,
+    tags: normalizeTags(page.tags),
+  };
+
+  addPathToTagIndex(urlPath, normalizedPage.tags);
+  pageCache.set(urlPath, normalizedPage);
 }
 
 /**
  * Remove a cached page (for on-demand revalidation).
  */
 export function invalidateCachedPage(urlPath: string): boolean {
+  const existing = pageCache.get(urlPath);
+  if (existing) {
+    removePathFromTagIndex(urlPath, existing.tags);
+  }
   return pageCache.delete(urlPath);
+}
+
+export function invalidateCachedPagesByTag(tag: string): string[] {
+  const normalized = String(tag || '').trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const paths = Array.from(tagToPaths.get(normalized) ?? []);
+  for (const urlPath of paths) {
+    invalidateCachedPage(urlPath);
+  }
+  tagToPaths.delete(normalized);
+  return paths;
 }
 
 /**
@@ -146,7 +221,11 @@ export function loadStaticPagesFromDisk(vistaDirRoot: string): number {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         scanDir(path.join(dir, entry.name), `${urlPrefix}/${entry.name}`);
-      } else if (entry.isFile() && entry.name.endsWith('.html')) {
+      } else if (
+        entry.isFile() &&
+        entry.name.endsWith('.html') &&
+        !entry.name.endsWith('.shell.html')
+      ) {
         const urlPath =
           entry.name === 'index.html'
             ? urlPrefix || '/'
@@ -166,15 +245,24 @@ export function loadStaticPagesFromDisk(vistaDirRoot: string): number {
           const flightData = fs.existsSync(flightPath)
             ? fs.readFileSync(flightPath, 'utf-8')
             : undefined;
+          const shellPath = path.join(dir, entry.name.replace('.html', '.shell.html'));
+          const shellHtml = fs.existsSync(shellPath)
+            ? fs.readFileSync(shellPath, 'utf-8')
+            : undefined;
 
           pageCache.set(urlPath, {
             html,
+            shellHtml,
             flightData,
             generatedAt: meta.generatedAt || Date.now(),
             revalidate: meta.revalidate ?? 0,
             routePattern: meta.routePattern || urlPath,
             params: meta.params,
+            tags: normalizeTags(meta.tags),
+            ppr: meta.ppr?.enabled ? meta.ppr : undefined,
           });
+
+          addPathToTagIndex(urlPath, meta.tags);
 
           loaded++;
         } catch (err) {
@@ -201,6 +289,7 @@ export function writeStaticPageToDisk(
   // Determine file path
   const safePath = urlPath === '/' ? '/index' : urlPath;
   const htmlPath = path.join(staticDir, `${safePath}.html`);
+  const shellPath = path.join(staticDir, `${safePath}.shell.html`);
   const metaPath = path.join(staticDir, `${safePath}.meta.json`);
   const flightPath = path.join(staticDir, `${safePath}.rsc`);
 
@@ -216,12 +305,18 @@ export function writeStaticPageToDisk(
     metaPath,
     JSON.stringify({
       generatedAt: page.generatedAt,
-      revalidate: page.revalidate,
-      routePattern: page.routePattern,
-      params: page.params,
-    }),
-    'utf-8'
-  );
+        revalidate: page.revalidate,
+        routePattern: page.routePattern,
+        params: page.params,
+        tags: normalizeTags(page.tags),
+        ppr: page.ppr,
+      }),
+      'utf-8'
+    );
+
+  if (page.shellHtml) {
+    fs.writeFileSync(shellPath, page.shellHtml, 'utf-8');
+  }
 
   // Write Flight data
   if (page.flightData) {
@@ -234,7 +329,10 @@ export function writeStaticPageToDisk(
  */
 export function generatePrerenderManifest(
   routes: RouteEntry[],
-  cachedPages: Map<string, CachedPage> = pageCache
+  cachedPages: Map<string, CachedPage> | undefined = pageCache,
+  options: {
+    appPprEnabled?: boolean;
+  } = {}
 ): PrerenderManifest {
   const manifest: PrerenderManifest = {
     routes: {},
@@ -246,17 +344,28 @@ export function generatePrerenderManifest(
     if (route.renderMode === 'static' || route.renderMode === 'isr') {
       if (route.type === 'static') {
         // Static URL pattern — single page
+        const cachedPage = cachedPages?.get(route.pattern);
+        const pprInfo =
+          cachedPage?.ppr ??
+          (isRoutePPREligible(route, Boolean(options.appPprEnabled))
+            ? createPartialPrerenderInfo(route.pattern)
+            : undefined);
         manifest.routes[route.pattern] = {
           initialRevalidateSeconds: route.revalidate || false,
           srcRoute: route.pagePath,
           dataRoute: `/_rsc${route.pattern === '/' ? '/index' : route.pattern}.rsc`,
+          ppr: pprInfo,
         };
       } else if (route.hasGenerateStaticParams) {
         // Dynamic URL pattern with generateStaticParams
+        const pprInfo = isRoutePPREligible(route, Boolean(options.appPprEnabled))
+          ? createPartialPrerenderInfo(route.pattern)
+          : undefined;
         manifest.dynamicRoutes[route.pattern] = {
           routePattern: route.pattern,
           dataRoutePattern: `/_rsc${route.pattern}.rsc`,
           fallback: 'blocking',
+          ppr: pprInfo,
         };
       }
     }

@@ -81,6 +81,30 @@ experimental: { typedApi: { enabled: false } }
 
 We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get started.
 
+## ⚡ Performance Benchmarks
+
+Vista includes a Next.js-style benchmark harness in `bench/` so contributors can track regressions across dev/build/start/runtime behavior.
+
+Run benchmark suite:
+
+```bash
+npm run bench
+```
+
+Quick smoke benchmark:
+
+```bash
+npm run bench:quick
+```
+
+Benchmark docs are in [bench/README.md](bench/README.md).
+
+Validate benchmark structure in CI:
+
+```bash
+npm run test:bench
+```
+
 ## 📄 License
 
 Vista is released under the **MIT License** — one of the most permissive open-source licenses available.

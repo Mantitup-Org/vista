@@ -1,0 +1,38 @@
+name: Runtime Platform Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - development
+
+jobs:
+  runtime-platform-gate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install
+        run: npm install
+
+      - name: Install Vista package deps
+        run: npm install --prefix packages/vista
+
+      - name: Runtime Platform Gate
+        run: npm run test:runtime:platform-gate

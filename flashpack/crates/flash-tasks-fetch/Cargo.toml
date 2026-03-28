@@ -1,0 +1,7 @@
+[package]
+name = "flash-tasks-fetch"
+version = "0.1.0"
+edition = "2021"
+description = "Remote fetch contracts for Flash task execution"
+
+[dependencies]

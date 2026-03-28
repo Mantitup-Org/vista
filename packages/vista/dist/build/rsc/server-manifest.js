@@ -21,6 +21,8 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const component_identity_1 = require("./component-identity");
 const constants_1 = require("../../constants");
+const runtime_actions_1 = require("../../server/runtime-actions");
+const segment_config_1 = require("../../server/segment-config");
 const RESERVED_INTERNAL_SEGMENTS = new Set(['[not-found]']);
 function hasReservedInternalSegment(relativePath) {
     return relativePath
@@ -52,7 +54,24 @@ catch (e) {
  * Check if source has 'use client' directive
  */
 function hasClientDirective(source) {
-    const trimmed = source.trimStart();
+    let trimmed = source;
+    while (true) {
+        trimmed = trimmed.trimStart();
+        if (trimmed.startsWith('//')) {
+            const newlineIndex = trimmed.indexOf('\n');
+            trimmed = newlineIndex === -1 ? '' : trimmed.slice(newlineIndex + 1);
+            continue;
+        }
+        if (trimmed.startsWith('/*')) {
+            const commentEndIndex = trimmed.indexOf('*/');
+            if (commentEndIndex === -1) {
+                break;
+            }
+            trimmed = trimmed.slice(commentEndIndex + 2);
+            continue;
+        }
+        break;
+    }
     if (trimmed.startsWith("'use client'") || trimmed.startsWith('"use client"')) {
         return true;
     }
@@ -60,6 +79,51 @@ function hasClientDirective(source) {
         return rustNative.isClientComponent(source);
     }
     return false;
+}
+function hasServerDirective(source) {
+    let trimmed = source;
+    while (true) {
+        trimmed = trimmed.trimStart();
+        if (trimmed.startsWith('//')) {
+            const newlineIndex = trimmed.indexOf('\n');
+            trimmed = newlineIndex === -1 ? '' : trimmed.slice(newlineIndex + 1);
+            continue;
+        }
+        if (trimmed.startsWith('/*')) {
+            const commentEndIndex = trimmed.indexOf('*/');
+            if (commentEndIndex === -1) {
+                break;
+            }
+            trimmed = trimmed.slice(commentEndIndex + 2);
+            continue;
+        }
+        break;
+    }
+    return trimmed.startsWith("'use server'") || trimmed.startsWith('"use server"');
+}
+function extractExports(source) {
+    const exports = [];
+    if (/export\s+default\s+/.test(source)) {
+        exports.push('default');
+    }
+    const namedExportRegex = /export\s+(?:async\s+)?(?:function|const|let|var|class)\s+([A-Za-z_$][\w$]*)/g;
+    let match;
+    while ((match = namedExportRegex.exec(source)) !== null) {
+        exports.push(match[1]);
+    }
+    const reExportRegex = /export\s+\{([^}]+)\}/g;
+    while ((match = reExportRegex.exec(source)) !== null) {
+        const names = match[1]
+            .split(',')
+            .map((entry) => entry
+            .trim()
+            .split(/\s+as\s+/)
+            .pop()
+            ?.trim())
+            .filter(Boolean);
+        exports.push(...names);
+    }
+    return [...new Set(exports)];
 }
 /**
  * Check for metadata exports
@@ -86,30 +150,25 @@ function analyzeMetadata(source) {
  *   export async function generateStaticParams() { ... }
  */
 function analyzeRenderConfig(source) {
+    const parsedSegmentConfig = (0, segment_config_1.parseSegmentConfig)(source, '<inline>');
     let renderMode = 'auto';
     let revalidate;
     const hasGenerateStaticParams = /export\s+(async\s+)?function\s+generateStaticParams\b/.test(source);
-    // Check export const dynamic = '...'
-    const dynamicMatch = source.match(/export\s+const\s+dynamic\s*=\s*['"](\w+(?:-\w+)?)['"]/);
-    if (dynamicMatch) {
-        const value = dynamicMatch[1];
-        if (value === 'force-static' || value === 'error') {
-            renderMode = 'static';
-        }
-        else if (value === 'force-dynamic') {
-            renderMode = 'dynamic';
-        }
-        // 'auto' stays as 'auto'
+    if (parsedSegmentConfig.config.dynamic === 'force-static' || parsedSegmentConfig.config.dynamic === 'error') {
+        renderMode = 'static';
     }
-    // Check export const revalidate = <number>
-    const revalidateMatch = source.match(/export\s+const\s+revalidate\s*=\s*(\d+|false)/);
-    if (revalidateMatch) {
-        const value = revalidateMatch[1];
-        if (value !== 'false') {
-            revalidate = parseInt(value, 10);
-        }
+    else if (parsedSegmentConfig.config.dynamic === 'force-dynamic') {
+        renderMode = 'dynamic';
     }
-    return { renderMode, revalidate, hasGenerateStaticParams };
+    if (typeof parsedSegmentConfig.config.revalidate === 'number') {
+        revalidate = parsedSegmentConfig.config.revalidate;
+    }
+    return {
+        renderMode,
+        revalidate,
+        hasGenerateStaticParams,
+        segmentConfig: parsedSegmentConfig.config,
+    };
 }
 /**
  * Determine component type from file name
@@ -127,11 +186,31 @@ function getComponentType(fileName) {
             return 'loading';
         case 'error':
             return 'error';
+        case 'default':
+            return 'default';
         case 'not-found':
             return 'not-found';
         default:
             return 'component';
     }
+}
+function isRouteGroupSegment(segment) {
+    return segment.startsWith('(') && segment.endsWith(')');
+}
+function isParallelRouteSegment(segment) {
+    return segment.startsWith('@');
+}
+function isInterceptionRouteSegment(segment) {
+    return (segment.startsWith('(.)') ||
+        segment.startsWith('(..)') ||
+        segment.startsWith('(..)(..)') ||
+        segment.startsWith('(...)'));
+}
+function hasNonPublicRouteSegment(relativePath) {
+    return relativePath
+        .replace(/\\/g, '/')
+        .split('/')
+        .some((segment) => isParallelRouteSegment(segment) || isInterceptionRouteSegment(segment));
 }
 /**
  * Extract client component imports from source
@@ -151,6 +230,40 @@ function extractClientImports(source, appDir) {
         imports.push(importPath);
     }
     return imports;
+}
+function analyzeServerActions(source, absolutePath) {
+    const entries = [];
+    if (hasServerDirective(source)) {
+        for (const exportName of extractExports(source)) {
+            entries.push({
+                id: (0, runtime_actions_1.createExportServerReferenceId)(absolutePath, exportName),
+                filePath: absolutePath,
+                kind: 'module-export',
+                exportName,
+            });
+        }
+    }
+    const inlineMatches = [];
+    const declarationRegex = /(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{\s*['"]use server['"]/g;
+    const assignedRegex = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:function\b[^{]*\{|\([^)]*\)\s*=>\s*\{|\w+\s*=>\s*\{)\s*['"]use server['"]/g;
+    let match;
+    while ((match = declarationRegex.exec(source)) !== null) {
+        inlineMatches.push({ name: match[1], index: match.index });
+    }
+    while ((match = assignedRegex.exec(source)) !== null) {
+        inlineMatches.push({ name: match[1], index: match.index });
+    }
+    inlineMatches
+        .sort((a, b) => a.index - b.index)
+        .forEach(({ name }, index) => {
+        entries.push({
+            id: (0, runtime_actions_1.createInlineServerActionId)(absolutePath, index, name),
+            filePath: absolutePath,
+            kind: 'inline',
+            exportName: name,
+        });
+    });
+    return entries;
 }
 /**
  * Scan directory recursively for server components
@@ -188,6 +301,7 @@ function scanForServerComponents(dir, appDir, components) {
                         hasGenerateStaticParams: renderConfig.hasGenerateStaticParams,
                         renderMode: renderConfig.renderMode,
                         revalidate: renderConfig.revalidate,
+                        segmentConfig: renderConfig.segmentConfig,
                         clientDependencies: extractClientImports(source, appDir),
                     });
                 }
@@ -223,9 +337,13 @@ function buildRoutes(components, appDir) {
     for (const page of pages) {
         const pageDir = path_1.default.dirname(page.absolutePath);
         const relativePath = path_1.default.relative(appDir, pageDir);
-        if (hasReservedInternalSegment(relativePath)) {
+        if (hasReservedInternalSegment(relativePath) || hasNonPublicRouteSegment(relativePath)) {
             continue;
         }
+        const sourceSegments = relativePath
+            .replace(/\\/g, '/')
+            .split('/')
+            .filter(Boolean);
         // Build URL pattern
         let pattern = '/' + relativePath.replace(/\\/g, '/');
         let routeType = 'static';
@@ -269,10 +387,14 @@ function buildRoutes(components, appDir) {
         const pageRenderMode = page.renderMode;
         // Cast routeType to string — TS can't track mutations from .replace() callbacks
         const rt = routeType;
-        if (pageRenderMode === 'static') {
+        const mergedSegmentConfig = (0, segment_config_1.mergeSegmentConfigs)([
+            ...layoutPaths.map((layoutPath) => layouts.find((layout) => layout.absolutePath === layoutPath)),
+            page,
+        ]);
+        if (mergedSegmentConfig.dynamic === 'force-static' || pageRenderMode === 'static') {
             renderMode = 'static';
         }
-        else if (pageRenderMode === 'dynamic') {
+        else if (mergedSegmentConfig.dynamic === 'force-dynamic' || pageRenderMode === 'dynamic') {
             renderMode = 'dynamic';
         }
         else if (pageRevalidate !== undefined && pageRevalidate > 0) {
@@ -289,13 +411,18 @@ function buildRoutes(components, appDir) {
         routes.push({
             pattern,
             pagePath: page.absolutePath,
+            routeDir: pageDir,
+            sourceSegments,
             layoutPaths,
             loadingPath: loading?.absolutePath,
             errorPath: error?.absolutePath,
             type: routeType,
             renderMode,
-            revalidate: pageRevalidate,
+            revalidate: typeof mergedSegmentConfig.revalidate === 'number'
+                ? mergedSegmentConfig.revalidate
+                : pageRevalidate,
             hasGenerateStaticParams: hasStaticParams,
+            segmentConfig: mergedSegmentConfig,
         });
     }
     // Sort routes: static first, then dynamic, then catch-all
@@ -310,6 +437,7 @@ function buildRoutes(components, appDir) {
  */
 function generateServerManifest(cwd, appDir) {
     const components = [];
+    const serverActions = {};
     scanForServerComponents(appDir, appDir, components);
     const serverModules = {};
     const pathToId = {};
@@ -321,6 +449,15 @@ function generateServerManifest(cwd, appDir) {
         pathToId[normalizedRelativePath] = component.id;
         pathToId[component.absolutePath] = component.id;
         pathToId[normalizedAbsolutePath] = component.id;
+        try {
+            const source = fs_1.default.readFileSync(component.absolutePath, 'utf-8');
+            for (const action of analyzeServerActions(source, component.absolutePath)) {
+                serverActions[action.id] = action;
+            }
+        }
+        catch {
+            // Ignore per-file action analysis failures and keep manifest generation resilient.
+        }
     }
     const routes = buildRoutes(components, appDir);
     // Get or generate build ID
@@ -339,6 +476,7 @@ function generateServerManifest(cwd, appDir) {
         serverModules,
         pathToId,
         routes,
+        serverActions,
     };
 }
 /**

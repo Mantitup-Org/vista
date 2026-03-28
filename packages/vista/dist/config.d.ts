@@ -2,6 +2,17 @@ import { ImageConfig } from './image/image-config';
 export type ValidationMode = 'strict' | 'warn';
 export type ValidationLogLevel = 'compact' | 'verbose';
 export type TypedApiSerialization = 'json' | 'superjson';
+export type VistaEngineVariant = 'default' | 'flashpack';
+export type VistaEngineAlias = 'webpack';
+export interface VistaEngineConfig {
+    /**
+     * Engine variant for runtime/build.
+     * - default => webpack path
+     * - flashpack => Rust-first path
+     * Compatibility alias accepted: webpack.
+     */
+    variant?: VistaEngineVariant | VistaEngineAlias;
+}
 export interface StructureValidationConfig {
     /** Enable structure validation. Default: true */
     enabled?: boolean;
@@ -22,12 +33,18 @@ export interface TypedApiExperimentalConfig {
     /** Maximum request body size for typed API endpoints in bytes. Default: 1MB */
     bodySizeLimitBytes?: number;
 }
+export interface CacheComponentsExperimentalConfig {
+    /** Enable `use cache` server cache components. Default: false */
+    enabled?: boolean;
+}
 export interface ExperimentalConfig {
     typedApi?: TypedApiExperimentalConfig;
+    cacheComponents?: CacheComponentsExperimentalConfig;
 }
 export interface VistaConfig {
     images?: ImageConfig;
     react?: any;
+    engine?: VistaEngineConfig | VistaEngineVariant | VistaEngineAlias;
     server?: {
         port?: number;
     };
@@ -38,14 +55,20 @@ export interface VistaConfig {
 }
 export declare const defaultStructureValidationConfig: Required<StructureValidationConfig>;
 export declare const defaultTypedApiConfig: Required<TypedApiExperimentalConfig>;
+export declare const defaultCacheComponentsConfig: Required<CacheComponentsExperimentalConfig>;
 export declare const defaultConfig: VistaConfig;
 /**
  * Resolve the effective structure validation config merging user overrides.
  */
 export declare function resolveStructureValidationConfig(config: VistaConfig): Required<StructureValidationConfig>;
 export type ResolvedTypedApiConfig = Required<TypedApiExperimentalConfig>;
+export type ResolvedCacheComponentsConfig = Required<CacheComponentsExperimentalConfig>;
+export declare function resolveEngineVariant(config: VistaConfig, env?: NodeJS.ProcessEnv): VistaEngineVariant;
+export declare function applyEngineVariantToEnv(variant: VistaEngineVariant, env?: NodeJS.ProcessEnv): VistaEngineVariant;
+export declare function resolveAndApplyEngineVariant(config: VistaConfig, env?: NodeJS.ProcessEnv): VistaEngineVariant;
 /**
  * Resolve and sanitize experimental typed API config.
  */
 export declare function resolveTypedApiConfig(config: VistaConfig): ResolvedTypedApiConfig;
+export declare function resolveCacheComponentsConfig(config: VistaConfig): ResolvedCacheComponentsConfig;
 export declare function loadConfig(cwd?: string): VistaConfig;
