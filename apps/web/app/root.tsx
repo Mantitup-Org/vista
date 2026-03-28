@@ -115,7 +115,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <ThemeScript defaultTheme="system" />
+        <ThemeScript defaultTheme="dark" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
@@ -125,7 +125,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
         suppressHydrationWarning
       >
-        <ThemeProvider defaultTheme="system">
+        <ThemeProvider defaultTheme="dark">
           <div className="flex min-h-screen flex-col">
             <Navbar />
             {children}

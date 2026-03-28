@@ -25,7 +25,7 @@ export function ThemeToggle({ compact = false, className }: ThemeToggleProps) {
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border border-border/80 bg-panel-elevated/90 p-1 shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur',
+        'inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur',
         className
       )}
       aria-label="Theme switcher"
@@ -42,8 +42,8 @@ export function ThemeToggle({ compact = false, className }: ThemeToggleProps) {
             className={cn(
               'inline-flex items-center justify-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition-colors',
               isActive
-                ? 'bg-foreground text-background'
-                : 'text-muted-foreground hover:bg-background/80 hover:text-foreground',
+                ? 'bg-white text-black'
+                : 'text-zinc-400 hover:bg-white/10 hover:text-white',
               compact && 'px-2.5'
             )}
             aria-pressed={isActive}
