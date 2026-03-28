@@ -121,10 +121,21 @@ async function stopServer(child) {
     return;
   }
 
-  child.kill('SIGTERM');
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    child.kill('SIGTERM');
+  }
+
   await new Promise((resolve) => {
     const timer = setTimeout(() => {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      if (child.exitCode === null) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }
       resolve();
     }, 3000);
     child.once('exit', () => {
@@ -147,6 +158,7 @@ async function startServer(engineVariant, port) {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: process.platform !== 'win32',
   });
 
   let output = '';

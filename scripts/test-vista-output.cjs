@@ -124,6 +124,7 @@ async function startServer(appDir, variant, port) {
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: process.platform !== 'win32',
   });
 
   let output = '';
@@ -148,10 +149,29 @@ async function stopServer(child) {
     return;
   }
 
-  child.kill('SIGTERM');
+  if (process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      child.kill('SIGTERM');
+    }
+  } else {
+    child.kill('SIGTERM');
+  }
+
   await new Promise((resolve) => {
     const timer = setTimeout(() => {
-      child.kill('SIGKILL');
+      if (child.exitCode === null) {
+        try {
+          if (process.platform !== 'win32') {
+            process.kill(-child.pid, 'SIGKILL');
+          } else {
+            child.kill('SIGKILL');
+          }
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }
       resolve();
     }, 5000);
     child.once('exit', () => {
