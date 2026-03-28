@@ -1,6 +1,6 @@
 # My Vista App
 
-Built with [Vista.js](https://github.com/vistagen/Vista-Js) — the React framework powered by Rust.
+Built with [Vista.js](https://github.com/vistakit/Vista-Js) — the React framework for visionaries.
 
 Selected engine for this app: `__VISTA_ENGINE__`
 
@@ -95,6 +95,6 @@ experimental: {
 
 ## Learn More
 
-- [Vista.js GitHub](https://github.com/vistagen/Vista-Js)
+- [Vista.js GitHub](https://github.com/vistakit/Vista-Js)
 - [React Server Components](https://react.dev/reference/rsc/server-components)
 - [Tailwind CSS v4](https://tailwindcss.com)

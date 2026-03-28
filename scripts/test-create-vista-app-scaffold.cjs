@@ -60,6 +60,10 @@ function assertNoTemplateTokens(projectDir) {
   assert(!indexSource.includes('__VISTA_'), 'index.tsx should not contain unreplaced template tokens');
 }
 
+function assertThemeFiles(projectDir) {
+  assert(fs.existsSync(path.join(projectDir, 'utils', 'theme-toggle.tsx')));
+}
+
 async function main() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-create-app-'));
 
@@ -87,9 +91,14 @@ async function main() {
     assertEngineConfig(defaultProject, 'default');
     assertReadme(defaultProject, 'default', 'disabled');
     assertNoTemplateTokens(defaultProject);
+    assertThemeFiles(defaultProject);
     const defaultGitignore = fs.readFileSync(path.join(defaultProject, '.gitignore'), 'utf8');
     assert(!defaultGitignore.includes('.next/'), 'generated .gitignore should not contain .next/');
+    const defaultRoot = fs.readFileSync(path.join(defaultProject, 'app', 'root.tsx'), 'utf8');
     const defaultIndex = fs.readFileSync(path.join(defaultProject, 'app', 'index.tsx'), 'utf8');
+    assert(defaultRoot.includes("from 'vista/theme'"));
+    assert(defaultRoot.includes("ThemeScript defaultTheme=\"system\""));
+    assert(defaultRoot.includes("ThemeProvider defaultTheme=\"system\""));
     assert(!defaultIndex.includes('blur-[120px]'), 'default starter should not include flashpack spotlight styling');
     assert(
       defaultIndex.includes("import Image from 'vista/image';"),
@@ -99,7 +108,8 @@ async function main() {
       defaultIndex.includes('Start by editing') &&
         defaultIndex.includes('Stable default path') &&
         defaultIndex.includes('Config-first workflow') &&
-        defaultIndex.includes('Open env guide'),
+        defaultIndex.includes('Open env guide') &&
+        defaultIndex.includes('ThemeToggle'),
       'default starter should include the polished default starter sections'
     );
 
@@ -109,18 +119,19 @@ async function main() {
     assertEngineConfig(flashpackProject, 'flashpack');
     assertReadme(flashpackProject, 'flashpack', 'enabled');
     assertNoTemplateTokens(flashpackProject);
+    assertThemeFiles(flashpackProject);
     const flashpackRoot = fs.readFileSync(path.join(flashpackProject, 'app', 'root.tsx'), 'utf8');
     const flashpackIndex = fs.readFileSync(path.join(flashpackProject, 'app', 'index.tsx'), 'utf8');
+    assert(flashpackRoot.includes("from 'vista/theme'"));
     assert(
-      flashpackRoot.includes(
-        'className={`${geistSans.variable} ${geistMono.variable} min-h-screen overflow-x-hidden bg-black text-zinc-100 antialiased`}'
-      ),
-      'flashpack starter should inherit the dark body shell'
+      flashpackRoot.includes("ThemeScript defaultTheme=\"dark\"") &&
+        flashpackRoot.includes("ThemeProvider defaultTheme=\"dark\""),
+      'flashpack starter should default to the dark theme flow'
     );
     assert(
       flashpackIndex.includes('blur-[110px]') &&
         flashpackIndex.includes('bg-primary') &&
-        flashpackIndex.includes('invert opacity-95') &&
+        flashpackIndex.includes('dark:invert') &&
         flashpackIndex.includes('Stay in flow while the app keeps moving.'),
       'flashpack starter should include the orange spotlight accent'
     );

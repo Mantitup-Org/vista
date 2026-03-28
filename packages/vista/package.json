@@ -1,6 +1,6 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.2.14",
+  "version": "0.2.15",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -67,6 +67,10 @@
     "./font/local": {
       "types": "./dist/font/local.d.ts",
       "default": "./dist/font/local.js"
+    },
+    "./theme": {
+      "types": "./dist/theme/index.d.ts",
+      "default": "./dist/theme/index.js"
     },
     "./head": {
       "react-server": "./dist/client/head.react-server.js",
