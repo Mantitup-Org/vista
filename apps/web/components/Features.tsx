@@ -1,29 +1,21 @@
 import { features } from '../data/features';
 
 export default function Features() {
-    const borderColor = 'color-mix(in srgb, #ffffff 18%, transparent)';
-    const panelBackground = 'color-mix(in srgb, #000000 92%, #ffffff 8%)';
-    const bodyColor = 'color-mix(in srgb, #ffffff 72%, transparent)';
-
     return (
-        <section className="min-h-screen flex flex-col justify-center py-24 px-4 w-full bg-black text-zinc-100">
+        <section className="flex min-h-screen w-full flex-col justify-center bg-background px-4 py-24 text-foreground">
             <div className="max-w-7xl mx-auto w-full">
                 <h2 className="text-3xl md:text-5xl font-normal mb-16 text-center tracking-tight">
                     What ships in Vista now
                 </h2>
 
-                <div
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 border-t border-l border-dashed"
-                    style={{ borderColor, backgroundColor: panelBackground }}
-                >
+                <div className="grid grid-cols-1 border-l border-t border-dashed border-foreground/12 bg-foreground/[0.02] md:grid-cols-2 lg:grid-cols-4 dark:bg-white/[0.03]">
                     {features.map((feature, i) => (
                         <div
                             key={i}
-                            className="p-8 border-r border-b border-dashed transition-colors hover:bg-zinc-900/70"
-                            style={{ borderColor }}
+                            className="border-b border-r border-dashed border-foreground/12 p-8 transition-colors hover:bg-foreground/[0.04] dark:hover:bg-white/[0.05]"
                         >
                             <h3 className="text-lg font-medium mb-3">{feature.title}</h3>
-                            <p className="text-sm leading-relaxed" style={{ color: bodyColor }}>
+                            <p className="text-sm leading-relaxed text-foreground/72">
                                 {feature.description}
                             </p>
                         </div>

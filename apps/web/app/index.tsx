@@ -5,16 +5,16 @@ import CopyCommand from '@/components/CopyCommand';
 
 export default function Index() {
     return (
-        <main className="flex min-h-screen flex-col items-center relative overflow-hidden bg-black selection:bg-primary/20 selection:text-primary pt-16">
+        <main className="relative flex min-h-screen flex-col items-center overflow-hidden bg-background pt-16 text-foreground selection:bg-primary/20 selection:text-primary">
             <div
                 className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary rounded-full blur-[120px] opacity-15 pointer-events-none translate-x-1/3 -translate-y-1/3"
             />
 
             <div className="z-10 text-center max-w-5xl px-4 py-24 md:py-48">
-                <h1 className="text-5xl md:text-8xl font-normal tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white to-white/70 mb-6 pb-2">
-                    The React Framework for <span className="text-white">Visionaries</span>.
+                <h1 className="mb-6 bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text pb-2 text-5xl font-normal tracking-tighter text-transparent md:text-8xl">
+                    The React Framework for <span className="text-foreground">Visionaries</span>.
                 </h1>
-                <p className="text-lg md:text-xl text-zinc-400 max-w-2xl mx-auto">
+                <p className="mx-auto max-w-2xl text-lg text-foreground/72 md:text-xl">
                     Built for the <span className="text-primary">creators of tomorrow</span>, Vista provides a modern, optimized foundation for your ideas. Perfect for learning, experimenting, and shipping.
                 </p>
 

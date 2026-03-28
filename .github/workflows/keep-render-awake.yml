@@ -27,15 +27,17 @@ jobs:
           fi
 
           if [ -z "$TARGET_URL" ]; then
-            echo "Missing repository secret."
+            echo "No keep-awake URL configured. Skipping ping."
             echo "Set one of: KEEP_AWAKE_URL, APP_URL, RENDER_APP_URL"
-            echo "Example value: https://your-app.example.com"
-            exit 1
+            echo "SHOULD_PING=false" >> "$GITHUB_ENV"
+            exit 0
           fi
 
+          echo "SHOULD_PING=true" >> "$GITHUB_ENV"
           echo "TARGET_URL=${TARGET_URL%/}" >> "$GITHUB_ENV"
 
       - name: Ping deployed app
+        if: env.SHOULD_PING == 'true'
         run: |
           status_code=$(curl -sS -L -o /dev/null -w "%{http_code}" "$TARGET_URL/")
           echo "Target status code: $status_code"
