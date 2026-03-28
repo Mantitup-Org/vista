@@ -1,29 +1,29 @@
 import { features } from '../data/features';
 
 export default function Features() {
-    return (
-        <section className="w-full px-4 py-20 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-7xl">
-                <div className="mx-auto max-w-3xl text-center">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary">
-                        Framework surface
-                    </p>
-                    <h2 className="mt-4 text-3xl font-semibold tracking-tight text-foreground md:text-5xl">
-                    What ships in Vista now
-                    </h2>
-                    <p className="mt-4 text-base leading-8 text-muted-foreground md:text-lg">
-                        The current framework surface is already shaped for real projects, with room to go deeper as the engine matures.
-                    </p>
-                </div>
+    const borderColor = 'color-mix(in srgb, #ffffff 18%, transparent)';
+    const panelBackground = 'color-mix(in srgb, #000000 92%, #ffffff 8%)';
+    const bodyColor = 'color-mix(in srgb, #ffffff 72%, transparent)';
 
-                <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    return (
+        <section className="min-h-screen flex flex-col justify-center py-24 px-4 w-full bg-black text-zinc-100">
+            <div className="max-w-7xl mx-auto w-full">
+                <h2 className="text-3xl md:text-5xl font-normal mb-16 text-center tracking-tight">
+                    What ships in Vista now
+                </h2>
+
+                <div
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 border-t border-l border-dashed"
+                    style={{ borderColor, backgroundColor: panelBackground }}
+                >
                     {features.map((feature, i) => (
                         <div
                             key={i}
-                            className="rounded-[1.7rem] border border-border bg-panel-elevated/82 p-6 shadow-[0_18px_35px_rgba(15,23,42,0.05)] transition-transform duration-200 hover:-translate-y-1"
+                            className="p-8 border-r border-b border-dashed transition-colors hover:bg-zinc-900/70"
+                            style={{ borderColor }}
                         >
-                            <h3 className="mb-3 text-lg font-medium text-foreground">{feature.title}</h3>
-                            <p className="text-sm leading-7 text-muted-foreground">
+                            <h3 className="text-lg font-medium mb-3">{feature.title}</h3>
+                            <p className="text-sm leading-relaxed" style={{ color: bodyColor }}>
                                 {feature.description}
                             </p>
                         </div>
