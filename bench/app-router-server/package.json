@@ -1,0 +1,21 @@
+{
+  "name": "bench-app-router-server",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "webpack-bundle-analyzer": "^4.6.1",
+    "webpack-stats-plugin": "^1.1.0",
+    "vista": "file:../../packages/vista"
+  },
+  "scripts": {
+    "dev-flashpack": "vista dev",
+    "dev-default": "vista dev --legacy",
+    "build-flashpack": "vista build",
+    "build-default": "vista build --legacy",
+    "start-flashpack": "vista start",
+    "start-default": "vista start --legacy",
+    "build-application": "vista build",
+    "start-application": "vista start",
+    "start": "vista start"
+  }
+}

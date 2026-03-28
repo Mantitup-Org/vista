@@ -25,7 +25,7 @@ export interface StructureValidationResult {
 export interface RouteGraphNode {
     segment: string;
     pattern: string;
-    kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group' | 'reserved-internal';
+    kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group' | 'parallel' | 'interception' | 'reserved-internal';
     hasPage: boolean;
     hasLayout: boolean;
     children: RouteGraphNode[];

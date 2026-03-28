@@ -1,0 +1,8 @@
+[package]
+name = "vista-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core Rust contracts for Vista runtime and RSC"
+
+[dependencies]
+serde = { workspace = true }

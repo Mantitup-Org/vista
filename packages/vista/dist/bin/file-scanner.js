@@ -116,8 +116,16 @@ function classifySegment(segment) {
         return 'optional-catch-all';
     if (segment.startsWith('[...'))
         return 'catch-all';
+    if (segment.startsWith('(.)') ||
+        segment.startsWith('(..)') ||
+        segment.startsWith('(..)(..)') ||
+        segment.startsWith('(...)')) {
+        return 'interception';
+    }
     if (segment.startsWith('(') && segment.endsWith(')'))
         return 'group';
+    if (segment.startsWith('@'))
+        return 'parallel';
     if (segment.startsWith('['))
         return 'dynamic';
     return 'static';

@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core graph and pipeline contracts for Flashpack"
+
+[dependencies]
+serde = { workspace = true }

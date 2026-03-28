@@ -1,0 +1,17 @@
+{
+  "name": "stats-app",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "webpack-bundle-analyzer": "^4.6.1",
+    "webpack-stats-plugin": "^1.1.0"
+  },
+  "scripts": {
+    "build": "vista build",
+    "dev": "vista dev",
+    "start": "vista start",
+    "start-flashpack": "vista start",
+    "start-default": "vista start --legacy",
+    "start-application": "vista start"
+  }
+}

@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-nodejs"
+version = "0.1.0"
+edition = "2021"
+description = "Node.js integration layer for Flashpack"
+
+[dependencies]
+flashpack-node = { path = "../flashpack-node" }

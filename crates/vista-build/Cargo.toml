@@ -1,0 +1,9 @@
+[package]
+name = "vista-build"
+version = "0.1.0"
+edition = "2021"
+description = "Build orchestration crate for Vista Rust pipeline"
+
+[dependencies]
+vista-core = { path = "../vista-core" }
+flashpack = { path = "../../flashpack/crates/flashpack" }

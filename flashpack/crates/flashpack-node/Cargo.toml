@@ -1,0 +1,9 @@
+[package]
+name = "flashpack-node"
+version = "0.1.0"
+edition = "2021"
+description = "Node runtime bridge for Flashpack"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }
+flashpack-resolve = { path = "../flashpack-resolve" }

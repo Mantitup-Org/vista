@@ -59,3 +59,17 @@ Render automatically:
 - Redeploys on every push to `main`
 - Provides free SSL
 - Shows logs in the dashboard
+
+---
+
+## Keep Free Render Service Awake
+
+This repo includes a scheduled GitHub Action at `.github/workflows/keep-render-awake.yml`
+that sends a request every 10 minutes to keep the Render instance warm.
+
+1. Open your GitHub repository settings.
+2. Go to **Secrets and variables** -> **Actions**.
+3. Add a repository secret:
+   - `RENDER_APP_URL` = your live Render URL (for example `https://vista-web-xxxx.onrender.com`)
+
+You can also run the same workflow manually from the **Actions** tab with **workflow_dispatch**.

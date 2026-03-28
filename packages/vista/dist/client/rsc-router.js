@@ -58,6 +58,43 @@ function getCreateFromFetch() {
     }
     return _createFromFetch;
 }
+function ensureRuntimeTraceStore() {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const existing = window.__VISTA_RUNTIME_TRACE__;
+    if (existing && typeof existing.pushEvent === 'function' && Array.isArray(existing.events)) {
+        return existing;
+    }
+    const store = {
+        events: [],
+        lastEvent: null,
+        pushEvent(type, detail = {}) {
+            const entry = {
+                type,
+                detail,
+                at: Date.now(),
+            };
+            store.events.push(entry);
+            if (store.events.length > 60) {
+                store.events.shift();
+            }
+            store.lastEvent = entry;
+            return entry;
+        },
+    };
+    window.__VISTA_RUNTIME_TRACE__ = store;
+    return store;
+}
+function recordRuntimeTrace(type, detail = {}) {
+    return ensureRuntimeTraceStore()?.pushEvent(type, detail) ?? null;
+}
+function dispatchRuntimeEvent(type, detail = {}) {
+    if (typeof document === 'undefined') {
+        return;
+    }
+    document.dispatchEvent(new CustomEvent(type, { detail }));
+}
 exports.RSCRouterContext = React.createContext(null);
 // ---------------------------------------------------------------------------
 // Flight cache — simple in-memory LRU cache keyed by pathname+search
@@ -188,6 +225,58 @@ function RSCRouter({ initialResponse, initialPathname }) {
         refresh,
         isPending,
     }), [pathname, searchParams, push, replace, back, forward, prefetch, refresh, isPending]);
+    React.useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        const bridge = {
+            refresh,
+            prefetch,
+            resume: (url) => {
+                const parsed = new URL(url, window.location.origin);
+                const nextPath = parsed.pathname;
+                const nextSearch = parsed.search;
+                const nextUrl = `${nextPath}${nextSearch}`;
+                const nextResponse = fetchFlight(nextPath, nextSearch);
+                document.documentElement.setAttribute('data-vista-ppr', 'flight-resuming');
+                recordRuntimeTrace('rsc-resume-start', { url: nextUrl });
+                dispatchRuntimeEvent('vista:rsc-resume-start', { url: nextUrl });
+                startTransition(() => {
+                    setPathname(nextPath);
+                    setSearchParams(new URLSearchParams(nextSearch));
+                    setFlightResponse(nextResponse);
+                });
+                Promise.resolve(nextResponse)
+                    .then(() => {
+                    recordRuntimeTrace('rsc-resume-complete', { url: nextUrl });
+                    dispatchRuntimeEvent('vista:rsc-resume-complete', { url: nextUrl });
+                })
+                    .catch((error) => {
+                    const message = error && typeof error === 'object' && 'message' in error
+                        ? String(error.message || error)
+                        : String(error || 'Unknown RSC resume error');
+                    recordRuntimeTrace('rsc-resume-error', { url: nextUrl, message });
+                    dispatchRuntimeEvent('vista:rsc-resume-error', { url: nextUrl, message });
+                });
+            },
+            getState: () => ({
+                pathname,
+                search: searchParams.toString() ? `?${searchParams.toString()}` : '',
+                isPending,
+            }),
+        };
+        window.__VISTA_RSC_ROUTER__ = bridge;
+        recordRuntimeTrace('rsc-router-ready', {
+            pathname,
+            search: searchParams.toString() ? `?${searchParams.toString()}` : '',
+        });
+        document.dispatchEvent(new CustomEvent('vista:rsc-router-ready'));
+        return () => {
+            if (window.__VISTA_RSC_ROUTER__ === bridge) {
+                delete window.__VISTA_RSC_ROUTER__;
+            }
+        };
+    }, [pathname, searchParams, isPending, refresh, prefetch]);
     return ((0, jsx_runtime_1.jsx)(exports.RSCRouterContext.Provider, { value: contextValue, children: (0, jsx_runtime_1.jsx)(RSCRoot, { response: flightResponse }) }));
 }
 // ---------------------------------------------------------------------------

@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-css"
+version = "0.1.0"
+edition = "2021"
+description = "CSS pipeline primitives for Flashpack"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }

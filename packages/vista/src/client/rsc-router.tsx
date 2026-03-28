@@ -69,6 +69,90 @@ export interface NavigationOptions {
   scroll?: boolean;
 }
 
+declare global {
+  interface Window {
+    __VISTA_RUNTIME_TRACE__?: {
+      events: Array<{
+        type: string;
+        detail: Record<string, unknown>;
+        at: number;
+      }>;
+      lastEvent: {
+        type: string;
+        detail: Record<string, unknown>;
+        at: number;
+      } | null;
+      pushEvent: (type: string, detail?: Record<string, unknown>) => {
+        type: string;
+        detail: Record<string, unknown>;
+        at: number;
+      };
+    };
+    __VISTA_RSC_ROUTER__?: {
+      refresh: () => void;
+      prefetch: (url: string) => void;
+      resume: (url: string) => void;
+      getState: () => {
+        pathname: string;
+        search: string;
+        isPending: boolean;
+      };
+    };
+  }
+}
+
+function ensureRuntimeTraceStore() {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const existing = window.__VISTA_RUNTIME_TRACE__;
+  if (existing && typeof existing.pushEvent === 'function' && Array.isArray(existing.events)) {
+    return existing;
+  }
+
+  const store = {
+    events: [] as Array<{
+      type: string;
+      detail: Record<string, unknown>;
+      at: number;
+    }>,
+    lastEvent: null as {
+      type: string;
+      detail: Record<string, unknown>;
+      at: number;
+    } | null,
+    pushEvent(type: string, detail: Record<string, unknown> = {}) {
+      const entry = {
+        type,
+        detail,
+        at: Date.now(),
+      };
+      store.events.push(entry);
+      if (store.events.length > 60) {
+        store.events.shift();
+      }
+      store.lastEvent = entry;
+      return entry;
+    },
+  };
+
+  window.__VISTA_RUNTIME_TRACE__ = store;
+  return store;
+}
+
+function recordRuntimeTrace(type: string, detail: Record<string, unknown> = {}) {
+  return ensureRuntimeTraceStore()?.pushEvent(type, detail) ?? null;
+}
+
+function dispatchRuntimeEvent(type: string, detail: Record<string, unknown> = {}) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  document.dispatchEvent(new CustomEvent(type, { detail }));
+}
+
 export const RSCRouterContext = React.createContext<RSCNavigationState | null>(null);
 
 // ---------------------------------------------------------------------------
@@ -257,6 +341,65 @@ export function RSCRouter({ initialResponse, initialPathname }: RSCRouterProps) 
     }),
     [pathname, searchParams, push, replace, back, forward, prefetch, refresh, isPending]
   );
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const bridge = {
+      refresh,
+      prefetch,
+      resume: (url: string) => {
+        const parsed = new URL(url, window.location.origin);
+        const nextPath = parsed.pathname;
+        const nextSearch = parsed.search;
+        const nextUrl = `${nextPath}${nextSearch}`;
+        const nextResponse = fetchFlight(nextPath, nextSearch);
+
+        document.documentElement.setAttribute('data-vista-ppr', 'flight-resuming');
+        recordRuntimeTrace('rsc-resume-start', { url: nextUrl });
+        dispatchRuntimeEvent('vista:rsc-resume-start', { url: nextUrl });
+        startTransition(() => {
+          setPathname(nextPath);
+          setSearchParams(new URLSearchParams(nextSearch));
+          setFlightResponse(nextResponse);
+        });
+
+        Promise.resolve(nextResponse)
+          .then(() => {
+            recordRuntimeTrace('rsc-resume-complete', { url: nextUrl });
+            dispatchRuntimeEvent('vista:rsc-resume-complete', { url: nextUrl });
+          })
+          .catch((error) => {
+            const message =
+              error && typeof error === 'object' && 'message' in error
+                ? String((error as any).message || error)
+                : String(error || 'Unknown RSC resume error');
+            recordRuntimeTrace('rsc-resume-error', { url: nextUrl, message });
+            dispatchRuntimeEvent('vista:rsc-resume-error', { url: nextUrl, message });
+          });
+      },
+      getState: () => ({
+        pathname,
+        search: searchParams.toString() ? `?${searchParams.toString()}` : '',
+        isPending,
+      }),
+    };
+
+    window.__VISTA_RSC_ROUTER__ = bridge;
+    recordRuntimeTrace('rsc-router-ready', {
+      pathname,
+      search: searchParams.toString() ? `?${searchParams.toString()}` : '',
+    });
+    document.dispatchEvent(new CustomEvent('vista:rsc-router-ready'));
+
+    return () => {
+      if (window.__VISTA_RSC_ROUTER__ === bridge) {
+        delete window.__VISTA_RSC_ROUTER__;
+      }
+    };
+  }, [pathname, searchParams, isPending, refresh, prefetch]);
 
   return (
     <RSCRouterContext.Provider value={contextValue}>

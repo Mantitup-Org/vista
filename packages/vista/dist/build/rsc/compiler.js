@@ -19,6 +19,7 @@ const fs_1 = __importDefault(require("fs"));
 const manifest_1 = require("../manifest");
 const client_manifest_1 = require("./client-manifest");
 const server_manifest_1 = require("./server-manifest");
+const react_client_reference_manifest_1 = require("./react-client-reference-manifest");
 const constants_1 = require("../../constants");
 // Find module path (handles monorepo hoisting)
 const findModulePath = (moduleName, cwd) => {
@@ -59,7 +60,7 @@ function resolveFromWorkspace(specifier, cwd) {
  * Output goes to .vista/server/ and is NEVER sent to the client.
  */
 function createServerWebpackConfig(options) {
-    const { cwd, isDev, vistaDirs, buildId } = options;
+    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default' } = options;
     const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -119,7 +120,9 @@ function createServerWebpackConfig(options) {
                 callback();
             },
         ],
-        cache: isDev ? (0, manifest_1.getWebpackCacheConfig)(vistaDirs.root, buildId, 'server-development') : false,
+        cache: isDev
+            ? (0, manifest_1.getWebpackCacheConfig)(vistaDirs.root, buildId, 'server-development', engineVariant, cwd)
+            : false,
         resolve: {
             extensions: ['.tsx', '.ts', '.jsx', '.js'],
             modules: [path_1.default.resolve(cwd, 'node_modules'), 'node_modules'],
@@ -175,6 +178,8 @@ function createServerWebpackConfig(options) {
         plugins: [
             new webpack_1.default.DefinePlugin({
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+                'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
+                'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
                 [constants_1.BUILD_ID_DEFINE]: JSON.stringify(buildId),
                 [constants_1.SERVER_DEFINE]: 'true',
             }),
@@ -190,7 +195,7 @@ function createServerWebpackConfig(options) {
  * Server components are replaced with client references.
  */
 function createClientWebpackConfig(options) {
-    const { cwd, isDev, vistaDirs, buildId, clientReferenceFiles = [] } = options;
+    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default', clientReferenceFiles = [] } = options;
     const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -343,14 +348,26 @@ function createClientWebpackConfig(options) {
             // and preloadModule with the chunks array).
             {
                 apply(compiler) {
-                    compiler.hooks.make.tap('VistaSSRManifestPatch', (compilation) => {
+                    compiler.hooks.make.tap('VistaFlightManifestPatch', (compilation) => {
                         compilation.hooks.processAssets.tap({
-                            name: 'VistaSSRManifestPatch',
+                            name: 'VistaFlightManifestPatch',
                             // Run after the Flight plugin (REPORT stage) has emitted assets
                             stage: webpack_1.default.Compilation.PROCESS_ASSETS_STAGE_REPORT + 1,
                         }, () => {
+                            const clientAssetName = '../../react-client-manifest.json';
                             const ssrAssetName = '../../react-server-manifest.json';
+                            const clientAsset = compilation.getAsset(clientAssetName);
                             const ssrAsset = compilation.getAsset(ssrAssetName);
+                            if (clientAsset) {
+                                try {
+                                    const manifest = JSON.parse(clientAsset.source.source().toString());
+                                    const normalized = (0, react_client_reference_manifest_1.normalizeReactClientReferenceManifest)(manifest);
+                                    compilation.updateAsset(clientAssetName, new webpack_1.default.sources.RawSource(JSON.stringify(normalized, null, 2), false));
+                                }
+                                catch {
+                                    // If parsing fails, leave the asset as-is
+                                }
+                            }
                             if (!ssrAsset)
                                 return;
                             try {
@@ -372,6 +389,7 @@ function createClientWebpackConfig(options) {
                                             }
                                         }
                                     }
+                                    (0, react_client_reference_manifest_1.normalizeReactServerConsumerManifest)(manifest);
                                     compilation.updateAsset(ssrAssetName, new webpack_1.default.sources.RawSource(JSON.stringify(manifest, null, 2), false));
                                 }
                             }
@@ -384,6 +402,8 @@ function createClientWebpackConfig(options) {
             },
             new webpack_1.default.DefinePlugin({
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+                'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
+                'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
                 [constants_1.BUILD_ID_DEFINE]: JSON.stringify(buildId),
                 [constants_1.SERVER_DEFINE]: 'false',
             }),

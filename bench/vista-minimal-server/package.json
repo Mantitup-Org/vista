@@ -1,0 +1,9 @@
+{
+  "name": "vista-minimal-server",
+  "description": "Minimal server for Vista for benchmarking/perf analysis purposes.",
+  "bin": "./bin/minimal-server.js",
+  "peerDependencies": {
+    "vista": "*"
+  },
+  "scripts": {}
+}

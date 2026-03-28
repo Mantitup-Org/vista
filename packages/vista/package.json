@@ -1,6 +1,6 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -92,6 +92,18 @@
     "./client/server-actions": {
       "types": "./dist/client/server-actions.d.ts",
       "default": "./dist/client/server-actions.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./server/runtime-actions": {
+      "types": "./dist/server/runtime-actions.d.ts",
+      "default": "./dist/server/runtime-actions.js"
+    },
+    "./cache": {
+      "types": "./dist/server/cache.d.ts",
+      "default": "./dist/server/cache.js"
     },
     "./package.json": "./package.json"
   },

@@ -29,6 +29,8 @@ const structure_log_1 = require("../server/structure-log");
 const devtools_indicator_snippet_1 = require("./devtools-indicator-snippet");
 const dev_error_overlay_snippet_1 = require("./dev-error-overlay-snippet");
 const deploy_output_1 = require("./deploy-output");
+const module_boundary_validator_1 = require("../server/module-boundary-validator");
+const standalone_1 = require("../build/standalone");
 const _debug = !!process.env.VISTA_DEBUG;
 /**
  * Run PostCSS for CSS compilation
@@ -243,7 +245,7 @@ ${isDev
       if (indicator && typeof indicator.pulse === 'function') {
         indicator.pulse('hmr', 460);
       }
-      setTimeout(() => window.location.reload(), 180);
+      setTimeout(() => window.location.reload(), 80);
     } else {
       try {
         const msg = JSON.parse(e.data);
@@ -310,7 +312,11 @@ async function buildRSC(watch = false) {
     // Pre-build Structure Validation
     // ========================================================================
     const vistaConfig = (0, config_1.loadConfig)(cwd);
+    const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const structureConfig = (0, config_1.resolveStructureValidationConfig)(vistaConfig);
+    const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)(vistaConfig);
+    if (_debug)
+        console.log(`[vista:build] Engine variant: ${engineVariant}`);
     if (structureConfig.enabled) {
         const result = (0, structure_validator_1.validateAppStructure)({ cwd });
         (0, structure_log_1.logValidationResult)(result, structureConfig.logLevel);
@@ -370,25 +376,25 @@ async function buildRSC(watch = false) {
             console.log('');
         }
         // Check for errors (using client hooks without 'use client')
-        const scanErrors = [
-            ...scanResult.errors,
-            ...(componentsScanResult?.errors || []).map((error) => ({
-                ...error,
-                file: `components/${error.file}`,
-            })),
-        ];
+        const scanErrors = (0, module_boundary_validator_1.validateModuleBoundaries)({
+            appDir,
+            extraRoots: fs_1.default.existsSync(componentsDir) ? [componentsDir] : [],
+            cacheComponentsEnabled: cacheComponentsConfig.enabled,
+        }).issues;
         if (scanErrors.length > 0) {
-            console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer Component Violations\x1b[0m');
+            console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer/Segment Violations\x1b[0m');
             console.log('');
             for (const error of scanErrors) {
-                console.log(`\x1b[31m✗\x1b[0m ${error.file}`);
-                console.log(`  Using: \x1b[33m${error.hooks.slice(0, 3).join(', ')}\x1b[0m in a Server Component`);
+                console.log(`\x1b[31m✗\x1b[0m ${path_1.default.relative(cwd, error.filePath)}`);
+                console.log(`  ${error.message}`);
                 console.log('');
-                console.log(`  \x1b[36mTo fix:\x1b[0m Add \x1b[33m'use client'\x1b[0m at the top of the file`);
-                console.log('');
+                if (error.fix) {
+                    console.log(`  \x1b[36mTo fix:\x1b[0m ${error.fix}`);
+                    console.log('');
+                }
             }
             if (!watch) {
-                console.log('\x1b[31mBuild failed due to Server Component violations.\x1b[0m');
+                console.log('\x1b[31mBuild failed due to server/segment violations.\x1b[0m');
                 process.exit(1);
             }
         }
@@ -424,6 +430,11 @@ async function buildRSC(watch = false) {
         pagePath: route.pagePath,
         type: route.type,
     })));
+    (0, manifest_1.writeReservedVistaArtifacts)(vistaDirs.root, {
+        buildId,
+        engineVariant,
+        imagesConfig: vistaConfig.images,
+    });
     // Generate client entry
     generateRSCClientEntry(cwd, vistaDirs.root, watch);
     // Create webpack configs
@@ -432,6 +443,7 @@ async function buildRSC(watch = false) {
         isDev: watch,
         vistaDirs,
         buildId,
+        engineVariant,
         clientReferenceFiles,
     };
     // Build CSS
@@ -446,7 +458,9 @@ async function buildRSC(watch = false) {
         // plugin ran will skip the parser hook entirely, causing empty Flight
         // manifests.  Clearing on every dev-start is the safest approach –
         // first-compile is ~1s longer but guarantees correct manifests.
-        const cacheDir = path_1.default.join(vistaDirs.root, 'cache');
+        const cacheDir = engineVariant === 'flashpack'
+            ? path_1.default.join(cwd, constants_1.FLASH_DIR, 'cache', 'webpack')
+            : path_1.default.join(vistaDirs.root, 'cache');
         if (fs_1.default.existsSync(cacheDir)) {
             fs_1.default.rmSync(cacheDir, { recursive: true, force: true });
             if (_debug)
@@ -570,11 +584,19 @@ async function buildRSC(watch = false) {
         const prerenderManifestPath = path_1.default.join(vistaDirs.root, 'prerender-manifest.json');
         fs_1.default.writeFileSync(prerenderManifestPath, JSON.stringify(ssgResult.manifest, null, 2));
         console.log('[Vista JS RSC] Wrote prerender-manifest.json');
+        (0, standalone_1.generateStandaloneOutput)({
+            cwd,
+            vistaDir: vistaDirs.root,
+            buildId,
+            serverManifest,
+            debug: _debug,
+        });
         (0, deploy_output_1.generateDeploymentOutputs)({
             cwd,
             vistaDir: vistaDirs.root,
             debug: _debug,
         });
+        (0, manifest_1.pruneEmptyVistaDirectories)(vistaDirs.root);
         console.log('');
         console.log('╔══════════════════════════════════════════════════════════════╗');
         console.log('║                    Build Complete! 🎉                        ║');
@@ -583,7 +605,16 @@ async function buildRSC(watch = false) {
         console.log('  Output directory: .vista/');
         console.log('    ├── server/     (Server-side bundle - NEVER sent to client)');
         console.log('    ├── static/     (Client assets - only client components)');
-        console.log('    └── cache/      (Build cache for faster rebuilds)');
+        if (engineVariant === 'flashpack') {
+            console.log('    └── cache/      (metadata bridge to the active Flashpack cache)');
+            console.log('  Flashpack directory: .flash/');
+            console.log('    ├── cache/      (Flashpack runtime cache)');
+            console.log('    ├── graph/      (Rust pipeline graph snapshots)');
+            console.log('    └── logs/       (Flashpack phase logs)');
+        }
+        else {
+            console.log('    └── cache/      (Build cache for faster rebuilds)');
+        }
         console.log('');
         return { serverCompiler: null, clientCompiler: null };
     }

@@ -1,0 +1,7 @@
+[package]
+name = "flash-tasks-backend"
+version = "0.1.0"
+edition = "2021"
+description = "Backend contracts for Flash task execution"
+
+[dependencies]

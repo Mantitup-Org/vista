@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-trace-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Trace utility helpers for Flashpack diagnostics"
+
+[dependencies]

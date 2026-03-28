@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-test-utils"
+version = "0.1.0"
+edition = "2021"
+description = "Shared fixture helpers for Flashpack tests"
+
+[dependencies]

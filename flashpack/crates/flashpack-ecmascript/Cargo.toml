@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-ecmascript"
+version = "0.1.0"
+edition = "2021"
+description = "ECMAScript transforms and graph hooks for Flashpack"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }

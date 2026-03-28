@@ -2,11 +2,31 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { pathToFileURL } from 'url';
+import { PassThrough } from 'stream';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 import type { RouteEntry, ServerManifest } from '../build/rsc/server-manifest';
+import { normalizeReactClientReferenceManifest } from '../build/rsc/react-client-reference-manifest';
 import { resolveNotFoundComponent, resolveRootLayout } from './root-resolver';
 import { BUILD_DIR } from '../constants';
+import { installModuleCompileHook } from './module-compile-hook';
+import {
+  consumeRevalidatedPaths,
+  consumeRevalidatedTags,
+  runWithRequestContext,
+  setCurrentSegmentConfig,
+} from './request-context';
+import { resolveRegisteredServerReference } from './runtime-actions';
+import {
+  resolveConventionModule,
+  resolveDirectoryChain,
+  resolveNearestSegmentNotFoundPath,
+  resolveParallelSlotMatches,
+} from './app-router-runtime';
+import { installSegmentFetchPolicyShim } from './fetch-policy';
+import { resolveRuntimeProjectRoot } from './runtime-artifacts';
+import { loadConfig, resolveCacheComponentsConfig } from '../config';
+import { resolveVistaSourceRequest } from './vista-import-map';
 
 // NOTE: RouteErrorBoundary and RouteSuspense are 'use client' components.
 // Under --conditions react-server, React.Component is not available, so we
@@ -55,6 +75,10 @@ let originalCompile: any = null;
 let reactResolutionInstalled = false;
 let originalResolveFilename: any = null;
 const clientDirectiveCache = new Map<string, boolean>();
+
+function resolveVistaInternalRequest(request: string): string | null {
+  return resolveVistaSourceRequest(request, path.resolve(__dirname, '..'));
+}
 
 function parseCliArg(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -117,15 +141,24 @@ function clearProjectRequireCache(cwd: string): void {
 
 function setupTypeScriptRuntime(cwd: string): void {
   try {
-    const swcPath = require.resolve('@swc-node/register', { paths: [cwd] });
-    require(swcPath);
+    const swcRegisterPath = resolveFromWorkspace('@swc-node/register/register', cwd);
+    const typescriptPath = resolveFromWorkspace('typescript', cwd);
+    const { register } = require(swcRegisterPath) as { register: (options?: Record<string, any>) => void };
+    const ts = require(typescriptPath) as typeof import('typescript');
+    register({
+      module: ts.ModuleKind.CommonJS,
+      jsx: ts.JsxEmit.ReactJSX,
+      moduleResolution: ts.ModuleResolutionKind.Node16,
+      esModuleInterop: true,
+      allowJs: true,
+    });
     return;
   } catch {
     // fallback
   }
 
   try {
-    const tsNodePath = require.resolve('ts-node', { paths: [cwd] });
+    const tsNodePath = resolveFromWorkspace('ts-node', cwd);
     require(tsNodePath).register({
       transpileOnly: true,
       compilerOptions: {
@@ -133,6 +166,7 @@ function setupTypeScriptRuntime(cwd: string): void {
         jsx: 'react-jsx',
         moduleResolution: 'node16',
         esModuleInterop: true,
+        allowJs: true,
       },
     });
     return;
@@ -141,9 +175,9 @@ function setupTypeScriptRuntime(cwd: string): void {
   }
 
   try {
-    require.resolve('tsx', { paths: [cwd] });
+    const tsxPath = resolveFromWorkspace('tsx/cjs', cwd);
     // tsx/cjs registers the TypeScript loader for require()
-    require('tsx/cjs');
+    require(tsxPath);
     return;
   } catch {
     throw new Error(
@@ -153,7 +187,24 @@ function setupTypeScriptRuntime(cwd: string): void {
 }
 
 function hasClientBoundaryDirective(source: string): boolean {
-  const trimmed = source.trimStart();
+  let trimmed = source;
+  while (true) {
+    trimmed = trimmed.trimStart();
+    if (trimmed.startsWith('//')) {
+      const newlineIndex = trimmed.indexOf('\n');
+      trimmed = newlineIndex === -1 ? '' : trimmed.slice(newlineIndex + 1);
+      continue;
+    }
+    if (trimmed.startsWith('/*')) {
+      const commentEndIndex = trimmed.indexOf('*/');
+      if (commentEndIndex === -1) {
+        break;
+      }
+      trimmed = trimmed.slice(commentEndIndex + 2);
+      continue;
+    }
+    break;
+  }
   return trimmed.startsWith("'use client'") || trimmed.startsWith('"use client"');
 }
 
@@ -192,6 +243,8 @@ function installSingleReactResolution(): void {
     isMain: boolean,
     options: unknown
   ) {
+    const vistaResolvedPath = resolveVistaInternalRequest(request);
+    if (vistaResolvedPath) return vistaResolvedPath;
     if (request === 'react') return reactPath;
     if (request === 'react-dom') return reactDomPath;
 
@@ -221,21 +274,12 @@ function installSingleReactResolution(): void {
 
 function installClientLoadHook(cwd: string, createClientModuleProxy: (id: string) => any): void {
   if (installedClientLoadHook) return;
-
-  originalCompile = CjsModule.prototype._compile;
-
-  CjsModule.prototype._compile = function (content: string, filename: string) {
-    const isJavaScriptModule = /\.[jt]sx?$/.test(filename);
-
-    if (isJavaScriptModule && isClientBoundaryFile(filename, content)) {
-      const moduleId = pathToFileURL(filename).href;
-      this.exports = createClientModuleProxy(moduleId);
-      return;
-    }
-
-    return originalCompile.call(this, content, filename);
-  };
-
+  const cacheComponentsConfig = resolveCacheComponentsConfig(loadConfig(cwd));
+  installModuleCompileHook({
+    cwd,
+    createClientModuleProxy,
+    cacheComponentsEnabled: cacheComponentsConfig.enabled,
+  });
   installedClientLoadHook = true;
 }
 
@@ -304,85 +348,168 @@ function extractParams(pathname: string, route: RouteEntry): Record<string, stri
   return params;
 }
 
-async function createRouteElement(
-  route: RouteEntry,
+async function createRenderableRouteModuleElement(
+  modulePath: string,
   context: {
     params: Record<string, string>;
     searchParams: Record<string, string>;
     req: express.Request;
   },
-  isDev: boolean,
-  cwd: string
+  options: {
+    evaluateMetadata?: boolean;
+  } = {}
 ): Promise<React.ReactElement> {
   const { params, searchParams, req } = context;
-
-  if (isDev) {
-    clearProjectRequireCache(cwd);
+  const RouteModule = require(modulePath);
+  const RouteComponent = RouteModule.default;
+  if (!RouteComponent) {
+    throw new Error(`Route module does not export default component: ${modulePath}`);
   }
 
-  const PageModule = require(route.pagePath);
-  const PageComponent = PageModule.default;
-  if (!PageComponent) {
-    throw new Error(`Page module does not export default component: ${route.pagePath}`);
+  if (options.evaluateMetadata && typeof RouteModule.generateMetadata === 'function') {
+    await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
   }
 
-  const pageProps =
-    typeof PageModule.getServerProps === 'function'
-      ? await PageModule.getServerProps({ query: req.query, params, req })
+  const routeProps =
+    typeof RouteModule.getServerProps === 'function'
+      ? await RouteModule.getServerProps({ query: req.query, params, req })
       : {};
 
-  let element = React.createElement(PageComponent, {
-    ...pageProps,
+  const moduleStem = path.basename(modulePath).replace(/\.[jt]sx?$/, '');
+  if (moduleStem === 'default' || moduleStem === 'not-found') {
+    const eagerResult = await RouteComponent({
+      ...routeProps,
+      params,
+      searchParams,
+    });
+    return React.isValidElement(eagerResult)
+      ? (eagerResult as React.ReactElement)
+      : (React.createElement(React.Fragment, null, eagerResult) as React.ReactElement);
+  }
+
+  return React.createElement(RouteComponent, {
+    ...routeProps,
     params,
     searchParams,
   }) as React.ReactElement;
+}
 
-  // Wrap page in loading/error boundaries if discovered
-  if (route.loadingPath || route.errorPath) {
-    const loadingComponent = route.loadingPath
-      ? (() => {
-          try {
-            return require(route.loadingPath!).default;
-          } catch {
-            return undefined;
-          }
-        })()
-      : undefined;
-    const errorComponent = route.errorPath
-      ? (() => {
-          try {
-            return require(route.errorPath!).default;
-          } catch {
-            return undefined;
-          }
-        })()
-      : undefined;
+function applySegmentBoundaries(dir: string, element: React.ReactElement): React.ReactElement {
+  const loadingPath = resolveConventionModule(dir, 'loading');
+  const errorPath = resolveConventionModule(dir, 'error');
 
-    // Inner: Suspense boundary for loading states
-    if (loadingComponent) {
-      element = React.createElement(getRouteSuspense(), {
-        loadingComponent,
-        children: element,
-      } as any) as React.ReactElement;
-    }
+  const loadingComponent = loadingPath
+    ? (() => {
+        try {
+          return require(loadingPath).default;
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
+  const errorComponent = errorPath
+    ? (() => {
+        try {
+          return require(errorPath).default;
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
 
-    // Outer: Error boundary wraps Suspense
-    if (errorComponent) {
-      element = React.createElement(getRouteErrorBoundary(), {
-        fallbackComponent: errorComponent,
-        children: element,
-      } as any) as React.ReactElement;
-    }
+  let wrappedElement = element;
+
+  if (loadingComponent) {
+    wrappedElement = React.createElement(getRouteSuspense(), {
+      loadingComponent,
+      children: wrappedElement,
+    } as any) as React.ReactElement;
   }
 
-  for (let i = route.layoutPaths.length - 1; i >= 0; i--) {
-    const layoutPath = route.layoutPaths[i];
+  if (errorComponent) {
+    wrappedElement = React.createElement(getRouteErrorBoundary(), {
+      fallbackComponent: errorComponent,
+      children: wrappedElement,
+    } as any) as React.ReactElement;
+  }
+
+  return wrappedElement;
+}
+
+async function renderAppSubtreeElement(input: {
+  subtreeRootDir: string;
+  entryFilePath: string;
+  pathname: string;
+  params: Record<string, string>;
+  searchParams: Record<string, string>;
+  req: express.Request;
+  cwd: string;
+  evaluateLeafMetadata?: boolean;
+  disableParallelSlots?: boolean;
+}): Promise<React.ReactElement> {
+  const appDir = path.join(input.cwd, 'app');
+  let element = await createRenderableRouteModuleElement(
+    input.entryFilePath,
+    {
+      params: input.params,
+      searchParams: input.searchParams,
+      req: input.req,
+    },
+    {
+      evaluateMetadata: input.evaluateLeafMetadata,
+    }
+  );
+
+  const directoryChain = resolveDirectoryChain(input.subtreeRootDir, input.entryFilePath);
+
+  for (let i = directoryChain.length - 1; i >= 0; i--) {
+    const dir = directoryChain[i];
+    element = applySegmentBoundaries(dir, element);
+
+    const layoutPath =
+      resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout');
+    if (!layoutPath || path.resolve(layoutPath) === path.resolve(input.entryFilePath)) {
+      continue;
+    }
+
     const LayoutModule = require(layoutPath);
     const LayoutComponent = LayoutModule.default;
-    if (!LayoutComponent) continue;
+    if (!LayoutComponent) {
+      continue;
+    }
+
+    const slotProps: Record<string, React.ReactNode> = {};
+    if (!input.disableParallelSlots) {
+      const slotMatches = resolveParallelSlotMatches({
+        appDir,
+        layoutPath,
+        pathname: input.pathname,
+      });
+
+      for (const slotMatch of slotMatches) {
+        slotProps[slotMatch.slotName] = await renderAppSubtreeElement({
+          subtreeRootDir: slotMatch.slotRootDir,
+          entryFilePath: slotMatch.filePath,
+          pathname: input.pathname,
+          params: {
+            ...input.params,
+            ...slotMatch.params,
+          },
+          searchParams: input.searchParams,
+          req: input.req,
+          cwd: input.cwd,
+          evaluateLeafMetadata: true,
+        });
+      }
+    }
+
     element = React.createElement(
       LayoutComponent,
-      { params, searchParams },
+      {
+        params: input.params,
+        searchParams: input.searchParams,
+        ...slotProps,
+      },
       element
     ) as React.ReactElement;
   }
@@ -390,17 +517,87 @@ async function createRouteElement(
   return element;
 }
 
+async function createRouteElement(
+  route: RouteEntry,
+  context: {
+    pathname: string;
+    params: Record<string, string>;
+    searchParams: Record<string, string>;
+    req: express.Request;
+  },
+  isDev: boolean,
+  runtimeRoot: string,
+  options: {
+    disableParallelSlots?: boolean;
+  } = {}
+): Promise<React.ReactElement> {
+  const { pathname, params, searchParams, req } = context;
+
+  if (isDev) {
+    clearProjectRequireCache(runtimeRoot);
+  }
+
+  return renderAppSubtreeElement({
+    subtreeRootDir: path.join(runtimeRoot, 'app'),
+    entryFilePath: route.pagePath,
+    pathname,
+    params,
+    searchParams,
+    req,
+    cwd: runtimeRoot,
+    evaluateLeafMetadata: true,
+    disableParallelSlots: options.disableParallelSlots,
+  });
+}
+
+async function readRawRequestBody(req: express.Request): Promise<Buffer> {
+  if (typeof req.body === 'string') {
+    return Buffer.from(req.body);
+  }
+
+  if (Buffer.isBuffer(req.body)) {
+    return req.body;
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+async function parseMultipartFormData(
+  req: express.Request,
+  rawBody: Buffer
+): Promise<FormData> {
+  const request = new Request(`http://127.0.0.1${req.originalUrl || req.url || '/'}`, {
+    method: req.method || 'POST',
+    headers: req.headers as Record<string, string>,
+    body: rawBody as any,
+  });
+
+  return request.formData();
+}
+
+function getSearchParamsFromRequest(req: express.Request): Record<string, string> {
+  return Object.fromEntries(new URLSearchParams(req.query as any).entries());
+}
+
 function startUpstream(): void {
-  const cwd = process.cwd();
+  const cwd = path.resolve(process.env.VISTA_ARTIFACT_ROOT || process.cwd());
+  const runtimeRoot = resolveRuntimeProjectRoot(cwd, process.env.VISTA_RUNTIME_ROOT);
   const isDev = process.env.NODE_ENV !== 'production';
   const port = resolvePort(3101);
+  const vistaDirRoot = path.join(cwd, BUILD_DIR);
 
   installSingleReactResolution();
-  setupTypeScriptRuntime(cwd);
+  setupTypeScriptRuntime(runtimeRoot);
 
   const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
   const flightServer = require(flightServerPath) as FlightServerApi;
-  installClientLoadHook(cwd, flightServer.createClientModuleProxy);
+  installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
+  installSegmentFetchPolicyShim();
 
   const serverManifestPath = path.join(cwd, BUILD_DIR, 'server', 'server-manifest.json');
   const flightManifestPath = path.join(cwd, BUILD_DIR, 'react-client-manifest.json');
@@ -420,161 +617,375 @@ function startUpstream(): void {
   }
 
   let serverManifest = JSON.parse(fs.readFileSync(serverManifestPath, 'utf-8')) as ServerManifest;
-  let flightManifest = JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'));
+  let flightManifest = normalizeReactClientReferenceManifest(
+    JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'))
+  );
 
   const app = express();
 
-  const handleRSCRequest = async (req: express.Request, res: express.Response) => {
-    try {
-      // In dev mode, reload manifests from disk on each request so we
-      // always pick up the latest output from ReactFlightWebpackPlugin.
-      if (isDev) {
-        try {
-          serverManifest = JSON.parse(
-            fs.readFileSync(serverManifestPath, 'utf-8')
-          ) as ServerManifest;
-          flightManifest = JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'));
-        } catch {
-          // Manifests may be mid-write; use whatever we have cached.
-        }
-      }
+  const pipeFlightModel = async (
+    res: express.Response,
+    model: React.ReactElement,
+    status: number
+  ): Promise<void> => {
+    let capturedError: unknown = null;
+    let gateResolved = false;
+    let streamEnded = false;
+    const gateStream = new PassThrough();
+    const bufferedChunks: Buffer[] = [];
 
-      const pathname = req.path.replace(/^\/(?:_rsc|rsc)/, '') || '/';
-      const route = matchRoute(pathname, serverManifest.routes);
-      if (!route) {
-        const rootLayout = resolveRootLayout(cwd, isDev);
-        const resolvedNotFound = resolveNotFoundComponent(cwd, rootLayout, isDev);
-
-        let model: React.ReactElement;
-        if (resolvedNotFound) {
-          const notFoundElement = React.createElement(resolvedNotFound.component, {
-            params: {},
-            searchParams: {},
-          }) as React.ReactElement;
-          model = React.createElement(
-            rootLayout.component,
-            { params: {}, searchParams: {} },
-            notFoundElement
-          ) as React.ReactElement;
-        } else {
-          model = React.createElement(
-            'div',
-            {
-              style: {
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100vh',
-                fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                background: '#0a0a0a',
-                color: '#ededed',
-                margin: 0,
-                overflow: 'hidden',
-                textAlign: 'center',
-                userSelect: 'none',
-              },
-            },
-            React.createElement(
-              'span',
-              {
-                style: {
-                  fontSize: '6rem',
-                  fontWeight: 800,
-                  letterSpacing: '-0.04em',
-                  lineHeight: 1,
-                  background: 'linear-gradient(135deg, #7c3aed, #2563eb, #06b6d4)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                },
-              },
-              '404'
-            ),
-            React.createElement(
-              'p',
-              {
-                style: {
-                  marginTop: '0.75rem',
-                  fontSize: '0.95rem',
-                  fontWeight: 400,
-                  color: '#555',
-                  letterSpacing: '0.02em',
-                },
-              },
-              "There's nothing here."
-            )
-          );
-        }
-
-        res.status(404);
-        res.setHeader('Content-Type', 'text/x-component');
-        res.setHeader('Vary', 'Accept');
-
-        const stream = flightServer.renderToPipeableStream(model, flightManifest, {
-          onError(error) {
-            console.error('[vista:rsc] Flight render error on 404:', error);
-          },
-        });
-        stream.pipe(res);
-        return;
-      }
-
-      const params = extractParams(pathname, route);
-      const searchParams = Object.fromEntries(new URLSearchParams(req.query as any).entries());
-      const element = await createRouteElement(route, { params, searchParams, req }, isDev, cwd);
-
-      res.setHeader('Content-Type', 'text/x-component');
-      res.setHeader('Vary', 'Accept');
-
-      const stream = flightServer.renderToPipeableStream(element, flightManifest, {
-        onError(error) {
-          console.error('[vista:rsc] Upstream flight render error:', error);
-        },
+    const finishGate = (() => {
+      let resolver: (() => void) | null = null;
+      const promise = new Promise<void>((resolve) => {
+        resolver = () => {
+          if (gateResolved) {
+            return;
+          }
+          gateResolved = true;
+          resolve();
+        };
       });
-      stream.pipe(res);
-    } catch (error) {
-      if ((error as any)?.name === 'NotFoundError') {
-        try {
-          const rootLayout = resolveRootLayout(cwd, isDev);
-          const resolvedNotFound = resolveNotFoundComponent(cwd, rootLayout, isDev);
+      return { promise, resolve: () => resolver?.() };
+    })();
 
-          let model: React.ReactElement;
-          if (resolvedNotFound) {
-            const notFoundElement = React.createElement(resolvedNotFound.component, {
-              params: {},
-              searchParams: {},
-            }) as React.ReactElement;
-            model = React.createElement(
-              rootLayout.component,
-              { params: {}, searchParams: {} },
-              notFoundElement
-            ) as React.ReactElement;
-          } else {
-            model = React.createElement('h1', null, '404 - Page Not Found');
+    const onData = (chunk: Buffer | string) => {
+      bufferedChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      finishGate.resolve();
+    };
+
+    gateStream.on('data', onData);
+    gateStream.once('end', () => {
+      streamEnded = true;
+      finishGate.resolve();
+    });
+    gateStream.once('error', () => {
+      finishGate.resolve();
+    });
+
+    const stream = flightServer.renderToPipeableStream(model, flightManifest, {
+      onError(error) {
+        capturedError = error;
+        if ((error as any)?.name !== 'NotFoundError') {
+          console.error('[vista:rsc] Upstream flight render error:', error);
+        }
+        finishGate.resolve();
+      },
+    });
+
+    stream.pipe(gateStream);
+
+    const gateTimer = setTimeout(() => finishGate.resolve(), 75);
+    await finishGate.promise;
+    clearTimeout(gateTimer);
+
+    if ((capturedError as any)?.name === 'NotFoundError') {
+      gateStream.destroy();
+      throw capturedError;
+    }
+
+    gateStream.off('data', onData);
+
+    res.status(status);
+    res.setHeader('Content-Type', 'text/x-component');
+    res.setHeader('Vary', 'Accept');
+
+    for (const chunk of bufferedChunks) {
+      res.write(chunk);
+    }
+
+    if (streamEnded) {
+      res.end();
+      return;
+    }
+
+    gateStream.pipe(res);
+  };
+
+  const drainFlightModel = async (model: React.ReactElement): Promise<void> => {
+    let capturedError: unknown = null;
+    const sink = new PassThrough();
+    const completion = new Promise<void>((resolve, reject) => {
+      sink.on('data', () => {});
+      sink.once('end', resolve);
+      sink.once('error', reject);
+    });
+
+    const stream = flightServer.renderToPipeableStream(model, flightManifest, {
+      onError(error) {
+        if (!capturedError) {
+          capturedError = error;
+        }
+      },
+    });
+
+    stream.pipe(sink);
+    await completion;
+
+    if (capturedError) {
+      throw capturedError;
+    }
+  };
+
+  const resolveActionModulePath = (actionId: string): string => {
+    const hashIdx = actionId.lastIndexOf('#');
+    const modulePath = hashIdx >= 0 ? actionId.slice(0, hashIdx) : actionId;
+
+    if (!modulePath.startsWith('file://')) {
+      return modulePath;
+    }
+
+    try {
+      return fileURLToPath(modulePath);
+    } catch {
+      let fallbackPath = modulePath.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
+      if (process.platform === 'win32' && /^[a-zA-Z]:/.test(fallbackPath) === false) {
+        fallbackPath = '/' + fallbackPath;
+      }
+      return fallbackPath;
+    }
+  };
+
+  const primeInlineActionRegistration = async (
+    req: express.Request,
+    actionId: string
+  ): Promise<Function | undefined> => {
+    const actionEntry = serverManifest.serverActions?.[actionId];
+    if (!actionEntry || actionEntry.kind !== 'inline') {
+      return undefined;
+    }
+
+    const pathname = req.path.replace(/^\/(?:_rsc|rsc)/, '') || '/';
+    const searchParams = getSearchParamsFromRequest(req);
+    const actionRoute =
+      matchRoute(pathname, serverManifest.routes) ||
+      serverManifest.routes.find((candidate) => {
+        const targetPath = path.resolve(actionEntry.filePath);
+        return (
+          path.resolve(candidate.pagePath) === targetPath ||
+          candidate.layoutPaths.some((layoutPath) => path.resolve(layoutPath) === targetPath)
+        );
+      }) ||
+      null;
+
+    const resolvedActionPath = path.resolve(actionEntry.filePath || resolveActionModulePath(actionId));
+    const routeParams = actionRoute ? extractParams(pathname, actionRoute) : {};
+
+    if (isDev) {
+      try {
+        delete require.cache[require.resolve(resolvedActionPath)];
+      } catch {
+        // ignore missing cache entries
+      }
+    }
+
+    const actionModule = require(resolvedActionPath);
+    if (typeof actionModule?.default === 'function') {
+      const probeProps: Record<string, unknown> = {
+        params: routeParams,
+        searchParams,
+      };
+
+      if (actionRoute && path.resolve(actionRoute.pagePath) !== resolvedActionPath) {
+        probeProps.children = null;
+      }
+
+      try {
+        await actionModule.default(probeProps);
+      } catch {
+        // Some components require a fuller tree to evaluate. Fall through to route priming.
+      }
+
+      const directResolution = resolveRegisteredServerReference(actionId);
+      if (directResolution) {
+        return directResolution;
+      }
+    }
+
+    if (actionRoute) {
+      const params = routeParams;
+      const model = await createRouteElement(
+        actionRoute,
+        { pathname, params, searchParams, req },
+        isDev,
+        runtimeRoot
+      );
+      await drainFlightModel(model);
+      return resolveRegisteredServerReference(actionId);
+    }
+
+    return undefined;
+  };
+
+  const handleRSCRequest = async (req: express.Request, res: express.Response) => {
+    const pathname = req.path.replace(/^\/(?:_rsc|rsc)/, '') || '/';
+
+    await runWithRequestContext(
+      {
+        req,
+        res,
+        cwd: runtimeRoot,
+        vistaDirRoot,
+        urlPath: pathname,
+      },
+      async () => {
+        try {
+          // In dev mode, reload manifests from disk on each request so we
+          // always pick up the latest output from ReactFlightWebpackPlugin.
+          if (isDev) {
+            try {
+              serverManifest = JSON.parse(
+                fs.readFileSync(serverManifestPath, 'utf-8')
+              ) as ServerManifest;
+              flightManifest = normalizeReactClientReferenceManifest(
+                JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'))
+              );
+            } catch {
+              // Manifests may be mid-write; use whatever we have cached.
+            }
           }
 
-          res.status(404);
-          res.setHeader('Content-Type', 'text/x-component');
-          res.setHeader('Vary', 'Accept');
+          const route = matchRoute(pathname, serverManifest.routes);
+          setCurrentSegmentConfig(route?.segmentConfig);
+          if (!route) {
+            const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+            const resolvedNotFound = resolveNotFoundComponent(runtimeRoot, rootLayout, isDev);
 
-          const notFoundStream = flightServer.renderToPipeableStream(model, flightManifest, {
-            onError(notFoundError) {
-              console.error('[vista:rsc] Flight render error on NotFoundError:', notFoundError);
-            },
-          });
-          notFoundStream.pipe(res);
-          return;
-        } catch (notFoundError) {
-          console.error('[vista:rsc] Failed to render NotFoundError fallback:', notFoundError);
+            let model: React.ReactElement;
+            if (resolvedNotFound) {
+              const notFoundElement = React.createElement(resolvedNotFound.component, {
+                params: {},
+                searchParams: {},
+              }) as React.ReactElement;
+              model = React.createElement(
+                rootLayout.component,
+                { params: {}, searchParams: {} },
+                notFoundElement
+              ) as React.ReactElement;
+            } else {
+              model = React.createElement(
+                'div',
+                {
+                  style: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100vh',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    background: '#0a0a0a',
+                    color: '#ededed',
+                    margin: 0,
+                    overflow: 'hidden',
+                    textAlign: 'center',
+                    userSelect: 'none',
+                  },
+                },
+                React.createElement(
+                  'span',
+                  {
+                    style: {
+                      fontSize: '6rem',
+                      fontWeight: 800,
+                      letterSpacing: '-0.04em',
+                      lineHeight: 1,
+                      background: 'linear-gradient(135deg, #7c3aed, #2563eb, #06b6d4)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    },
+                  },
+                  '404'
+                ),
+                React.createElement(
+                  'p',
+                  {
+                    style: {
+                      marginTop: '0.75rem',
+                      fontSize: '0.95rem',
+                      fontWeight: 400,
+                      color: '#555',
+                      letterSpacing: '0.02em',
+                    },
+                  },
+                  "There's nothing here."
+                )
+              );
+            }
+
+            await pipeFlightModel(res, model, 404);
+            return;
+          }
+
+          const params = extractParams(pathname, route);
+          const searchParams = getSearchParamsFromRequest(req);
+          const element = await createRouteElement(
+            route,
+            { pathname, params, searchParams, req },
+            isDev,
+            runtimeRoot
+          );
+
+          await pipeFlightModel(res, element, 200);
+        } catch (error) {
+          if ((error as any)?.name === 'NotFoundError') {
+            try {
+              const rootLayout = resolveRootLayout(runtimeRoot, isDev);
+              const route = matchRoute(pathname, serverManifest.routes);
+              setCurrentSegmentConfig(route?.segmentConfig);
+              if (route) {
+                const segmentNotFoundPath = resolveNearestSegmentNotFoundPath(
+                  path.join(runtimeRoot, 'app'),
+                  route.routeDir
+                );
+                if (segmentNotFoundPath) {
+                  const params = extractParams(pathname, route);
+                  const searchParams = getSearchParamsFromRequest(req);
+                  const model = await createRouteElement(
+                    {
+                      ...route,
+                      pagePath: segmentNotFoundPath,
+                    },
+                    { pathname, params, searchParams, req },
+                    isDev,
+                    runtimeRoot,
+                    { disableParallelSlots: true }
+                  );
+
+                  await pipeFlightModel(res, model, 404);
+                  return;
+                }
+              }
+              const resolvedNotFound = resolveNotFoundComponent(runtimeRoot, rootLayout, isDev);
+
+              let model: React.ReactElement;
+              if (resolvedNotFound) {
+                const notFoundElement = React.createElement(resolvedNotFound.component, {
+                  params: {},
+                  searchParams: {},
+                }) as React.ReactElement;
+                model = React.createElement(
+                  rootLayout.component,
+                  { params: {}, searchParams: {} },
+                  notFoundElement
+                ) as React.ReactElement;
+              } else {
+                model = React.createElement('h1', null, '404 - Page Not Found');
+              }
+
+              await pipeFlightModel(res, model, 404);
+              return;
+            } catch (notFoundError) {
+              console.error('[vista:rsc] Failed to render NotFoundError fallback:', notFoundError);
+            }
+          }
+          console.error('[vista:rsc] Upstream request failed:', error);
+          res
+            .status(500)
+            .type('text/plain')
+            .send((error as Error).message);
         }
       }
-      console.error('[vista:rsc] Upstream request failed:', error);
-      res
-        .status(500)
-        .type('text/plain')
-        .send((error as Error).message);
-    }
+    );
   };
 
   app.get('/rsc*', handleRSCRequest);
@@ -586,89 +997,106 @@ function startUpstream(): void {
   app.use(express.text({ type: 'text/plain', limit: '10mb' }));
 
   const handleServerAction = async (req: express.Request, res: express.Response) => {
-    try {
-      const actionId = req.headers['rsc-action'] as string | undefined;
-      if (!actionId) {
-        res.status(400).type('text/plain').send('Missing rsc-action header');
-        return;
-      }
+    const pathname = req.path.replace(/^\/(?:_rsc|rsc)/, '') || '/';
 
-      // actionId format: "file:///.../module.ts#exportName"
-      const hashIdx = actionId.lastIndexOf('#');
-      const modulePath = hashIdx >= 0 ? actionId.slice(0, hashIdx) : actionId;
-      const exportName = hashIdx >= 0 ? actionId.slice(hashIdx + 1) : 'default';
-
-      // Resolve the server module
-      let resolvedPath = modulePath;
-      if (resolvedPath.startsWith('file://')) {
-        resolvedPath = resolvedPath.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
-        // On Windows, paths look like file:///C:/... so we need to keep the drive letter
-        if (process.platform === 'win32' && /^[a-zA-Z]:/.test(resolvedPath) === false) {
-          resolvedPath = '/' + resolvedPath;
-        }
-      }
-
-      // In dev mode, bust the require cache so we get fresh code
-      if (isDev) {
-        delete require.cache[require.resolve(resolvedPath)];
-      }
-
-      const actionModule = require(resolvedPath);
-      const actionFn = actionModule[exportName];
-
-      if (typeof actionFn !== 'function') {
-        res.status(404).type('text/plain').send(`Server action not found: ${actionId}`);
-        return;
-      }
-
-      // Decode the arguments from the request body
-      let args: unknown[];
-      const contentType = req.headers['content-type'] || '';
-      if (contentType.includes('multipart/form-data')) {
-        // For form submissions, decodeAction handles the FormData
-        const boundAction = await flightServer.decodeAction(req.body, flightManifest);
-        const result = await boundAction();
-
-        // Return the result as a Flight stream
-        res.setHeader('Content-Type', 'text/x-component');
-        const stream = flightServer.renderToPipeableStream(
-          result as React.ReactNode,
-          flightManifest,
-          {
-            onError(error) {
-              console.error('[vista:rsc] Server action render error:', error);
-            },
+    await runWithRequestContext(
+      {
+        req,
+        res,
+        cwd: runtimeRoot,
+        vistaDirRoot,
+        urlPath: pathname,
+      },
+      async () => {
+        try {
+          const actionId = req.headers['rsc-action'] as string | undefined;
+          if (!actionId) {
+            res.status(400).type('text/plain').send('Missing rsc-action header');
+            return;
           }
-        );
-        stream.pipe(res);
-        return;
-      } else {
-        // Text body — decode via decodeReply
-        args = (await flightServer.decodeReply(req.body as string, flightManifest)) as unknown[];
-      }
 
-      // Call the action
-      const result = await actionFn(...(Array.isArray(args) ? args : [args]));
+          if (isDev) {
+            try {
+              serverManifest = JSON.parse(
+                fs.readFileSync(serverManifestPath, 'utf-8')
+              ) as ServerManifest;
+              flightManifest = JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'));
+            } catch {
+              // Keep cached manifests if they're being rewritten.
+            }
+          }
 
-      // Return the result as a Flight stream
-      res.setHeader('Content-Type', 'text/x-component');
-      const stream = flightServer.renderToPipeableStream(
-        result as React.ReactNode,
-        flightManifest,
-        {
-          onError(error) {
-            console.error('[vista:rsc] Server action render error:', error);
-          },
+          setCurrentSegmentConfig(matchRoute(pathname, serverManifest.routes)?.segmentConfig);
+          let actionFn = resolveRegisteredServerReference(actionId);
+          if (!actionFn) {
+            actionFn = await primeInlineActionRegistration(req, actionId);
+          }
+
+          if (!actionFn) {
+            const hashIdx = actionId.lastIndexOf('#');
+            const exportName = hashIdx >= 0 ? actionId.slice(hashIdx + 1) : 'default';
+            const resolvedPath = resolveActionModulePath(actionId);
+
+            if (isDev) {
+              try {
+                delete require.cache[require.resolve(resolvedPath)];
+              } catch {
+                // ignore missing cache entries
+              }
+            }
+
+            const actionModule = require(resolvedPath);
+            actionFn = actionModule[exportName];
+          }
+
+          if (typeof actionFn !== 'function') {
+            res.status(404).type('text/plain').send(`Server action not found: ${actionId}`);
+            return;
+          }
+
+          const rawBody = await readRawRequestBody(req);
+          const contentType = String(req.headers['content-type'] || '');
+
+          let result: unknown;
+          if (contentType.includes('multipart/form-data')) {
+            const formData = await parseMultipartFormData(req, rawBody);
+            const boundAction = await flightServer.decodeAction(formData, flightManifest);
+            result = await boundAction();
+          } else {
+            const args = (await flightServer.decodeReply(rawBody.toString('utf-8'), flightManifest)) as unknown[];
+            result = await actionFn(...(Array.isArray(args) ? args : [args]));
+          }
+
+          const revalidatedPaths = consumeRevalidatedPaths();
+          if (revalidatedPaths.length > 0) {
+            res.setHeader('x-vista-revalidated-paths', JSON.stringify(revalidatedPaths));
+          }
+
+          const revalidatedTags = consumeRevalidatedTags();
+          if (revalidatedTags.length > 0) {
+            res.setHeader('x-vista-revalidated-tags', JSON.stringify(revalidatedTags));
+          }
+
+          res.setHeader('Content-Type', 'text/x-component');
+          const stream = flightServer.renderToPipeableStream(
+            result as React.ReactNode,
+            flightManifest,
+            {
+              onError(error) {
+                console.error('[vista:rsc] Server action render error:', error);
+              },
+            }
+          );
+          stream.pipe(res);
+        } catch (error) {
+          console.error('[vista:rsc] Server action failed:', error);
+          res
+            .status(500)
+            .type('text/plain')
+            .send((error as Error).message);
         }
-      );
-      stream.pipe(res);
-    } catch (error) {
-      console.error('[vista:rsc] Server action failed:', error);
-      res
-        .status(500)
-        .type('text/plain')
-        .send((error as Error).message);
-    }
+      }
+    );
   };
 
   app.post('/rsc*', handleServerAction);

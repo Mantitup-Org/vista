@@ -1,0 +1,8 @@
+[package]
+name = "flashpack-browser"
+version = "0.1.0"
+edition = "2021"
+description = "Browser runtime contracts for Flashpack"
+
+[dependencies]
+flashpack-core = { path = "../flashpack-core" }

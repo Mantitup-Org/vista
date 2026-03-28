@@ -18,6 +18,7 @@ const structure_log_1 = require("../server/structure-log");
 const devtools_indicator_snippet_1 = require("./devtools-indicator-snippet");
 const dev_error_overlay_snippet_1 = require("./dev-error-overlay-snippet");
 const deploy_output_1 = require("./deploy-output");
+const module_boundary_validator_1 = require("../server/module-boundary-validator");
 const _debug = !!process.env.VISTA_DEBUG;
 // Helper to run PostCSS
 function runPostCSS(cwd, vistaDir) {
@@ -222,7 +223,7 @@ sse.onmessage = (event) => {
         if (indicator && typeof indicator.pulse === 'function') {
             indicator.pulse('hmr', 460);
         }
-        setTimeout(() => window.location.reload(), 180);
+        setTimeout(() => window.location.reload(), 80);
         return;
     }
     
@@ -272,7 +273,11 @@ async function buildClient(watch = false, onRebuild) {
     // Pre-build Structure Validation
     // ========================================================================
     const vistaConfig = (0, config_1.loadConfig)(cwd);
+    const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const structureConfig = (0, config_1.resolveStructureValidationConfig)(vistaConfig);
+    const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)(vistaConfig);
+    if (_debug)
+        console.log(`[vista:build] Engine variant: ${engineVariant}`);
     if (structureConfig.enabled) {
         const result = (0, structure_validator_1.validateAppStructure)({ cwd });
         (0, structure_log_1.logValidationResult)(result, structureConfig.logLevel);
@@ -306,20 +311,27 @@ async function buildClient(watch = false, onRebuild) {
                 console.log(`  - ${c.relativePath}`);
             });
         }
-        // Check for server component errors (using client hooks without 'use client')
-        if (scanResult.errors.length > 0) {
+        const moduleBoundaryIssues = (0, module_boundary_validator_1.validateModuleBoundaries)({
+            appDir,
+            extraRoots: fs_1.default.existsSync(componentsDir) ? [componentsDir] : [],
+            cacheComponentsEnabled: cacheComponentsConfig.enabled,
+        }).issues;
+        if (moduleBoundaryIssues.length > 0) {
             console.log('');
-            console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer Component Error\x1b[0m');
+            console.log('\x1b[41m\x1b[37m ERROR \x1b[0m \x1b[31mServer/Segment Validation Error\x1b[0m');
             console.log('');
-            for (const error of scanResult.errors) {
-                console.log(`\x1b[31m✗\x1b[0m ${error.file}`);
-                console.log(`  You're importing a component that needs \x1b[33m${error.hooks.slice(0, 3).join(', ')}\x1b[0m.`);
-                console.log(`  These only work in a Client Component.`);
+            for (const issue of moduleBoundaryIssues) {
+                console.log(`\x1b[31m✗\x1b[0m ${path_1.default.relative(cwd, issue.filePath)}`);
+                console.log(`  ${issue.message}`);
                 console.log('');
-                console.log(`  \x1b[36mTo fix:\x1b[0m Add \x1b[33m'use client'\x1b[0m at the top of your file:`);
-                console.log('');
-                console.log(`    \x1b[32m'use client';\x1b[0m`);
-                console.log('');
+                if (issue.fix) {
+                    console.log(`  \x1b[36mTo fix:\x1b[0m ${issue.fix}`);
+                    console.log('');
+                }
+            }
+            if (!watch) {
+                console.log('\x1b[31mBuild failed due to server/segment violations.\x1b[0m');
+                process.exit(1);
             }
         }
     }
@@ -355,10 +367,20 @@ async function buildClient(watch = false, onRebuild) {
         (0, manifest_1.writeCanonicalVistaArtifacts)(cwd, vistaDir, buildId, []);
         console.warn(`[vista:build] Failed to derive route artifacts: ${error.message}`);
     }
+    (0, manifest_1.writeReservedVistaArtifacts)(vistaDir, {
+        buildId,
+        engineVariant,
+        imagesConfig: vistaConfig.images,
+    });
     // Generate client entry - TRUE RSC: only client components
     generateClientEntry(cwd, vistaDir, clientComponents, watch);
     // Create Webpack config
-    const config = (0, webpack_config_1.createWebpackConfig)({ cwd, isDev: watch });
+    const config = (0, webpack_config_1.createWebpackConfig)({
+        cwd,
+        isDev: watch,
+        engineVariant,
+        cacheComponentsEnabled: cacheComponentsConfig.enabled,
+    });
     // Create Webpack compiler
     exports.compiler = compiler = (0, webpack_1.default)(config);
     if (watch) {
@@ -424,6 +446,7 @@ async function buildClient(watch = false, onRebuild) {
                     vistaDir,
                     debug: _debug,
                 });
+                (0, manifest_1.pruneEmptyVistaDirectories)(vistaDir);
                 compiler.close((closeErr) => {
                     if (closeErr)
                         console.error('Error closing compiler:', closeErr);

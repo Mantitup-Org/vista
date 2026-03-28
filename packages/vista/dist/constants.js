@@ -6,7 +6,7 @@
  * only this file (and the Rust equivalent naming.rs) needs to change.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LOG_IGNORE_PREFIXES = exports.LOCAL_FONT_PREFIX = exports.MOUNT_ID_PREFIX = exports.THEME_SETTER = exports.WRAPPED_MARKER = exports.CLIENT_COMPONENTS_FLAG = exports.CLIENT_MANIFEST_FLAG = exports.SERVER_DEFINE = exports.BUILD_ID_DEFINE = exports.RSC_DATA_FLAG = exports.CLIENT_REFS_FLAG = exports.CONFIG_FLAG = exports.HYDRATE_DOCUMENT_FLAG = exports.STRUCTURE_ENDPOINT = exports.SSE_ENDPOINT = exports.IMAGE_ENDPOINT = exports.STATIC_CHUNKS_PATH = exports.URL_PREFIX = exports.BUILD_DIR = exports.FRAMEWORK_NAME = void 0;
+exports.LOG_IGNORE_PREFIXES = exports.LOCAL_FONT_PREFIX = exports.MOUNT_ID_PREFIX = exports.THEME_SETTER = exports.WRAPPED_MARKER = exports.CLIENT_COMPONENTS_FLAG = exports.CLIENT_MANIFEST_FLAG = exports.SERVER_DEFINE = exports.BUILD_ID_DEFINE = exports.RSC_DATA_FLAG = exports.CLIENT_REFS_FLAG = exports.CONFIG_FLAG = exports.HYDRATE_DOCUMENT_FLAG = exports.STRUCTURE_ENDPOINT = exports.SSE_ENDPOINT = exports.IMAGE_ENDPOINT = exports.STATIC_CHUNKS_PATH = exports.URL_PREFIX = exports.FLASH_DIR = exports.BUILD_DIR = exports.FRAMEWORK_NAME = void 0;
 // ============================================================================
 // Framework Identity
 // ============================================================================
@@ -17,6 +17,8 @@ exports.FRAMEWORK_NAME = 'vista';
 // ============================================================================
 /** Hidden build output directory name */
 exports.BUILD_DIR = '.vista';
+/** Flashpack workspace/runtime directory name */
+exports.FLASH_DIR = '.flash';
 // ============================================================================
 // URL Prefixes (/_vista/ — equivalent to Next.js /_next/)
 // ============================================================================

@@ -222,6 +222,30 @@ pub struct MetadataInfo {
     pub has_generate_metadata: bool,
 }
 
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct VistaImportResolutionInfo {
+    pub normalized_request: String,
+    pub subpath: String,
+    pub candidate_bases: Vec<String>,
+    pub resolved_path: Option<String>,
+}
+
+#[napi]
+pub fn resolve_vista_source_import(
+    request: String,
+    package_root: String,
+) -> Option<VistaImportResolutionInfo> {
+    let resolution = vista_api::resolve_vista_source_import(&request, Path::new(&package_root))?;
+
+    Some(VistaImportResolutionInfo {
+        normalized_request: resolution.normalized_request,
+        subpath: resolution.subpath,
+        candidate_bases: resolution.candidate_bases,
+        resolved_path: resolution.resolved_path,
+    })
+}
+
 /// Analyze source file for metadata exports
 #[napi]
 pub fn analyze_metadata(source: String) -> MetadataInfo {

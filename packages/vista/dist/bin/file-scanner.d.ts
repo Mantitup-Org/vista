@@ -13,7 +13,7 @@
  */
 export interface RouteNode {
     segment: string;
-    kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group';
+    kind: 'static' | 'dynamic' | 'catch-all' | 'optional-catch-all' | 'group' | 'parallel' | 'interception';
     indexPath?: string;
     layoutPath?: string;
     loadingPath?: string;

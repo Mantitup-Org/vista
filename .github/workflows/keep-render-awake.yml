@@ -1,0 +1,44 @@
+name: Keep Deployment Awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve configured URL
+        env:
+          KEEP_AWAKE_URL: ${{ secrets.KEEP_AWAKE_URL }}
+          APP_URL: ${{ secrets.APP_URL }}
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+        run: |
+          if [ -n "$KEEP_AWAKE_URL" ]; then
+            TARGET_URL="$KEEP_AWAKE_URL"
+          elif [ -n "$APP_URL" ]; then
+            TARGET_URL="$APP_URL"
+          else
+            TARGET_URL="$RENDER_APP_URL"
+          fi
+
+          if [ -z "$TARGET_URL" ]; then
+            echo "Missing repository secret."
+            echo "Set one of: KEEP_AWAKE_URL, APP_URL, RENDER_APP_URL"
+            echo "Example value: https://your-app.example.com"
+            exit 1
+          fi
+
+          echo "TARGET_URL=${TARGET_URL%/}" >> "$GITHUB_ENV"
+
+      - name: Ping deployed app
+        run: |
+          status_code=$(curl -sS -L -o /dev/null -w "%{http_code}" "$TARGET_URL/")
+          echo "Target status code: $status_code"
+          if [ "$status_code" -ge 400 ]; then
+            exit 1
+          fi

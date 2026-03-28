@@ -6,29 +6,79 @@
  * These functions only work on the server side.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
+exports.unstable_cache = exports.revalidateTag = exports.revalidatePath = exports.cacheTag = exports.cacheLife = exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
 exports.cookies = cookies;
 exports.headers = headers;
+exports.draftMode = draftMode;
 exports.redirect = redirect;
 exports.permanentRedirect = permanentRedirect;
 exports.notFound = notFound;
 exports.json = json;
-/**
- * Access cookies in Server Components and API routes.
- * Note: This is a simplified implementation - in production, integrate with actual request.
- */
-function cookies() {
-    // Server-side cookie access would be implemented here
-    // For now, return a mock implementation
+const request_context_1 = require("./request-context");
+function parseCookieHeader(header) {
     const cookieMap = new Map();
-    // Check if we're in a server context
-    if (typeof window !== 'undefined') {
-        console.warn('cookies() should only be called on the server');
+    if (!header) {
+        return cookieMap;
     }
+    for (const segment of header.split(';')) {
+        const [rawName, ...valueParts] = segment.split('=');
+        const name = rawName?.trim();
+        if (!name)
+            continue;
+        cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+    }
+    return cookieMap;
+}
+function serializeCookie(name, value, options = {}) {
+    const parts = [`${name}=${encodeURIComponent(value)}`];
+    if (options.maxAge !== undefined)
+        parts.push(`Max-Age=${options.maxAge}`);
+    if (options.expires)
+        parts.push(`Expires=${options.expires.toUTCString()}`);
+    if (options.domain)
+        parts.push(`Domain=${options.domain}`);
+    parts.push(`Path=${options.path || '/'}`);
+    if (options.secure)
+        parts.push('Secure');
+    if (options.httpOnly)
+        parts.push('HttpOnly');
+    if (options.sameSite)
+        parts.push(`SameSite=${options.sameSite}`);
+    if (options.priority)
+        parts.push(`Priority=${options.priority}`);
+    return parts.join('; ');
+}
+function appendSetCookie(serializedCookie) {
+    const res = (0, request_context_1.getRequestContext)()?.res;
+    if (!res) {
+        return;
+    }
+    const current = res.getHeader('Set-Cookie');
+    if (!current) {
+        res.setHeader('Set-Cookie', [serializedCookie]);
+        return;
+    }
+    if (Array.isArray(current)) {
+        res.setHeader('Set-Cookie', [...current.map((entry) => String(entry)), serializedCookie]);
+        return;
+    }
+    res.setHeader('Set-Cookie', [String(current), serializedCookie]);
+}
+function createCookieStore() {
+    const request = (0, request_context_1.getRequestContext)()?.req;
+    const cookieMap = parseCookieHeader(request?.headers?.cookie);
+    const syncRequestCookieHeader = () => {
+        if (!request || !request.headers) {
+            return;
+        }
+        request.headers.cookie = Array.from(cookieMap.entries())
+            .map(([name, cookieValue]) => `${name}=${encodeURIComponent(cookieValue)}`)
+            .join('; ');
+    };
     return {
         get(name) {
             const value = cookieMap.get(name);
-            return value ? { name, value } : undefined;
+            return value === undefined ? undefined : { name, value };
         },
         getAll() {
             return Array.from(cookieMap.entries()).map(([name, value]) => ({ name, value }));
@@ -38,23 +88,33 @@ function cookies() {
         },
         set(name, value, options) {
             cookieMap.set(name, value);
-            // In real implementation, set the Set-Cookie header
+            syncRequestCookieHeader();
+            appendSetCookie(serializeCookie(name, value, options));
         },
         delete(name) {
             cookieMap.delete(name);
-            // In real implementation, set the Set-Cookie header with expired date
+            syncRequestCookieHeader();
+            appendSetCookie(serializeCookie(name, '', {
+                expires: new Date(0),
+                maxAge: 0,
+                path: '/',
+            }));
         },
     };
 }
-/**
- * Access request headers in Server Components.
- * Note: This is a simplified implementation - in production, integrate with actual request.
- */
-function headers() {
-    // Server-side header access would be implemented here
+function createReadonlyHeaders() {
+    const request = (0, request_context_1.getRequestContext)()?.req;
     const headerMap = new Map();
-    if (typeof window !== 'undefined') {
-        console.warn('headers() should only be called on the server');
+    if (request?.headers) {
+        for (const [key, value] of Object.entries(request.headers)) {
+            if (Array.isArray(value)) {
+                headerMap.set(key.toLowerCase(), value.join(', '));
+                continue;
+            }
+            if (value !== undefined) {
+                headerMap.set(key.toLowerCase(), String(value));
+            }
+        }
     }
     return {
         get(name) {
@@ -74,6 +134,49 @@ function headers() {
         },
         forEach(callback) {
             headerMap.forEach((value, key) => callback(value, key));
+        },
+    };
+}
+/**
+ * Access cookies in Server Components and API routes.
+ * Note: This is a simplified implementation - in production, integrate with actual request.
+ */
+function cookies() {
+    // Check if we're in a server context
+    if (typeof window !== 'undefined') {
+        console.warn('cookies() should only be called on the server');
+    }
+    return createCookieStore();
+}
+/**
+ * Access request headers in Server Components.
+ * Note: This is a simplified implementation - in production, integrate with actual request.
+ */
+function headers() {
+    if (typeof window !== 'undefined') {
+        console.warn('headers() should only be called on the server');
+    }
+    return createReadonlyHeaders();
+}
+// ============================================================================
+// Draft Mode
+// ============================================================================
+const DRAFT_MODE_COOKIE = '__vista_draft_mode';
+function draftMode() {
+    const store = cookies();
+    return {
+        get isEnabled() {
+            return store.has(DRAFT_MODE_COOKIE);
+        },
+        enable() {
+            store.set(DRAFT_MODE_COOKIE, '1', {
+                httpOnly: true,
+                path: '/',
+                sameSite: 'lax',
+            });
+        },
+        disable() {
+            store.delete(DRAFT_MODE_COOKIE);
         },
     };
 }
@@ -175,3 +278,9 @@ class NextResponse extends Response {
     }
 }
 exports.NextResponse = NextResponse;
+var cache_1 = require("./cache");
+Object.defineProperty(exports, "cacheLife", { enumerable: true, get: function () { return cache_1.cacheLife; } });
+Object.defineProperty(exports, "cacheTag", { enumerable: true, get: function () { return cache_1.cacheTag; } });
+Object.defineProperty(exports, "revalidatePath", { enumerable: true, get: function () { return cache_1.revalidatePath; } });
+Object.defineProperty(exports, "revalidateTag", { enumerable: true, get: function () { return cache_1.revalidateTag; } });
+Object.defineProperty(exports, "unstable_cache", { enumerable: true, get: function () { return cache_1.unstable_cache; } });

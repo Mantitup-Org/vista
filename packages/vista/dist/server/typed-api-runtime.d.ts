@@ -1,6 +1,7 @@
 import type express from 'express';
 import type { ResolvedTypedApiConfig } from '../config';
 export declare function resolveLegacyApiRoutePath(cwd: string, requestPath: string): string | null;
+export declare function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null;
 export declare function runLegacyApiRoute(options: {
     req: express.Request;
     res: express.Response;

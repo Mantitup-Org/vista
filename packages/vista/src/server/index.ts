@@ -1,9 +1,145 @@
 /**
  * Vista Server Utilities
- * 
+ *
  * Next.js-compatible server-only functions for use in Server Components and API routes.
  * These functions only work on the server side.
  */
+
+import { getRequestContext } from './request-context';
+
+function parseCookieHeader(header: string | undefined): Map<string, string> {
+    const cookieMap = new Map<string, string>();
+
+    if (!header) {
+        return cookieMap;
+    }
+
+    for (const segment of header.split(';')) {
+        const [rawName, ...valueParts] = segment.split('=');
+        const name = rawName?.trim();
+        if (!name) continue;
+        cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+    }
+
+    return cookieMap;
+}
+
+function serializeCookie(name: string, value: string, options: CookieOptions = {}): string {
+    const parts = [`${name}=${encodeURIComponent(value)}`];
+
+    if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
+    if (options.expires) parts.push(`Expires=${options.expires.toUTCString()}`);
+    if (options.domain) parts.push(`Domain=${options.domain}`);
+    parts.push(`Path=${options.path || '/'}`);
+    if (options.secure) parts.push('Secure');
+    if (options.httpOnly) parts.push('HttpOnly');
+    if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+    if (options.priority) parts.push(`Priority=${options.priority}`);
+
+    return parts.join('; ');
+}
+
+function appendSetCookie(serializedCookie: string): void {
+    const res = getRequestContext()?.res;
+    if (!res) {
+        return;
+    }
+
+    const current = res.getHeader('Set-Cookie');
+    if (!current) {
+        res.setHeader('Set-Cookie', [serializedCookie]);
+        return;
+    }
+
+    if (Array.isArray(current)) {
+        res.setHeader('Set-Cookie', [...current.map((entry) => String(entry)), serializedCookie]);
+        return;
+    }
+
+    res.setHeader('Set-Cookie', [String(current), serializedCookie]);
+}
+
+function createCookieStore(): CookieStore {
+    const request = getRequestContext()?.req;
+    const cookieMap = parseCookieHeader(request?.headers?.cookie as string | undefined);
+
+    const syncRequestCookieHeader = (): void => {
+        if (!request || !request.headers) {
+            return;
+        }
+
+        request.headers.cookie = Array.from(cookieMap.entries())
+            .map(([name, cookieValue]) => `${name}=${encodeURIComponent(cookieValue)}`)
+            .join('; ');
+    };
+
+    return {
+        get(name: string): ReadonlyCookie | undefined {
+            const value = cookieMap.get(name);
+            return value === undefined ? undefined : { name, value };
+        },
+        getAll(): ReadonlyCookie[] {
+            return Array.from(cookieMap.entries()).map(([name, value]) => ({ name, value }));
+        },
+        has(name: string): boolean {
+            return cookieMap.has(name);
+        },
+        set(name: string, value: string, options?: CookieOptions): void {
+            cookieMap.set(name, value);
+            syncRequestCookieHeader();
+            appendSetCookie(serializeCookie(name, value, options));
+        },
+        delete(name: string): void {
+            cookieMap.delete(name);
+            syncRequestCookieHeader();
+            appendSetCookie(
+                serializeCookie(name, '', {
+                    expires: new Date(0),
+                    maxAge: 0,
+                    path: '/',
+                })
+            );
+        },
+    };
+}
+
+function createReadonlyHeaders(): ReadonlyHeaders {
+    const request = getRequestContext()?.req;
+    const headerMap = new Map<string, string>();
+
+    if (request?.headers) {
+        for (const [key, value] of Object.entries(request.headers)) {
+            if (Array.isArray(value)) {
+                headerMap.set(key.toLowerCase(), value.join(', '));
+                continue;
+            }
+            if (value !== undefined) {
+                headerMap.set(key.toLowerCase(), String(value));
+            }
+        }
+    }
+
+    return {
+        get(name: string): string | null {
+            return headerMap.get(name.toLowerCase()) ?? null;
+        },
+        has(name: string): boolean {
+            return headerMap.has(name.toLowerCase());
+        },
+        entries(): IterableIterator<[string, string]> {
+            return headerMap.entries();
+        },
+        keys(): IterableIterator<string> {
+            return headerMap.keys();
+        },
+        values(): IterableIterator<string> {
+            return headerMap.values();
+        },
+        forEach(callback: (value: string, key: string) => void): void {
+            headerMap.forEach((value, key) => callback(value, key));
+        },
+    };
+}
 
 // ============================================================================
 // Cookies
@@ -38,35 +174,12 @@ export interface CookieStore {
  * Note: This is a simplified implementation - in production, integrate with actual request.
  */
 export function cookies(): CookieStore {
-    // Server-side cookie access would be implemented here
-    // For now, return a mock implementation
-    const cookieMap = new Map<string, string>();
-    
     // Check if we're in a server context
     if (typeof window !== 'undefined') {
         console.warn('cookies() should only be called on the server');
     }
-    
-    return {
-        get(name: string): ReadonlyCookie | undefined {
-            const value = cookieMap.get(name);
-            return value ? { name, value } : undefined;
-        },
-        getAll(): ReadonlyCookie[] {
-            return Array.from(cookieMap.entries()).map(([name, value]) => ({ name, value }));
-        },
-        has(name: string): boolean {
-            return cookieMap.has(name);
-        },
-        set(name: string, value: string, options?: CookieOptions): void {
-            cookieMap.set(name, value);
-            // In real implementation, set the Set-Cookie header
-        },
-        delete(name: string): void {
-            cookieMap.delete(name);
-            // In real implementation, set the Set-Cookie header with expired date
-        },
-    };
+
+    return createCookieStore();
 }
 
 // ============================================================================
@@ -87,31 +200,41 @@ export interface ReadonlyHeaders {
  * Note: This is a simplified implementation - in production, integrate with actual request.
  */
 export function headers(): ReadonlyHeaders {
-    // Server-side header access would be implemented here
-    const headerMap = new Map<string, string>();
-    
     if (typeof window !== 'undefined') {
         console.warn('headers() should only be called on the server');
     }
-    
+
+    return createReadonlyHeaders();
+}
+
+// ============================================================================
+// Draft Mode
+// ============================================================================
+
+const DRAFT_MODE_COOKIE = '__vista_draft_mode';
+
+export interface DraftMode {
+    isEnabled: boolean;
+    enable(): void;
+    disable(): void;
+}
+
+export function draftMode(): DraftMode {
+    const store = cookies();
+
     return {
-        get(name: string): string | null {
-            return headerMap.get(name.toLowerCase()) ?? null;
+        get isEnabled() {
+            return store.has(DRAFT_MODE_COOKIE);
         },
-        has(name: string): boolean {
-            return headerMap.has(name.toLowerCase());
+        enable(): void {
+            store.set(DRAFT_MODE_COOKIE, '1', {
+                httpOnly: true,
+                path: '/',
+                sameSite: 'lax',
+            });
         },
-        entries(): IterableIterator<[string, string]> {
-            return headerMap.entries();
-        },
-        keys(): IterableIterator<string> {
-            return headerMap.keys();
-        },
-        values(): IterableIterator<string> {
-            return headerMap.values();
-        },
-        forEach(callback: (value: string, key: string) => void): void {
-            headerMap.forEach((value, key) => callback(value, key));
+        disable(): void {
+            store.delete(DRAFT_MODE_COOKIE);
         },
     };
 }
@@ -244,3 +367,5 @@ export interface NextRequest extends Request {
     cookies: CookieStore;
     headers: Headers;
 }
+
+export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';

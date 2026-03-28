@@ -1,0 +1,8 @@
+[package]
+name = "vista-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings for Vista runtime"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -1,0 +1,11 @@
+[package]
+name = "flashpack-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI glue for Flashpack workflows"
+
+[dependencies]
+flashpack = { path = "../flashpack" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

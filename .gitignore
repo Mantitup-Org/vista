@@ -8,7 +8,7 @@ build/
 .next/
 out/
 coverage/
-.turbo/
+.flash/
 .nx/
 **/.nx/
 npm-debug.log*

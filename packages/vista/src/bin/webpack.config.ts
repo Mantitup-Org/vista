@@ -4,16 +4,20 @@ import ReactRefreshWebpackPlugin from '@pmmmwh/react-refresh-webpack-plugin';
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import { VistaServerComponentPlugin } from './server-component-plugin';
 import { VistaFlightPlugin } from '../build/webpack/plugins/vista-flight-plugin';
-import { BUILD_DIR } from '../constants';
+import { BUILD_DIR, FLASH_DIR } from '../constants';
+import type { VistaEngineVariant } from '../config';
 
 export interface WebpackConfigOptions {
   cwd: string;
   isDev: boolean;
+  engineVariant?: VistaEngineVariant;
+  cacheComponentsEnabled?: boolean;
 }
 
 export function createWebpackConfig(options: WebpackConfigOptions): webpack.Configuration {
-  const { cwd, isDev } = options;
+  const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false } = options;
   const vistaDir = path.join(cwd, BUILD_DIR);
+  const flashDir = path.join(cwd, FLASH_DIR);
   const entryPoint = path.join(vistaDir, 'client.tsx');
 
   // Find React - check local node_modules first, then traverse up for monorepo hoisting
@@ -59,7 +63,10 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
     cache: isDev
       ? {
           type: 'filesystem',
-          cacheDirectory: path.join(cwd, 'node_modules', '.cache', 'vista-webpack'),
+          cacheDirectory:
+            engineVariant === 'flashpack'
+              ? path.join(flashDir, 'cache', 'webpack')
+              : path.join(cwd, 'node_modules', '.cache', 'vista-webpack'),
           buildDependencies: {
             config: [__filename],
           },
@@ -146,7 +153,11 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
     },
     plugins: [
       // Server Component enforcement - runs on every compile
-      new VistaServerComponentPlugin({ appDir: path.join(cwd, 'app') }),
+      new VistaServerComponentPlugin({
+        appDir: path.join(cwd, 'app'),
+        componentsDir: path.join(cwd, 'components'),
+        cacheComponentsEnabled,
+      }),
       // Vista Flight Plugin - RSC bundle separation and manifest
       new VistaFlightPlugin({ appDir: path.join(cwd, 'app'), dev: isDev }),
       ...(isDev
@@ -159,6 +170,8 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
         : []),
       new webpack.DefinePlugin({
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
+        'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
+        'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
       }),
       new MiniCssExtractPlugin({
         filename: isDev ? 'modules.css' : 'modules-[contenthash:8].css',

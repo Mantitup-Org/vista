@@ -19,10 +19,40 @@ const fs_1 = __importDefault(require("fs"));
 const child_process_1 = require("child_process");
 const constants_1 = require("../constants");
 const static_cache_1 = require("./static-cache");
+const module_compile_hook_1 = require("./module-compile-hook");
+const request_context_1 = require("./request-context");
+const app_router_runtime_1 = require("./app-router-runtime");
+const fetch_policy_1 = require("./fetch-policy");
+const spawn_permissions_1 = require("./spawn-permissions");
+const config_1 = require("../config");
+const ppr_1 = require("./ppr");
+const vista_import_map_1 = require("./vista-import-map");
 const CjsModule = require('module');
 let staticRuntimeReady = false;
 let reactResolutionInstalled = false;
 let originalResolveFilename = null;
+function resolveFromWorkspace(specifier, cwd) {
+    const searchRoots = [
+        cwd,
+        path_1.default.resolve(cwd, '..'),
+        path_1.default.resolve(cwd, '..', '..'),
+        path_1.default.resolve(cwd, '..', '..', 'rsc'),
+        path_1.default.resolve(cwd, '..', '..', '..'),
+        path_1.default.resolve(cwd, '..', '..', '..', 'rsc'),
+    ];
+    for (const root of searchRoots) {
+        try {
+            return require.resolve(specifier, { paths: [root] });
+        }
+        catch {
+            // continue
+        }
+    }
+    return require.resolve(specifier);
+}
+function resolveVistaInternalRequest(request) {
+    return (0, vista_import_map_1.resolveVistaSourceRequest)(request, path_1.default.resolve(__dirname, '..'));
+}
 function installSingleReactResolution(cwd) {
     if (reactResolutionInstalled)
         return;
@@ -43,6 +73,9 @@ function installSingleReactResolution(cwd) {
     }
     originalResolveFilename = CjsModule._resolveFilename;
     CjsModule._resolveFilename = function (request, parent, isMain, options) {
+        const vistaResolvedPath = resolveVistaInternalRequest(request);
+        if (vistaResolvedPath)
+            return vistaResolvedPath;
         if (request === 'react')
             return reactPath;
         if (request === 'react-dom')
@@ -71,15 +104,24 @@ function installSingleReactResolution(cwd) {
 }
 function setupTypeScriptRuntime(cwd) {
     try {
-        const swcPath = require.resolve('@swc-node/register', { paths: [cwd] });
-        require(swcPath);
+        const swcRegisterPath = resolveFromWorkspace('@swc-node/register/register', cwd);
+        const typescriptPath = resolveFromWorkspace('typescript', cwd);
+        const { register } = require(swcRegisterPath);
+        const ts = require(typescriptPath);
+        register({
+            module: ts.ModuleKind.CommonJS,
+            jsx: ts.JsxEmit.ReactJSX,
+            moduleResolution: ts.ModuleResolutionKind.Node16,
+            esModuleInterop: true,
+            allowJs: true,
+        });
         return;
     }
     catch {
         // fallback
     }
     try {
-        const tsNodePath = require.resolve('ts-node', { paths: [cwd] });
+        const tsNodePath = resolveFromWorkspace('ts-node', cwd);
         require(tsNodePath).register({
             transpileOnly: true,
             compilerOptions: {
@@ -87,6 +129,7 @@ function setupTypeScriptRuntime(cwd) {
                 jsx: 'react-jsx',
                 moduleResolution: 'node16',
                 esModuleInterop: true,
+                allowJs: true,
             },
         });
         return;
@@ -95,8 +138,8 @@ function setupTypeScriptRuntime(cwd) {
         // fallback
     }
     try {
-        require.resolve('tsx', { paths: [cwd] });
-        require('tsx/cjs');
+        const tsxPath = resolveFromWorkspace('tsx/cjs', cwd);
+        require(tsxPath);
     }
     catch {
         // no transpiler available
@@ -111,8 +154,14 @@ function setupStaticGenerationRuntime(cwd) {
             m.exports = {};
         }
     };
+    const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)((0, config_1.loadConfig)(cwd));
     installSingleReactResolution(cwd);
     setupTypeScriptRuntime(cwd);
+    (0, module_compile_hook_1.installModuleCompileHook)({
+        cwd,
+        cacheComponentsEnabled: cacheComponentsConfig.enabled,
+    });
+    (0, fetch_policy_1.installSegmentFetchPolicyShim)();
     staticRuntimeReady = true;
 }
 // ---------------------------------------------------------------------------
@@ -178,97 +227,170 @@ function expandPattern(pattern, params) {
  * server bundle. For RSC mode, the actual Flight prerendering is
  * handled by the upstream process.
  */
-async function prerenderPage(urlPath, route, params, cwd) {
+async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEnabled) {
     setupStaticGenerationRuntime(cwd);
-    try {
-        const React = require('react');
-        const { renderToString } = require('react-dom/server');
-        const isAsyncComponent = (component) => {
-            return (typeof component === 'function' &&
-                component.constructor &&
-                component.constructor.name === 'AsyncFunction');
-        };
-        const renderComponent = async (component, props, child) => {
-            if (isAsyncComponent(component)) {
-                const asyncProps = child === undefined ? props : { ...props, children: child };
-                return component(asyncProps);
+    return (0, request_context_1.runWithRequestContext)({
+        cwd,
+        vistaDirRoot,
+        urlPath,
+        segmentConfig: route.segmentConfig,
+    }, async () => {
+        try {
+            const React = require('react');
+            const { renderToString } = require('react-dom/server');
+            const isAsyncComponent = (component) => {
+                return (typeof component === 'function' &&
+                    component.constructor &&
+                    component.constructor.name === 'AsyncFunction');
+            };
+            const renderComponent = async (component, props, child) => {
+                if (isAsyncComponent(component)) {
+                    const asyncProps = child === undefined ? props : { ...props, children: child };
+                    return component(asyncProps);
+                }
+                if (child === undefined) {
+                    return React.createElement(component, props);
+                }
+                return React.createElement(component, props, child);
+            };
+            const renderStaticSubtree = async (input) => {
+                const appDir = path_1.default.join(cwd, 'app');
+                const RouteModule = require(input.entryFilePath);
+                const RouteComponent = RouteModule.default;
+                if (!RouteComponent) {
+                    throw new Error(`Route module does not export default component: ${input.entryFilePath}`);
+                }
+                let subtree = await renderComponent(RouteComponent, {
+                    params: input.params,
+                    searchParams: input.searchParams,
+                });
+                const directoryChain = (0, app_router_runtime_1.resolveDirectoryChain)(input.subtreeRootDir, input.entryFilePath);
+                for (let i = directoryChain.length - 1; i >= 0; i--) {
+                    const dir = directoryChain[i];
+                    const layoutPath = (0, app_router_runtime_1.resolveConventionModule)(dir, 'root') ?? (0, app_router_runtime_1.resolveConventionModule)(dir, 'layout');
+                    if (!layoutPath || path_1.default.resolve(layoutPath) === path_1.default.resolve(input.entryFilePath)) {
+                        continue;
+                    }
+                    const LayoutModule = require(layoutPath);
+                    const LayoutComponent = LayoutModule.default;
+                    if (!LayoutComponent) {
+                        continue;
+                    }
+                    const slotProps = {};
+                    if (!input.disableParallelSlots) {
+                        const slotMatches = (0, app_router_runtime_1.resolveParallelSlotMatches)({
+                            appDir,
+                            layoutPath,
+                            pathname: input.pathname,
+                        });
+                        for (const slotMatch of slotMatches) {
+                            slotProps[slotMatch.slotName] = await renderStaticSubtree({
+                                subtreeRootDir: slotMatch.slotRootDir,
+                                entryFilePath: slotMatch.filePath,
+                                pathname: input.pathname,
+                                params: {
+                                    ...input.params,
+                                    ...slotMatch.params,
+                                },
+                                searchParams: input.searchParams,
+                            });
+                        }
+                    }
+                    subtree = await renderComponent(LayoutComponent, {
+                        params: input.params,
+                        searchParams: input.searchParams,
+                        ...slotProps,
+                    }, subtree);
+                }
+                return subtree;
+            };
+            // Load page component from webpack-built server bundle
+            const pageModule = require(route.pagePath);
+            const PageComponent = pageModule.default;
+            if (!PageComponent) {
+                console.warn(`[vista:ssg] No default export in ${route.pagePath}`);
+                return null;
             }
-            if (child === undefined) {
-                return React.createElement(component, props);
+            let metadata = {};
+            const searchParams = {};
+            for (const layoutPath of route.layoutPaths) {
+                try {
+                    const layoutModule = require(layoutPath);
+                    if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
+                        metadata = { ...metadata, ...layoutModule.metadata };
+                    }
+                }
+                catch {
+                    // Ignore layout metadata failures for static generation.
+                }
             }
-            return React.createElement(component, props, child);
-        };
-        // Load page component from webpack-built server bundle
-        const pageModule = require(route.pagePath);
-        const PageComponent = pageModule.default;
-        if (!PageComponent) {
-            console.warn(`[vista:ssg] No default export in ${route.pagePath}`);
+            if (pageModule.metadata && typeof pageModule.metadata === 'object') {
+                metadata = { ...metadata, ...pageModule.metadata };
+            }
+            if (typeof pageModule.generateMetadata === 'function') {
+                try {
+                    const dynamicMeta = await pageModule.generateMetadata({ params: params || {}, searchParams }, metadata);
+                    if (dynamicMeta && typeof dynamicMeta === 'object') {
+                        metadata = { ...metadata, ...dynamicMeta };
+                    }
+                }
+                catch (metadataError) {
+                    console.warn(`[vista:ssg] generateMetadata failed for ${urlPath}:`, metadataError?.message || String(metadataError));
+                }
+            }
+            let metadataHtml = '';
+            try {
+                const { generateMetadataHtml } = require('../metadata/generate');
+                metadataHtml = generateMetadataHtml(metadata);
+            }
+            catch {
+                metadataHtml = '';
+            }
+            const element = await renderStaticSubtree({
+                subtreeRootDir: path_1.default.join(cwd, 'app'),
+                entryFilePath: route.pagePath,
+                pathname: urlPath,
+                params: params || {},
+                searchParams,
+            });
+            const pprEnabled = (0, ppr_1.isRoutePPREligible)(route, appPprEnabled);
+            let shellHtml;
+            let pprInfo = undefined;
+            if (pprEnabled && route.loadingPath) {
+                try {
+                    const shellElement = await renderStaticSubtree({
+                        subtreeRootDir: path_1.default.join(cwd, 'app'),
+                        entryFilePath: route.loadingPath,
+                        pathname: urlPath,
+                        params: params || {},
+                        searchParams,
+                    });
+                    const renderedShellHtml = renderToString(shellElement);
+                    shellHtml = (0, ppr_1.injectPprResumeBootstrap)(wrapInDocument(`${renderedShellHtml}\n<!--vista:ppr-shell-->`, urlPath, metadataHtml, cwd), urlPath);
+                    pprInfo = (0, ppr_1.createPartialPrerenderInfo)(urlPath);
+                }
+                catch (shellError) {
+                    console.warn(`[vista:ppr] Failed to generate shell for ${urlPath}:`, shellError?.message || String(shellError));
+                }
+            }
+            // Render to HTML string
+            const html = renderToString(element);
+            return {
+                html: wrapInDocument(html, urlPath, metadataHtml, cwd),
+                shellHtml,
+                generatedAt: Date.now(),
+                revalidate: route.revalidate || 0,
+                routePattern: route.pattern,
+                params,
+                tags: (0, request_context_1.consumeTrackedTags)(),
+                ppr: pprInfo,
+            };
+        }
+        catch (err) {
+            console.error(`[vista:ssg] Error pre-rendering ${urlPath}:`, err?.message || String(err));
             return null;
         }
-        let metadata = {};
-        const searchParams = {};
-        for (const layoutPath of route.layoutPaths) {
-            try {
-                const layoutModule = require(layoutPath);
-                if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
-                    metadata = { ...metadata, ...layoutModule.metadata };
-                }
-            }
-            catch {
-                // Ignore layout metadata failures for static generation.
-            }
-        }
-        if (pageModule.metadata && typeof pageModule.metadata === 'object') {
-            metadata = { ...metadata, ...pageModule.metadata };
-        }
-        if (typeof pageModule.generateMetadata === 'function') {
-            try {
-                const dynamicMeta = await pageModule.generateMetadata({ params: params || {}, searchParams }, metadata);
-                if (dynamicMeta && typeof dynamicMeta === 'object') {
-                    metadata = { ...metadata, ...dynamicMeta };
-                }
-            }
-            catch (metadataError) {
-                console.warn(`[vista:ssg] generateMetadata failed for ${urlPath}:`, metadataError?.message || String(metadataError));
-            }
-        }
-        let metadataHtml = '';
-        try {
-            const { generateMetadataHtml } = require('../metadata/generate');
-            metadataHtml = generateMetadataHtml(metadata);
-        }
-        catch {
-            metadataHtml = '';
-        }
-        // Build the element, passing params as props
-        let element = await renderComponent(PageComponent, { params: params || {} });
-        // Wrap in layouts (outside-in)
-        for (let i = route.layoutPaths.length - 1; i >= 0; i--) {
-            try {
-                const layoutModule = require(route.layoutPaths[i]);
-                const LayoutComponent = layoutModule.default;
-                if (LayoutComponent) {
-                    element = await renderComponent(LayoutComponent, { params: params || {}, searchParams: {} }, element);
-                }
-            }
-            catch {
-                // Skip layout if it fails to load
-            }
-        }
-        // Render to HTML string
-        const html = renderToString(element);
-        return {
-            html: wrapInDocument(html, urlPath, metadataHtml, cwd),
-            generatedAt: Date.now(),
-            revalidate: route.revalidate || 0,
-            routePattern: route.pattern,
-            params,
-        };
-    }
-    catch (err) {
-        console.error(`[vista:ssg] Error pre-rendering ${urlPath}:`, err?.message || String(err));
-        return null;
-    }
+    });
 }
 /**
  * Wrap rendered HTML in a basic document shell.
@@ -381,16 +503,41 @@ async function startStaticFlightUpstream(cwd) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
         return null;
     }
-    const child = (0, child_process_1.spawn)(process.execPath, ['--conditions', 'react-server', upstreamScript, '--port', String(port)], {
-        cwd,
-        env: {
-            ...process.env,
-            NODE_ENV: process.env.NODE_ENV || 'production',
-            RSC_UPSTREAM_PORT: String(port),
-        },
-        stdio: 'pipe',
-    });
-    await waitForUpstreamReady(child, 12000);
+    let child;
+    try {
+        child = (0, child_process_1.spawn)(process.execPath, ['--conditions', 'react-server', upstreamScript, '--port', String(port)], {
+            cwd,
+            env: {
+                ...process.env,
+                NODE_ENV: process.env.NODE_ENV || 'production',
+                RSC_UPSTREAM_PORT: String(port),
+            },
+            stdio: 'pipe',
+        });
+    }
+    catch (spawnError) {
+        if ((0, spawn_permissions_1.isPermissionDeniedSpawnError)(spawnError)) {
+            return null;
+        }
+        throw spawnError;
+    }
+    try {
+        await waitForUpstreamReady(child, 12000);
+    }
+    catch (startupError) {
+        if ((0, spawn_permissions_1.isPermissionDeniedSpawnError)(startupError)) {
+            try {
+                if (!child.killed) {
+                    child.kill();
+                }
+            }
+            catch {
+                // ignore cleanup failures
+            }
+            return null;
+        }
+        throw startupError;
+    }
     const close = async () => {
         if (child.killed)
             return;
@@ -471,6 +618,8 @@ function wrapInDocument(bodyHtml, _urlPath, metadataHtml, cwd) {
  */
 async function generateStaticPages(options) {
     const { cwd, vistaDirRoot, manifest, isDev, buildId } = options;
+    const vistaConfig = (0, config_1.loadConfig)(cwd);
+    const appPprEnabled = (0, ppr_1.isAppPPREnabled)(vistaConfig);
     const result = {
         pagesGenerated: 0,
         generatedPaths: [],
@@ -479,7 +628,7 @@ async function generateStaticPages(options) {
     };
     // In dev mode, skip prerendering (pages are rendered on demand)
     if (isDev) {
-        result.manifest = (0, static_cache_1.generatePrerenderManifest)(manifest.routes);
+        result.manifest = (0, static_cache_1.generatePrerenderManifest)(manifest.routes, undefined, { appPprEnabled });
         return result;
     }
     const staticRoutes = manifest.routes.filter((r) => r.renderMode === 'static' || r.renderMode === 'isr');
@@ -489,14 +638,19 @@ async function generateStaticPages(options) {
         flightUpstream = await startStaticFlightUpstream(cwd);
     }
     catch (flightError) {
-        console.warn(`[vista:ssg] Flight payload pre-generation disabled: ${flightError.message}`);
+        if ((0, spawn_permissions_1.isPermissionDeniedSpawnError)(flightError)) {
+            console.log('[vista:ssg] Flight payload pre-generation skipped (spawn blocked by environment permissions)');
+        }
+        else {
+            console.warn(`[vista:ssg] Flight payload pre-generation disabled: ${(0, spawn_permissions_1.getErrorMessage)(flightError)}`);
+        }
     }
     try {
         for (const route of staticRoutes) {
             if (route.type === 'static') {
                 // Simple static route — single URL
                 const urlPath = route.pattern;
-                const page = await prerenderPage(urlPath, route, undefined, cwd);
+                const page = await prerenderPage(urlPath, route, undefined, cwd, vistaDirRoot, appPprEnabled);
                 if (page) {
                     if (flightUpstream) {
                         const flightData = await flightUpstream.fetchFlight(urlPath);
@@ -522,7 +676,7 @@ async function generateStaticPages(options) {
                 }
                 for (const params of paramSets) {
                     const urlPath = expandPattern(route.pattern, params);
-                    const page = await prerenderPage(urlPath, route, params, cwd);
+                    const page = await prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEnabled);
                     if (page) {
                         if (flightUpstream) {
                             const flightData = await flightUpstream.fetchFlight(urlPath);
@@ -548,7 +702,7 @@ async function generateStaticPages(options) {
         }
     }
     // Generate prerender manifest
-    result.manifest = (0, static_cache_1.generatePrerenderManifest)(manifest.routes);
+    result.manifest = (0, static_cache_1.generatePrerenderManifest)(manifest.routes, undefined, { appPprEnabled });
     // Write manifest to disk
     const manifestPath = path_1.default.join(vistaDirRoot, 'prerender-manifest.json');
     fs_1.default.writeFileSync(manifestPath, JSON.stringify(result.manifest, null, 2));
@@ -566,7 +720,7 @@ async function revalidatePath(urlPath, route, params, cwd, vistaDirRoot) {
     }
     (0, static_cache_1.markRevalidating)(urlPath);
     try {
-        const page = await prerenderPage(urlPath, route, params, cwd);
+        const page = await prerenderPage(urlPath, route, params, cwd, vistaDirRoot, (0, ppr_1.isAppPPREnabled)((0, config_1.loadConfig)(cwd)));
         if (page) {
             (0, static_cache_1.setCachedPage)(urlPath, page);
             (0, static_cache_1.writeStaticPageToDisk)(vistaDirRoot, urlPath, page);

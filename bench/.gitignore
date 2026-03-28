@@ -1,0 +1,5 @@
+*/node_modules/
+*/.vista/
+*/.flash/
+results/*.json
+!results/.gitkeep

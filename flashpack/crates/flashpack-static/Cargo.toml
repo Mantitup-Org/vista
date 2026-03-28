@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-static"
+version = "0.1.0"
+edition = "2021"
+description = "Static asset metadata for Flashpack builds"
+
+[dependencies]

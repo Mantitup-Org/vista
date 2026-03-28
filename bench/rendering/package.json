@@ -1,0 +1,19 @@
+{
+  "name": "bench-rendering",
+  "scripts": {
+    "bench:recursive-copy": "node recursive-copy/run",
+    "bench:stateless": "ab -c1 -n3000 http://0.0.0.0:3000/stateless",
+    "bench:stateless-big": "ab -c1 -n500 http://0.0.0.0:3000/stateless-big",
+    "build-application": "vista build",
+    "start": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start",
+    "build-flashpack": "vista build",
+    "build-default": "vista build --legacy",
+    "start-flashpack": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start",
+    "start-default": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start --legacy",
+    "start-application": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start"
+  },
+  "dependencies": {
+    "fs-extra": "10.0.0",
+    "recursive-copy": "2.0.11"
+  }
+}

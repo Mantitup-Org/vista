@@ -50,7 +50,7 @@ export class StructureWatcher extends EventEmitter {
   constructor(options: StructureWatchOptions) {
     super();
     this.cwd = options.cwd;
-    this.debounceMs = options.debounceMs ?? 120;
+    this.debounceMs = options.debounceMs ?? 60;
     this.notFoundRoute = options.notFoundRoute;
   }
 

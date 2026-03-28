@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-mdx"
+version = "0.1.0"
+edition = "2021"
+description = "MDX support surface for Flashpack"
+
+[dependencies]

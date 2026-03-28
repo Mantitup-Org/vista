@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-ecmascript-plugins"
+version = "0.1.0"
+edition = "2021"
+description = "Plugin extension surface for Flashpack ECMAScript transforms"
+
+[dependencies]

@@ -93,7 +93,7 @@ The framework follows Next.js App Router conventions:
 vista-source/                          # ← Root of the monorepo
 ├── package.json                       # Root workspace config (Turbo scripts)
 ├── pnpm-workspace.yaml                # Workspace packages: packages/*, apps/*, crates/*
-├── turbo.json                         # Turbo task definitions (build, dev, lint, test, clean)
+├── flashrepo.json                         # Flashrepo task definitions (build, dev, lint, test, clean)
 ├── Cargo.toml                         # Rust workspace root (vista-transforms + vista-napi)
 ├── rust-toolchain.toml                # Rust stable channel + targets
 ├── tsconfig.json                      # Root TypeScript config
@@ -253,7 +253,7 @@ packages:
 ### Turborepo
 
 ```jsonc
-// turbo.json — task pipeline
+// flashrepo.json — task pipeline
 {
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".vista/**", "*.node"] },
@@ -269,8 +269,8 @@ packages:
 
 | Script                            | Command                                       | Purpose                                            |
 | --------------------------------- | --------------------------------------------- | -------------------------------------------------- |
-| `pnpm build`                      | `turbo run build`                             | Build all packages                                 |
-| `pnpm dev`                        | `turbo run dev`                               | Dev mode for all packages                          |
+| `pnpm build`                      | `node scripts/flash-run.cjs run build`         | Build all packages                                 |
+| `pnpm dev`                        | `node scripts/flash-run.cjs run dev`           | Dev mode for all packages                          |
 | `pnpm lint`                       | `eslint .`                                    | Lint entire monorepo                               |
 | `pnpm lint:fix`                   | `eslint . --fix`                              | Auto-fix lint errors                               |
 | `pnpm format`                     | `prettier --write .`                          | Format all files                                   |
@@ -1105,7 +1105,7 @@ easier to maintain and is the foundation of the rename prevention system.
 1. **Never hardcode** `'.vista'`, `'/_vista/'`, `'__vista_'`, etc. in source files
 2. **Always import** from `constants.ts` (TS) or use `naming::*` (Rust)
 3. **Rust and TS constants must stay in sync** — verified by `test-integrity.cjs`
-4. **Config files** (`.gitignore`, `turbo.json`, `eslint.config.mjs`) have comments linking to `BUILD_DIR`
+4. **Config files** (`.gitignore`, `flashrepo.json`, `eslint.config.mjs`) have comments linking to `BUILD_DIR`
 
 ### Renaming the Framework
 
@@ -1115,7 +1115,7 @@ If you need to rename the framework (e.g., from `vista` to something else):
 2. Update `naming.rs` — mirror the same values
 3. Recompile Rust: `cargo build --release`
 4. Update `test-constants.cjs`
-5. Update config files (`.gitignore`, `turbo.json`, `eslint.config.mjs`)
+5. Update config files (`.gitignore`, `flashrepo.json`, `eslint.config.mjs`)
 6. Update NAPI `index.js` — 40+ platform-specific `.node` filenames
 7. Run `pnpm test:integrity` to verify sync
 
@@ -1186,7 +1186,7 @@ without recompiling Rust causes a token mismatch → crash.
 | Layer 2: Rust Sync        | `naming.rs` constants match TS values, `compute_integrity_token()` exists   |
 | Layer 3: NAPI Bridge      | `getFrameworkIdentity`, `verifyIntegrity` exported, `vista-native.*` naming |
 | Layer 4: No Hardcoding    | 8+ source files scanned for inline `/_vista`, `__vista_reload`, `.vista`    |
-| Layer 5: Config Sync      | `.gitignore`, `turbo.json`, `eslint.config.mjs`, `package.json bin`         |
+| Layer 5: Config Sync      | `.gitignore`, `flashrepo.json`, `eslint.config.mjs`, `package.json bin`         |
 | Layer 6: Integrity Module | `integrity.ts` has all required functions                                   |
 | Layer 7: Build Watermark  | `manifest.ts` imports watermark + embeds `__integrity`                      |
 
@@ -1357,8 +1357,8 @@ Set-Location test-app; npx vista start     # PowerShell
 # ─── Monorepo Commands ───
 
 pnpm install                               # Install all dependencies
-pnpm build                                 # Build all packages (turbo)
-pnpm dev                                   # Dev mode all packages (turbo)
+pnpm build                                 # Build all packages (flash runner)
+pnpm dev                                   # Dev mode all packages (flash runner)
 pnpm lint                                  # Lint everything
 pnpm lint:fix                              # Auto-fix lint errors
 pnpm format                                # Format with Prettier
@@ -2131,3 +2131,5 @@ experimental: { typedApi: { enabled: false } }
 ```
 
 With rollback off, typed routes stop serving requests and legacy `app/api/*` behavior remains unchanged.
+
+

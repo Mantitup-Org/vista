@@ -1,0 +1,8 @@
+[package]
+name = "flash-tasks-fs"
+version = "0.1.0"
+edition = "2021"
+description = "Filesystem helpers for Flashpack task graph"
+
+[dependencies]
+flash-tasks = { path = "../flash-tasks" }

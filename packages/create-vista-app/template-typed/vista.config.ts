@@ -1,4 +1,8 @@
 const config = {
+    engine: {
+        // Engine options: 'default' or 'flashpack'
+        variant: 'default',
+    },
     images: {
         domains: ['example.com'],
     },

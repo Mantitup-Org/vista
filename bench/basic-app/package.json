@@ -1,0 +1,21 @@
+{
+  "name": "bench-basic-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build-application": "vista build",
+    "start-application": "vista start",
+    "dev-flashpack": "vista dev",
+    "dev-default": "vista dev --legacy",
+    "build-flashpack": "vista build",
+    "build-default": "vista build --legacy",
+    "start-flashpack": "vista start",
+    "start-default": "vista start --legacy"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-server-dom-webpack": "^19.0.0",
+    "vista": "file:../../packages/vista"
+  }
+}

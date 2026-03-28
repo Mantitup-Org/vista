@@ -1,0 +1,5 @@
+[package]
+name = "flash-tasks"
+version = "0.1.0"
+edition = "2021"
+description = "Core task graph primitives for Flashpack"

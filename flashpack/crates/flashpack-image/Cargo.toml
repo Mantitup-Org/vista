@@ -1,0 +1,7 @@
+[package]
+name = "flashpack-image"
+version = "0.1.0"
+edition = "2021"
+description = "Image pipeline contracts for Flashpack"
+
+[dependencies]
