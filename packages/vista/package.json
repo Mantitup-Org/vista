@@ -144,5 +144,6 @@
     "@types/webpack": "^5.28.5",
     "@types/webpack-hot-middleware": "^2.25.9",
     "typescript": "^5.7.2"
-  }
+  },
+  "gitHead": "d1b9f715d6365d8e1f553e96b752fbce8d98df7c"
 }
