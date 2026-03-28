@@ -61,22 +61,27 @@ export default function DocNavigation({ navigation, onNavigate, className }: Doc
       {docsByGroup.map((group) => {
         const isGroupOpen = openGroups[group.id] ?? true;
         return (
-          <section key={group.id} className="rounded-xl border border-zinc-900/80 bg-zinc-950/40">
+          <section
+            key={group.id}
+            className="rounded-xl border border-foreground/12 bg-foreground/[0.025] shadow-[0_10px_30px_rgba(15,23,42,0.05)] dark:bg-white/[0.03]"
+          >
             <button
               type="button"
               onClick={() => toggleGroup(group.id)}
               className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left"
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">{group.title}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">
+                {group.title}
+              </p>
               {isGroupOpen ? (
-                <ChevronDown className="h-4 w-4 text-zinc-500" />
+                <ChevronDown className="h-4 w-4 text-foreground/45" />
               ) : (
-                <ChevronRight className="h-4 w-4 text-zinc-500" />
+                <ChevronRight className="h-4 w-4 text-foreground/45" />
               )}
             </button>
 
             {isGroupOpen ? (
-              <ul className="space-y-2 border-t border-zinc-900/80 p-2">
+              <ul className="space-y-2 border-t border-foreground/10 p-2">
                 {group.docs.map((doc) => {
                   const isActive = pathname === doc.normalizedHref;
                   const isExpanded = expandedDocHref === doc.normalizedHref;
@@ -87,7 +92,7 @@ export default function DocNavigation({ navigation, onNavigate, className }: Doc
                           'rounded-lg border px-2 py-2 transition-colors',
                           isActive
                             ? 'border-primary/45 bg-primary/10'
-                            : 'border-zinc-900/70 bg-zinc-950/40 hover:border-zinc-800'
+                            : 'border-foreground/10 bg-background/60 hover:border-foreground/20 hover:bg-foreground/[0.035] dark:bg-white/[0.02]'
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -96,7 +101,7 @@ export default function DocNavigation({ navigation, onNavigate, className }: Doc
                             onClick={onNavigate}
                             className={cn(
                               'text-sm font-medium transition-colors',
-                              isActive ? 'text-primary' : 'text-zinc-200 hover:text-zinc-100'
+                              isActive ? 'text-primary' : 'text-foreground/88 hover:text-foreground'
                             )}
                           >
                             {doc.title}
@@ -104,7 +109,7 @@ export default function DocNavigation({ navigation, onNavigate, className }: Doc
                           <button
                             type="button"
                             onClick={() => toggleDoc(doc.normalizedHref)}
-                            className="rounded-md px-1.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+                            className="rounded-md px-1.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/42 hover:bg-foreground/[0.06] hover:text-foreground/75"
                             aria-label={`Toggle ${doc.title} summary`}
                           >
                             {isExpanded ? 'Hide' : 'Info'}
@@ -114,7 +119,7 @@ export default function DocNavigation({ navigation, onNavigate, className }: Doc
                           <p
                             className={cn(
                               'mt-2 text-xs leading-relaxed',
-                              isActive ? 'text-primary/75' : 'text-zinc-500'
+                              isActive ? 'text-primary/80' : 'text-foreground/56'
                             )}
                           >
                             {doc.summary}

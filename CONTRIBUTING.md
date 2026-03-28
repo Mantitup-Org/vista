@@ -1,81 +1,143 @@
-# Contributing to Vista
+# Contributing to Vista.js
 
-Thank you for your interest in contributing to Vista! This is an alpha-stage framework, and we welcome your help to make it stable and feature-rich.
+Thanks for helping improve Vista. This repo moves quickly, so the most helpful contributions are the ones that stay aligned with the current package/runtime shape instead of older assumptions.
 
-## 🚨 IMPORTANT RULES
+## Ground Rules
 
-**Please follow these core rules strictly:**
+- Never push directly to `main`.
+- Start work from `development` unless a maintainer asks for a different base.
+- Keep each branch focused on one fix or feature.
+- If you change published package source, rebuild the committed package output before opening a PR.
 
-1.  **NEVER push directly to the `main` branch.**
-    *   The `main` branch is protected. Direct pushes will be rejected.
-2.  **Create your own branch** for every change.
-    *   Development happens on feature branches.
-3.  **One feature = One branch.**
-    *   Keep your changes focused. Don't bundle multiple features in one PR.
+## Prerequisites
 
----
+- Node.js 20+
+- pnpm 8.15+
+- npm (used for package publish flow)
+- Rust stable toolchain
 
-## 🛠️ Development Workflow
-
-### 1. Fork & Clone
-Fork the repository to your own GitHub account, then clone it locally:
+## Clone and Setup
 
 ```bash
-git clone https://github.com/vistagen/Vista-Js.git
-cd Vista-Js
-```
-
-### 2. Create a Branch
-**Always** create a new branch from `main` before you start working:
-
-```bash
-git checkout main
-git pull origin main
-git checkout -b feature/my-new-feature
-# or for fixes
-git checkout -b fix/bug-description
-```
-
-### 3. Setup Environment
-
-*   **Node.js:** 20+
-*   **pnpm:** 8+
-*   **Rust:** Stable toolchain
-
-```bash
-# Install dependencies
+git clone https://github.com/vistakit/Vista-Js.git vista-source
+cd vista-source
 pnpm install
-
-# Build Rust bindings
-cd crates/vista-napi
-npm run build
-cd ../..
 ```
 
-### 4. Make Changes
-Write your code!
-*   **TypeScript/JS:** We use Prettier & ESLint. Run `pnpm lint` before committing.
-*   **Rust:** Use `cargo fmt` and `cargo clippy`.
-
-### 5. Push & Pull Request
-Once you are happy with your changes:
+Optional but recommended when you touch native code:
 
 ```bash
-git add .
-git commit -m "feat: description of my awesome feature"
-git push origin feature/my-new-feature
+npm --prefix crates/vista-napi run build
 ```
 
-Then, go to the GitHub repository and open a **Pull Request (PR)** targeting the `main` branch.
+Build the framework package after editing `packages/vista/src`:
 
----
+```bash
+npm --prefix packages/vista run build
+```
 
-## 📂 Project Structure
+## Branch Workflow
 
-*   `crates/` - Rust core logic (N-API bindings, SWC transforms)
-*   `packages/` - JavaScript packages (`vista`, `create-vista-app`)
-*   `apps/` - Example and test applications
+```bash
+git checkout development
+git pull origin development
+git checkout -b feat/my-change
+```
 
-## 💬 Community
+Use `fix/...`, `feat/...`, `docs/...`, or similar branch names.
 
-If you have questions, please open an issue or start a discussion. We appreciate your code, feedback, and support in building the future of React frameworks!
+## What to Run Before a PR
+
+Choose the narrowest relevant checks, then run the bigger suite before asking for review.
+
+### If you change framework runtime, RSC, routing, cache, or manifests
+
+```bash
+npm --prefix packages/vista run build
+pnpm test:server-runtime
+pnpm test:rsc-conformance
+pnpm test:vista-output
+```
+
+### If you change Flashpack behavior
+
+```bash
+npm --prefix packages/vista run build
+pnpm test:flashpack-dev
+pnpm test:flashpack-state
+```
+
+### If you change integrity, naming, or Rust bridge behavior
+
+```bash
+pnpm test:integrity
+pnpm test:rust-bridge
+```
+
+### If you change scaffolding or starter templates
+
+```bash
+pnpm test:create-vista-app
+```
+
+### If you change docs site behavior (`apps/web`)
+
+```bash
+npm --prefix apps/web run build
+```
+
+### Before a larger PR or release-oriented change
+
+```bash
+pnpm test
+```
+
+## Dist and Generated Output Rules
+
+These repo rules matter:
+
+- `packages/vista/dist` is committed. If you change `packages/vista/src`, rebuild and include the matching `dist` updates.
+- If you change package exports or native bridge behavior, verify the published package shape still works.
+- Do not commit random temp folders or local smoke apps.
+
+## Repo Areas
+
+- `packages/vista/`: framework package, CLI, runtime, build system, theme exports, cache APIs
+- `packages/create-vista-app/`: scaffolding CLI and starter templates
+- `apps/web/`: official site and docs at `vista.xyz`
+- `crates/`: top-level Rust crates (`vista-core`, `vista-api`, `vista-napi`, etc.)
+- `flashpack/`: Rust-backed Flashpack engine crates
+- `bench/`: Vista-first benchmark fixtures
+- `scripts/`: guards, regression suites, conformance, and release-adjacent checks
+
+## PR Checklist
+
+Before opening a PR, make sure:
+
+- the branch is based on `development`
+- changed docs mention the correct repo URL: `https://github.com/vistakit/Vista-Js.git`
+- package versions are not bumped unless this is a release task
+- committed `dist` output matches changed source where required
+- relevant tests/builds have been run
+- the PR explains what changed and why
+
+## Maintainer Release Notes
+
+Maintainers publish from `development` using Lerna:
+
+```bash
+git add -A
+git commit -m "release: x.y.z"
+git push origin development
+npx lerna publish from-package --yes
+git tag vx.y.z
+git push origin vx.y.z
+```
+
+If `lerna publish` dirties `packages/*/package.json` because a publish attempt wrote `gitHead`, restore those files before retrying.
+
+## Need Help?
+
+- Open an issue for bugs or feature requests
+- Start a draft PR early if you want feedback on direction
+- When in doubt, prefer smaller, reviewable changes over giant refactors

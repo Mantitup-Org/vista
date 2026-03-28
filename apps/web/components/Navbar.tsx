@@ -21,7 +21,7 @@ export default function Navbar() {
   return (
     <nav
       className={`fixed top-0 left-0 z-50 w-full transition-all duration-300 ${
-        isScrolled ? 'bg-black/50 backdrop-blur-md' : 'bg-transparent'
+        isScrolled ? 'bg-background/80 backdrop-blur-md' : 'bg-transparent'
       }`}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
@@ -31,7 +31,7 @@ export default function Navbar() {
             width={120}
             height={40}
             alt={`${siteConfig.name} Logo`}
-            className="relative z-10 invert"
+            className="relative z-10 dark:invert"
             style={{ width: '120px', height: 'auto' }}
           />
         </a>
@@ -42,7 +42,7 @@ export default function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+                className="text-sm font-medium text-foreground/70 transition-colors hover:text-foreground"
               >
                 {item.title}
               </Link>
@@ -50,14 +50,14 @@ export default function Navbar() {
               <a
                 key={item.href}
                 href={item.href}
-                className="text-sm font-medium text-zinc-400 transition-colors hover:text-white"
+                className="text-sm font-medium text-foreground/70 transition-colors hover:text-foreground"
               >
                 {item.title}
               </a>
             )
           )}
 
-          <div className="h-6 w-[1px] bg-zinc-800" />
+          <div className="h-6 w-[1px] bg-foreground/12" />
 
           <ThemeToggle compact className="hidden sm:inline-flex" />
 
@@ -65,7 +65,7 @@ export default function Navbar() {
             href={siteConfig.links.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="group flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
+            className="group flex items-center gap-2 rounded-full border border-foreground/10 bg-foreground/5 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
           >
             <Github className="h-4 w-4" />
             <span className="hidden md:inline">Star on GitHub</span>

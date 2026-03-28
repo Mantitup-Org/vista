@@ -25,9 +25,9 @@ async function resolveRouteParams(input: DocsArticlePageProps['params']): Promis
 function renderNotFound() {
   return (
     <article className="mx-auto max-w-3xl pb-16 pt-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">Documentation</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-100">Doc not found</h1>
-      <p className="mt-4 text-base leading-7 text-zinc-400">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">Documentation</p>
+      <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground">Doc not found</h1>
+      <p className="mt-4 text-base leading-7 text-foreground/64">
         The page you are trying to open does not exist yet, or the slug is invalid.
       </p>
       <Link
@@ -49,7 +49,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
           id={headingId}
           data-doc-heading={section.text}
           data-level="2"
-          className="scroll-mt-40 text-2xl font-semibold tracking-tight text-zinc-100"
+          className="scroll-mt-40 text-2xl font-semibold tracking-tight text-foreground"
         >
           {section.text}
         </h2>
@@ -62,7 +62,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
         id={headingId}
         data-doc-heading={section.text}
         data-level="3"
-        className="scroll-mt-40 text-xl font-semibold tracking-tight text-zinc-100"
+        className="scroll-mt-40 text-xl font-semibold tracking-tight text-foreground"
       >
         {section.text}
       </h3>
@@ -71,7 +71,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
 
   if (section.type === 'paragraph') {
     return (
-      <p key={`paragraph-${index}`} className="text-base leading-8 text-zinc-300">
+      <p key={`paragraph-${index}`} className="text-base leading-8 text-foreground/74">
         {section.text}
       </p>
     );
@@ -79,7 +79,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
 
   if (section.type === 'list') {
     return (
-      <ul key={`list-${index}`} className="list-disc space-y-2 pl-5 text-base leading-8 text-zinc-300">
+      <ul key={`list-${index}`} className="list-disc space-y-2 pl-5 text-base leading-8 text-foreground/74">
         {section.items.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -95,7 +95,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
     return (
       <blockquote
         key={`quote-${index}`}
-        className="rounded-xl border-l-4 border-primary/70 bg-zinc-950/70 px-5 py-4 text-lg leading-8 text-zinc-200"
+        className="rounded-xl border-l-4 border-primary/70 bg-foreground/[0.04] px-5 py-4 text-lg leading-8 text-foreground/86 dark:bg-white/[0.03]"
       >
         {section.text}
       </blockquote>
@@ -103,8 +103,8 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
   }
 
   return (
-    <div key={`links-${index}`} className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
-      {section.title ? <p className="mb-3 text-sm font-medium text-zinc-300">{section.title}</p> : null}
+    <div key={`links-${index}`} className="rounded-xl border border-foreground/12 bg-foreground/[0.03] p-4 dark:bg-white/[0.02]">
+      {section.title ? <p className="mb-3 text-sm font-medium text-foreground/80">{section.title}</p> : null}
       <ul className="space-y-2">
         {section.links.map((link) => (
           <li key={`${link.href}-${link.label}`}>
@@ -154,20 +154,20 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
   return (
     <ActiveSectionObserver headings={headings}>
       <article className="mx-auto max-w-3xl pb-12 pt-2">
-        <header className="mb-10 border-b border-zinc-900 pb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+        <header className="mb-10 border-b border-foreground/10 pb-8">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">
             {category?.title ?? doc.category}
           </p>
           <h1
             id={headings[0]?.id || slugify(doc.title)}
             data-doc-heading={doc.title}
             data-level="1"
-            className="mt-3 scroll-mt-40 text-4xl font-semibold tracking-tight text-zinc-100"
+            className="mt-3 scroll-mt-40 text-4xl font-semibold tracking-tight text-foreground"
           >
             {doc.title}
           </h1>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-zinc-300">{doc.summary}</p>
-          <p className="mt-4 text-xs uppercase tracking-[0.12em] text-zinc-500">Updated: {doc.updatedAt}</p>
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-foreground/74">{doc.summary}</p>
+          <p className="mt-4 text-xs uppercase tracking-[0.12em] text-foreground/45">Updated: {doc.updatedAt}</p>
         </header>
 
         {showFounderNote ? (
@@ -187,19 +187,19 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
         </div>
 
         {headings.length === 0 ? (
-          <p className="mt-8 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-sm text-zinc-500">
+          <p className="mt-8 rounded-lg border border-dashed border-foreground/12 px-4 py-3 text-sm text-foreground/52">
             This page currently has no generated heading map for TOC.
           </p>
         ) : null}
 
-        <nav className="mt-12 grid gap-3 border-t border-zinc-900 pt-8 sm:grid-cols-2">
+        <nav className="mt-12 grid gap-3 border-t border-foreground/10 pt-8 sm:grid-cols-2">
           {prev ? (
             <Link
               href={getDocPath(prev)}
-              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900/80"
+              className="rounded-xl border border-foreground/12 bg-foreground/[0.03] px-4 py-3 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.05] dark:bg-white/[0.02]"
             >
-              <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">Previous</p>
-              <p className="mt-1 text-sm font-medium text-zinc-200">{prev.title}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-foreground/45">Previous</p>
+              <p className="mt-1 text-sm font-medium text-foreground/88">{prev.title}</p>
             </Link>
           ) : (
             <div className="hidden sm:block" />
@@ -207,10 +207,10 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
           {next ? (
             <Link
               href={getDocPath(next)}
-              className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-4 py-3 text-right transition-colors hover:border-zinc-700 hover:bg-zinc-900/80"
+              className="rounded-xl border border-foreground/12 bg-foreground/[0.03] px-4 py-3 text-right transition-colors hover:border-foreground/20 hover:bg-foreground/[0.05] dark:bg-white/[0.02]"
             >
-              <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">Next</p>
-              <p className="mt-1 text-sm font-medium text-zinc-200">{next.title}</p>
+              <p className="text-xs uppercase tracking-[0.12em] text-foreground/45">Next</p>
+              <p className="mt-1 text-sm font-medium text-foreground/88">{next.title}</p>
             </Link>
           ) : null}
         </nav>

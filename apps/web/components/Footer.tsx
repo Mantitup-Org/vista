@@ -1,1 +1,29 @@
-import { siteConfig } from '../data/site';import Image from 'vista/image';export default function Footer() {    return (        <footer className="w-full bg-black">            {/* Logo Area */}            <div className="w-full flex items-center justify-center overflow-hidden h-[200px] md:h-[300px]">                <div className="opacity-100">                    <Image                        src="/vista.svg"                        alt="Vista Logo"                        width={500}                        height={500}                        className="invert object-contain max-w-[80vw] md:max-w-none"                    />                </div>            </div>            {/* Separator & Bottom Bar */}            <div className="max-w-7xl mx-auto px-4 w-full pb-8">                <div className="w-full border-t border-dashed border-zinc-800 mb-8" />                <div className="flex flex-col md:flex-row items-center justify-center gap-4">                    <div className="text-sm text-zinc-600 font-medium tracking-tight">                        &copy; {new Date().getFullYear()} {siteConfig.footer.copyright}                    </div>                </div>            </div>        </footer>    );}
+import Image from 'vista/image';
+import { siteConfig } from '../data/site';
+
+export default function Footer() {
+  return (
+    <footer className="w-full bg-background">
+      <div className="flex h-[200px] w-full items-center justify-center overflow-hidden md:h-[300px]">
+        <div className="opacity-100">
+          <Image
+            src="/vista.svg"
+            alt="Vista Logo"
+            width={500}
+            height={500}
+            className="h-auto max-w-[80vw] object-contain dark:invert md:max-w-none"
+          />
+        </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-7xl px-4 pb-8">
+        <div className="mb-8 w-full border-t border-dashed border-foreground/12" />
+        <div className="flex flex-col items-center justify-center gap-4 md:flex-row">
+          <div className="text-sm font-medium tracking-tight text-foreground/55">
+            &copy; {new Date().getFullYear()} {siteConfig.footer.copyright}
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}

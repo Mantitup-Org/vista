@@ -1,37 +1,39 @@
-# Vista - The React Framework for Visionaries
+# Vista.js
 
-> **⚠️ ALPHA SOFTWARE WARNING**
->
-> Vista is currently in **alpha stage**. It is not recommended for production use yet. APIs and features may change without notice. Use at your own risk.
+Vista.js is a React 19 framework with App Router conventions, React Server Components, standalone `.vista` output, and a dual-engine model:
 
-Vista is a modern, high-performance React framework built for the creators of tomorrow. It combines the component model of React with the raw speed of Rust, delivering an unparalleled development experience and lightning-fast production builds.
+- `default`: the main webpack-backed RSC/SSR engine
+- `flashpack`: a Rust-backed engine path that records graph/runtime state in `.flash`
 
-## 🚀 Powers & Features
+Official site: https://vista.xyz/
 
-Vista is designed to be the foundation for the next generation of web applications:
+## Packages
 
-*   **React Server Components (RSC):** Default server-side rendering for optimal performance and zero-bundle-size components.
-*   **Rust-Powered Core:** Built with Rust and SWC for blazing fast transpilation, minification, and bundling.
-*   **Instant HMR:** Hot Module Replacement that scales with your project, keeping development feedback loops instant.
-*   **File-Based Routing:** Intuitive routing system based on the file system structure.
-*   **TypeScript Native:** First-class TypeScript support out of the box.
-*   **Streaming SSR:** Stream content to the client as it's generated, improving perceived load times.
-*   **Global Layouts:** Powerful layout system for persistent naming and state.
-*   **Optimized Image Component:** Built-in `vista/image` for automatic image optimization.
+| Package | Purpose |
+| --- | --- |
+| `@vistagenic/vista` | Framework runtime, CLI, server/client exports, cache APIs, fonts, theme APIs |
+| `create-vista-app` | Scaffolds Vista apps with engine selection and package-manager prompts |
+| `vista-native` | Internal Rust/NAPI bridge used by the repo |
 
-## 🛠️ Tech Stack
+## Current Capabilities
 
-Vista is built on the shoulders of giants:
+Vista currently ships the following core surface:
 
-*   **Rust:** For the core CLI, file scanning, and performance-critical tasks.
-*   **React 19:** Leveraging the latest React features including Server Components and Actions.
-*   **SWC:** For super-fast JavaScript/TypeScript compilation.
-*   **Webpack 5:** Highly tuned for module bundling (with Rust-based loaders).
-*   **Node.js:** For the server runtime environment.
+- App Router-style file conventions under `app/`
+- React Server Components and streaming SSR
+- Server Actions and runtime action manifests
+- Cache APIs: `unstable_cache`, `revalidateTag`, `revalidatePath`, `cacheTag`, `cacheLife`
+- Route groups, parallel routes, interception routes, slot defaults, loading/error/not-found boundaries
+- Segment config support (`dynamic`, `revalidate`, `runtime`, `preferredRegion`, `maxDuration`, `fetchCache`)
+- Standalone `.vista` output with manifests, file tracing, PPR shell artifacts, and runtime metadata
+- Flashpack `.flash` runtime state for `dev`, `build`, and `start`
+- Metadata route support through app files like `app/(seo)/sitemap.ts`, `robots.ts`, and `manifest.ts`
+- Package-level theme primitives via `vista/theme`
+- Experimental typed API package surface via `vista/stack` and `vista/stack/client`
 
-## 📦 Installation
+## Quick Start
 
-To create a new Vista project:
+Create a default app:
 
 ```bash
 npx create-vista-app@latest my-app
@@ -39,102 +41,136 @@ cd my-app
 npm run dev
 ```
 
-To create a project with the experimental typed API starter:
+Create a Flashpack app:
 
 ```bash
-npx create-vista-app@latest my-app --typed-api
+npx create-vista-app@latest my-app --engine flashpack
 cd my-app
 npm run dev
 ```
 
-## 🧪 Experimental Typed API (Package-First)
+Create a typed API starter:
 
-Vista now includes an experimental typed API layer designed as package APIs first:
+```bash
+npx create-vista-app@latest my-app --typed-api
+```
 
-- `@vistagenic/vista/stack` for server router/procedure DSL
-- `@vistagenic/vista/stack/client` for typed client calls
-- CLI generators are convenience only (`vista g ...`)
+By default, generated apps use the same commands regardless of engine:
 
-Enable it in `vista.config.ts`:
+```bash
+npm run dev
+npm run build
+npm run start
+```
+
+The selected engine is stored in `vista.config.ts`.
+
+## Package Examples
+
+Theme provider from the package:
+
+```tsx
+import { ThemeProvider, ThemeScript } from 'vista/theme';
+```
+
+Cache APIs from the package:
 
 ```ts
-const config = {
-  experimental: {
-    typedApi: {
-      enabled: true,
-      serialization: 'json', // or 'superjson'
-      bodySizeLimitBytes: 1048576,
-    },
-  },
-};
-
-export default config;
+import { unstable_cache, revalidateTag, revalidatePath } from 'vista/cache';
 ```
 
-Rollback is immediate by setting:
+Server helpers from the package:
 
 ```ts
-experimental: { typedApi: { enabled: false } }
+import { cookies, headers, draftMode } from 'vista/server';
 ```
 
-## 🤝 Contributing
+## Monorepo Layout
 
-We welcome contributions! Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to get started.
+```text
+vista-source/
+├── apps/
+│   └── web/                    # Official website and docs at vista.xyz
+├── bench/                      # Vista-first benchmark fixtures
+├── crates/                     # Top-level Rust crates and NAPI surface
+├── flashpack/                  # Rust-backed Flashpack engine crates
+├── packages/
+│   ├── vista/                  # Framework package
+│   └── create-vista-app/       # Scaffolding CLI
+├── scripts/                    # Test, guard, and benchmark helpers
+├── task.md                     # Execution ledger / milestone history
+├── CONTRIBUTING.md
+└── developer.md
+```
 
-## ⚡ Performance Benchmarks
+## Local Development
 
-Vista includes a Next.js-style benchmark harness in `bench/` so contributors can track regressions across dev/build/start/runtime behavior.
-
-Run benchmark suite:
+Install workspace dependencies:
 
 ```bash
-npm run bench
+pnpm install
 ```
 
-Quick smoke benchmark:
+Build the framework package after touching `packages/vista/src`:
 
 ```bash
-npm run bench:quick
+npm --prefix packages/vista run build
 ```
 
-Benchmark docs are in [bench/README.md](bench/README.md).
-
-Validate benchmark structure in CI:
+Build the website:
 
 ```bash
-npm run test:bench
+npm --prefix apps/web run build
 ```
 
-## 📄 License
+Build the native binding when you change `crates/vista-napi`:
 
-Vista is released under the **MIT License** — one of the most permissive open-source licenses available.
+```bash
+npm --prefix crates/vista-napi run build
+```
 
-**What this means for you:**
-- ✅ **Use it freely** — personal projects, commercial products, startups, enterprises
-- ✅ **Modify it** — fork it, customize it, make it your own
-- ✅ **Distribute it** — share your creations with the world
-- ✅ **No royalties, no fees** — completely free, forever
+## Common Commands
 
-The only requirement is to include the original copyright notice in any substantial portions of the software you distribute.
+| Command | Purpose |
+| --- | --- |
+| `pnpm build` | Build the workspace through `flash-run.cjs` |
+| `pnpm dev` | Run workspace dev tasks |
+| `pnpm test` | Full repo test chain |
+| `pnpm test:integrity` | Framework integrity guard |
+| `pnpm test:rsc-conformance` | RSC and route conformance suite |
+| `pnpm test:vista-output` | `.vista` standalone/output verification |
+| `pnpm test:flashpack-dev` | Flashpack dev/restart verification |
+| `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification |
+| `pnpm bench` | Full benchmark run |
+| `pnpm bench:quick` | Quick benchmark smoke run |
 
-See the full [LICENSE](LICENSE) file for details.
+## Deployment Notes
 
----
+The repo includes first-party deployment config for the official site:
 
-## 💫 A Note to Young Developers
+- `render.yaml`
+- `vercel.json`
 
-**You are not too young. You are not too inexperienced. You are exactly where you need to be.**
+`apps/web` is the deployment target. Its SEO route files live in `app/(seo)/`, not `public/`.
 
-The greatest technologies were not built by those who waited for permission—they were built by those who dared to begin. Every framework you use today was once just an idea in someone's mind, just like the ideas in yours right now.
+## Release Flow
 
-Vista exists because we believe the next revolution in web development won't come from big corporations—it will come from *you*. From late nights of curiosity. From that stubborn refusal to accept "that's just how it's done."
+Maintainers publish from the `development` branch.
 
-So build. Break things. Learn. And most importantly—**ship your ideas into the world**.
+Typical sequence:
 
-The future of the web is being written today. Make sure your code is part of that story.
+```bash
+git add -A
+git commit -m "release: x.y.z"
+git push origin development
+npx lerna publish from-package --yes
+git tag vx.y.z
+git push origin vx.y.z
+```
 
----
+## Learn More
 
-*Built with passion, curiosity, and an unreasonable belief in what's possible.*
-
-**[Ankan Dalui](https://www.linkedin.com/in/ankan-dalui)** — *Founder, Vista.js*
+- Official site: https://vista.xyz/
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Internal contributor guide: [developer.md](developer.md)
+- Benchmark guide: [bench/README.md](bench/README.md)

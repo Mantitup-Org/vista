@@ -28,6 +28,8 @@ Cargo.lock
 .vista/
 vista-debug.log
 **/*.vista-cache
+apps/web/.tmp-web-start.err
+apps/web/.tmp-web-start.out
 
 # OS
 .DS_Store

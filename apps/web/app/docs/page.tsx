@@ -13,14 +13,14 @@ export default function DocsPage() {
 
   return (
     <article className="mx-auto max-w-4xl pb-20 pt-2">
-      <header className="mb-10 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-7">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+      <header className="mb-10 rounded-2xl border border-foreground/12 bg-foreground/[0.035] p-7 shadow-[0_20px_60px_rgba(15,23,42,0.06)] dark:bg-white/[0.03]">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">
           Official Documentation
         </p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-100 sm:text-5xl">
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
           Build Fast. Write Less. Ship with Control.
         </h1>
-        <p className="mt-4 max-w-3xl text-lg leading-8 text-zinc-300">
+        <p className="mt-4 max-w-3xl text-lg leading-8 text-foreground/74">
           Vista docs are organized using dynamic category-slug routes:{' '}
           <code>/docs/&lt;category&gt;/&lt;slug&gt;</code>. This keeps URLs stable while your
           content grows from basics to advanced runtime
@@ -36,7 +36,7 @@ export default function DocsPage() {
           {typedApiDoc ? (
             <Link
               href={getDocPath(typedApiDoc)}
-              className="rounded-full border border-zinc-700 bg-zinc-900/70 px-5 py-2 text-sm font-medium text-zinc-200 transition-colors hover:border-zinc-600 hover:bg-zinc-900"
+              className="rounded-full border border-foreground/12 bg-background/80 px-5 py-2 text-sm font-medium text-foreground/86 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.04]"
             >
               Typed API Quickstart
             </Link>
@@ -51,11 +51,11 @@ export default function DocsPage() {
               ? getDocPath(dynamicRoutesDoc)
               : '/docs/core-concepts/dynamic-routes-and-slugs'
           }
-          className="rounded-xl border border-zinc-900 bg-zinc-950/45 p-5 transition-colors hover:border-zinc-700"
+          className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Routing</p>
-          <h2 className="mt-2 text-lg font-semibold text-zinc-100">Dynamic Slug Architecture</h2>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">Routing</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">Dynamic Slug Architecture</h2>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/64">
             Catch-all routes, slug normalization, and scalable docs URL contracts.
           </p>
         </Link>
@@ -64,11 +64,11 @@ export default function DocsPage() {
           href={
             typedApiDoc ? getDocPath(typedApiDoc) : '/docs/getting-started/typed-api-quickstart'
           }
-          className="rounded-xl border border-zinc-900 bg-zinc-950/45 p-5 transition-colors hover:border-zinc-700"
+          className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">APIs</p>
-          <h2 className="mt-2 text-lg font-semibold text-zinc-100">How Vista APIs Work</h2>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">APIs</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">How Vista APIs Work</h2>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/64">
             Legacy route handlers + typed routers with middleware, validation, and serializers.
           </p>
         </Link>
@@ -79,11 +79,11 @@ export default function DocsPage() {
               ? getDocPath(fileStructureDoc)
               : '/docs/reference/project-file-structure'
           }
-          className="rounded-xl border border-zinc-900 bg-zinc-950/45 p-5 transition-colors hover:border-zinc-700"
+          className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Structure</p>
-          <h2 className="mt-2 text-lg font-semibold text-zinc-100">File Maps and Conventions</h2>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">Structure</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">File Maps and Conventions</h2>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/64">
             Folder-by-folder responsibilities and production-safe project organization.
           </p>
         </Link>
@@ -91,27 +91,30 @@ export default function DocsPage() {
 
       <section className="space-y-5">
         {navigation.map((group) => (
-          <div key={group.id} className="rounded-2xl border border-zinc-900 bg-zinc-950/55 p-5">
+          <div
+            key={group.id}
+            className="rounded-2xl border border-foreground/12 bg-foreground/[0.03] p-5 shadow-[0_18px_50px_rgba(15,23,42,0.05)] dark:bg-white/[0.025]"
+          >
             <div className="mb-4">
-              <h2 className="text-lg font-semibold tracking-tight text-zinc-100">{group.title}</h2>
-              <p className="mt-1 text-sm text-zinc-500">{group.description}</p>
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">{group.title}</h2>
+              <p className="mt-1 text-sm text-foreground/55">{group.description}</p>
             </div>
             <ul className="space-y-2">
               {group.docs.map((doc) => (
                 <li key={doc.href}>
                   <Link
                     href={doc.href}
-                    className="group flex items-start justify-between rounded-lg border border-zinc-900/80 bg-zinc-950/30 px-3 py-2 transition-colors hover:border-zinc-700 hover:bg-zinc-900/80"
+                    className="group flex items-start justify-between rounded-lg border border-foreground/10 bg-background/65 px-3 py-2 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
                   >
                     <span>
-                      <span className="block text-sm font-medium text-zinc-200 group-hover:text-zinc-100">
+                      <span className="block text-sm font-medium text-foreground/90 group-hover:text-foreground">
                         {doc.title}
                       </span>
-                      <span className="mt-1 block text-xs leading-relaxed text-zinc-500">
+                      <span className="mt-1 block text-xs leading-relaxed text-foreground/55">
                         {doc.summary}
                       </span>
                     </span>
-                    <span className="ml-4 mt-1 text-xs uppercase tracking-[0.12em] text-zinc-600">
+                    <span className="ml-4 mt-1 text-xs uppercase tracking-[0.12em] text-foreground/40">
                       Open
                     </span>
                   </Link>

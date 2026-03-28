@@ -97,8 +97,7 @@ function collectFrameworkClientReferences(cwd) {
     }
     const collected = new Set();
     for (const packageRoot of roots) {
-        collectUseClientFiles(path_1.default.join(packageRoot, 'dist', 'client'), collected);
-        collectUseClientFiles(path_1.default.join(packageRoot, 'dist', 'components'), collected);
+        collectUseClientFiles(path_1.default.join(packageRoot, 'dist'), collected);
     }
     return Array.from(collected);
 }
