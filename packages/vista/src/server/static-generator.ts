@@ -40,6 +40,7 @@ import {
   isRoutePPREligible,
 } from './ppr';
 import { resolveVistaSourceRequest } from './vista-import-map';
+import { createProjectAliasResolver } from './project-alias-resolver';
 
 const CjsModule = require('module');
 
@@ -90,6 +91,7 @@ function installSingleReactResolution(cwd: string): void {
   }
 
   originalResolveFilename = CjsModule._resolveFilename;
+  const projectAliasResolver = createProjectAliasResolver(cwd, resolveFromWorkspace);
   CjsModule._resolveFilename = function (
     request: string,
     parent: unknown,
@@ -98,6 +100,10 @@ function installSingleReactResolution(cwd: string): void {
   ) {
     const vistaResolvedPath = resolveVistaInternalRequest(request);
     if (vistaResolvedPath) return vistaResolvedPath;
+    const aliasResolvedPath = projectAliasResolver?.resolve(request);
+    if (aliasResolvedPath) {
+      return originalResolveFilename.call(this, aliasResolvedPath, parent, isMain, options);
+    }
     if (request === 'react') return reactPath;
     if (request === 'react-dom') return reactDomPath;
 

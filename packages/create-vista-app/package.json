@@ -1,13 +1,13 @@
 {
   "name": "create-vista-app",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Create Vista applications with one command",
   "bin": {
     "create-vista-app": "./bin/cli.js"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/vistagen/Vista-Js.git",
+    "url": "https://github.com/vistakit/Vista-Js.git",
     "directory": "packages/create-vista-app"
   },
   "author": "Vista Team",

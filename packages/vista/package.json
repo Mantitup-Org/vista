@@ -1,12 +1,12 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vistagen/Vista-Js.git",
+    "url": "git+https://github.com/vistakit/Vista-Js.git",
     "directory": "packages/vista"
   },
   "author": "Vista Team",

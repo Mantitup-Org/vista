@@ -20,6 +20,7 @@ const fetch_policy_1 = require("./fetch-policy");
 const runtime_artifacts_1 = require("./runtime-artifacts");
 const config_1 = require("../config");
 const vista_import_map_1 = require("./vista-import-map");
+const project_alias_resolver_1 = require("./project-alias-resolver");
 // NOTE: RouteErrorBoundary and RouteSuspense are 'use client' components.
 // Under --conditions react-server, React.Component is not available, so we
 // must NOT import them at the top level.  Instead we lazy-require them after
@@ -190,7 +191,7 @@ function isClientBoundaryFile(filename, transpiledSource) {
     clientDirectiveCache.set(filename, isClient);
     return isClient;
 }
-function installSingleReactResolution() {
+function installSingleReactResolution(cwd) {
     if (reactResolutionInstalled)
         return;
     let reactPath;
@@ -203,10 +204,15 @@ function installSingleReactResolution() {
         return;
     }
     originalResolveFilename = CjsModule._resolveFilename;
+    const projectAliasResolver = (0, project_alias_resolver_1.createProjectAliasResolver)(cwd, resolveFromWorkspace);
     CjsModule._resolveFilename = function (request, parent, isMain, options) {
         const vistaResolvedPath = resolveVistaInternalRequest(request);
         if (vistaResolvedPath)
             return vistaResolvedPath;
+        const aliasResolvedPath = projectAliasResolver?.resolve(request);
+        if (aliasResolvedPath) {
+            return originalResolveFilename.call(this, aliasResolvedPath, parent, isMain, options);
+        }
         if (request === 'react')
             return reactPath;
         if (request === 'react-dom')
@@ -472,7 +478,7 @@ function startUpstream() {
     const isDev = process.env.NODE_ENV !== 'production';
     const port = resolvePort(3101);
     const vistaDirRoot = path_1.default.join(cwd, constants_1.BUILD_DIR);
-    installSingleReactResolution();
+    installSingleReactResolution(runtimeRoot);
     setupTypeScriptRuntime(runtimeRoot);
     const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
     const flightServer = require(flightServerPath);
