@@ -27,6 +27,7 @@ import { installSegmentFetchPolicyShim } from './fetch-policy';
 import { resolveRuntimeProjectRoot } from './runtime-artifacts';
 import { loadConfig, resolveCacheComponentsConfig } from '../config';
 import { resolveVistaSourceRequest } from './vista-import-map';
+import { createProjectAliasResolver } from './project-alias-resolver';
 
 // NOTE: RouteErrorBoundary and RouteSuspense are 'use client' components.
 // Under --conditions react-server, React.Component is not available, so we
@@ -224,7 +225,7 @@ function isClientBoundaryFile(filename: string, transpiledSource: string): boole
   return isClient;
 }
 
-function installSingleReactResolution(): void {
+function installSingleReactResolution(cwd: string): void {
   if (reactResolutionInstalled) return;
 
   let reactPath: string;
@@ -237,6 +238,7 @@ function installSingleReactResolution(): void {
   }
 
   originalResolveFilename = CjsModule._resolveFilename;
+  const projectAliasResolver = createProjectAliasResolver(cwd, resolveFromWorkspace);
   CjsModule._resolveFilename = function (
     request: string,
     parent: unknown,
@@ -245,6 +247,10 @@ function installSingleReactResolution(): void {
   ) {
     const vistaResolvedPath = resolveVistaInternalRequest(request);
     if (vistaResolvedPath) return vistaResolvedPath;
+    const aliasResolvedPath = projectAliasResolver?.resolve(request);
+    if (aliasResolvedPath) {
+      return originalResolveFilename.call(this, aliasResolvedPath, parent, isMain, options);
+    }
     if (request === 'react') return reactPath;
     if (request === 'react-dom') return reactDomPath;
 
@@ -591,7 +597,7 @@ function startUpstream(): void {
   const port = resolvePort(3101);
   const vistaDirRoot = path.join(cwd, BUILD_DIR);
 
-  installSingleReactResolution();
+  installSingleReactResolution(runtimeRoot);
   setupTypeScriptRuntime(runtimeRoot);
 
   const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);

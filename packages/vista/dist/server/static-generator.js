@@ -27,6 +27,7 @@ const spawn_permissions_1 = require("./spawn-permissions");
 const config_1 = require("../config");
 const ppr_1 = require("./ppr");
 const vista_import_map_1 = require("./vista-import-map");
+const project_alias_resolver_1 = require("./project-alias-resolver");
 const CjsModule = require('module');
 let staticRuntimeReady = false;
 let reactResolutionInstalled = false;
@@ -72,10 +73,15 @@ function installSingleReactResolution(cwd) {
         }
     }
     originalResolveFilename = CjsModule._resolveFilename;
+    const projectAliasResolver = (0, project_alias_resolver_1.createProjectAliasResolver)(cwd, resolveFromWorkspace);
     CjsModule._resolveFilename = function (request, parent, isMain, options) {
         const vistaResolvedPath = resolveVistaInternalRequest(request);
         if (vistaResolvedPath)
             return vistaResolvedPath;
+        const aliasResolvedPath = projectAliasResolver?.resolve(request);
+        if (aliasResolvedPath) {
+            return originalResolveFilename.call(this, aliasResolvedPath, parent, isMain, options);
+        }
         if (request === 'react')
             return reactPath;
         if (request === 'react-dom')

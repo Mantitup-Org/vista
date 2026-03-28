@@ -15,6 +15,10 @@ import { setCurrentSegmentConfig } from './request-context';
 
 type TypedApiRouter = StackRouter<ProcedureRecord, any, any>;
 type RouteRuntimeMode = 'nodejs' | 'edge' | 'experimental-edge';
+type MetadataRouteMapping = {
+  requestPath: string;
+  stem: string;
+};
 
 const TYPED_API_ENTRYPOINTS = [
   path.join('app', 'api', 'typed.ts'),
@@ -26,6 +30,14 @@ const TYPED_API_ENTRYPOINTS = [
   path.join('app', 'typed-api.js'),
   path.join('app', 'typed-api.jsx'),
 ];
+
+const METADATA_ROUTE_MAPPINGS: MetadataRouteMapping[] = [
+  { requestPath: '/robots.txt', stem: 'robots' },
+  { requestPath: '/sitemap.xml', stem: 'sitemap' },
+  { requestPath: '/manifest.webmanifest', stem: 'manifest' },
+];
+
+const ROUTE_FILE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'] as const;
 
 class BodyLimitError extends Error {
   status = 413;
@@ -105,6 +117,53 @@ function normalizeRouteRequestPath(requestPath: string): string {
     return '';
   }
   return normalized.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function isRouteGroupDirectory(name: string): boolean {
+  return /^\([\w-]+\)$/.test(name);
+}
+
+function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
+  const appDir = path.resolve(cwd, 'app');
+
+  const tryStemInDirectory = (dir: string): string | null => {
+    for (const extension of ROUTE_FILE_EXTENSIONS) {
+      const candidate = path.join(dir, `${stem}${extension}`);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  const directMatch = tryStemInDirectory(appDir);
+  if (directMatch) {
+    return directMatch;
+  }
+
+  const searchGroupDirectories = (dir: string): string | null => {
+    const entries = fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && isRouteGroupDirectory(entry.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const entry of entries) {
+      const groupDir = path.join(dir, entry.name);
+      const match = tryStemInDirectory(groupDir);
+      if (match) {
+        return match;
+      }
+
+      const nestedMatch = searchGroupDirectories(groupDir);
+      if (nestedMatch) {
+        return nestedMatch;
+      }
+    }
+
+    return null;
+  };
+
+  return searchGroupDirectories(appDir);
 }
 
 function hasMethodMatch(router: TypedApiRouter, pathname: string, method: string): boolean {
@@ -408,6 +467,16 @@ export function resolveLegacyApiRoutePath(cwd: string, requestPath: string): str
 export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null {
   const normalized = normalizeRouteRequestPath(requestPath);
   const routeCandidates: string[] = [];
+
+  const metadataRoute = METADATA_ROUTE_MAPPINGS.find(
+    (entry) => entry.requestPath === String(requestPath || '').split('?')[0]
+  );
+  if (metadataRoute) {
+    const resolvedMetadataPath = resolveMetadataRoutePath(cwd, metadataRoute.stem);
+    if (resolvedMetadataPath) {
+      routeCandidates.push(resolvedMetadataPath);
+    }
+  }
 
   if (normalized.startsWith('api/')) {
     const apiRoute = normalized.slice('api/'.length);

@@ -74,14 +74,14 @@ export default function CopyCommand() {
     };
 
     return (
-        <div className="flex justify-center mt-8">
+        <div className="mt-8 flex justify-center">
             <button
                 onClick={handleCopy}
                 type="button"
-                className="group flex items-center gap-2 px-3 py-1.5 bg-zinc-900/60 rounded-full hover:bg-zinc-800 transition-all cursor-pointer select-none"
+                className="group flex cursor-pointer select-none items-center gap-2 rounded-full border border-border bg-panel-elevated/85 px-3 py-2 shadow-[0_14px_30px_rgba(15,23,42,0.08)] transition-all hover:bg-panel"
             >
-                <Terminal size={14} className="text-zinc-400" />
-                <code className="text-sm font-mono text-zinc-300">
+                <Terminal size={14} className="text-muted-foreground" />
+                <code className="text-sm font-mono text-foreground">
                     {command}
                 </code>
                 <div className="relative w-4 h-4 ml-1">
@@ -89,7 +89,7 @@ export default function CopyCommand() {
                         className={`absolute inset-0 transition-all duration-300 transform ${copied ? 'opacity-0 scale-50' : 'opacity-100 scale-100'
                             }`}
                     >
-                        <Copy size={14} className="text-zinc-400 group-hover:text-white transition-colors" />
+                        <Copy size={14} className="text-muted-foreground transition-colors group-hover:text-foreground" />
                     </div>
                     <div
                         className={`absolute inset-0 transition-all duration-300 transform ${copied ? 'opacity-100 scale-100' : 'opacity-0 scale-50'

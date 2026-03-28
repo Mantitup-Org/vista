@@ -22,6 +22,12 @@ const TYPED_API_ENTRYPOINTS = [
     path_1.default.join('app', 'typed-api.js'),
     path_1.default.join('app', 'typed-api.jsx'),
 ];
+const METADATA_ROUTE_MAPPINGS = [
+    { requestPath: '/robots.txt', stem: 'robots' },
+    { requestPath: '/sitemap.xml', stem: 'sitemap' },
+    { requestPath: '/manifest.webmanifest', stem: 'manifest' },
+];
+const ROUTE_FILE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 class BodyLimitError extends Error {
     status = 413;
     constructor(limitBytes) {
@@ -81,6 +87,44 @@ function normalizeRouteRequestPath(requestPath) {
         return '';
     }
     return normalized.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+function isRouteGroupDirectory(name) {
+    return /^\([\w-]+\)$/.test(name);
+}
+function resolveMetadataRoutePath(cwd, stem) {
+    const appDir = path_1.default.resolve(cwd, 'app');
+    const tryStemInDirectory = (dir) => {
+        for (const extension of ROUTE_FILE_EXTENSIONS) {
+            const candidate = path_1.default.join(dir, `${stem}${extension}`);
+            if (fs_1.default.existsSync(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    };
+    const directMatch = tryStemInDirectory(appDir);
+    if (directMatch) {
+        return directMatch;
+    }
+    const searchGroupDirectories = (dir) => {
+        const entries = fs_1.default
+            .readdirSync(dir, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory() && isRouteGroupDirectory(entry.name))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        for (const entry of entries) {
+            const groupDir = path_1.default.join(dir, entry.name);
+            const match = tryStemInDirectory(groupDir);
+            if (match) {
+                return match;
+            }
+            const nestedMatch = searchGroupDirectories(groupDir);
+            if (nestedMatch) {
+                return nestedMatch;
+            }
+        }
+        return null;
+    };
+    return searchGroupDirectories(appDir);
 }
 function hasMethodMatch(router, pathname, method) {
     const normalized = method.toLowerCase();
@@ -307,6 +351,13 @@ function resolveLegacyApiRoutePath(cwd, requestPath) {
 function resolveLegacyRouteHandlerPath(cwd, requestPath) {
     const normalized = normalizeRouteRequestPath(requestPath);
     const routeCandidates = [];
+    const metadataRoute = METADATA_ROUTE_MAPPINGS.find((entry) => entry.requestPath === String(requestPath || '').split('?')[0]);
+    if (metadataRoute) {
+        const resolvedMetadataPath = resolveMetadataRoutePath(cwd, metadataRoute.stem);
+        if (resolvedMetadataPath) {
+            routeCandidates.push(resolvedMetadataPath);
+        }
+    }
     if (normalized.startsWith('api/')) {
         const apiRoute = normalized.slice('api/'.length);
         routeCandidates.push(path_1.default.resolve(cwd, 'app', 'api', apiRoute, 'route.ts'), path_1.default.resolve(cwd, 'app', 'api', apiRoute, 'route.tsx'), path_1.default.resolve(cwd, 'app', 'api', apiRoute, 'route.js'), path_1.default.resolve(cwd, 'app', 'api', apiRoute, 'route.jsx'), path_1.default.resolve(cwd, 'app', 'api', `${apiRoute}.ts`), path_1.default.resolve(cwd, 'app', 'api', `${apiRoute}.tsx`), path_1.default.resolve(cwd, 'app', 'api', `${apiRoute}.js`), path_1.default.resolve(cwd, 'app', 'api', `${apiRoute}.jsx`));

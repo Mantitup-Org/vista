@@ -1,12 +1,12 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.2.13",
+  "version": "0.2.15",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vistagen/Vista-Js.git",
+    "url": "git+https://github.com/vistakit/Vista-Js.git",
     "directory": "packages/vista"
   },
   "author": "Vista Team",
@@ -67,6 +67,10 @@
     "./font/local": {
       "types": "./dist/font/local.d.ts",
       "default": "./dist/font/local.js"
+    },
+    "./theme": {
+      "types": "./dist/theme/index.d.ts",
+      "default": "./dist/theme/index.js"
     },
     "./head": {
       "react-server": "./dist/client/head.react-server.js",
@@ -144,5 +148,6 @@
     "@types/webpack": "^5.28.5",
     "@types/webpack-hot-middleware": "^2.25.9",
     "typescript": "^5.7.2"
-  }
+  },
+  "gitHead": "d1b9f715d6365d8e1f553e96b752fbce8d98df7c"
 }

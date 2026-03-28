@@ -1,5 +1,6 @@
 import type { Metadata } from 'vista';
 import { Geist, Geist_Mono } from 'vista/font/google';
+import { ThemeProvider, ThemeScript } from 'vista/theme';
 import './globals.css';
 
 const geistSans = Geist({
@@ -20,12 +21,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head />
+      <head>
+        <ThemeScript defaultTheme="dark" />
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen overflow-x-hidden bg-black text-zinc-100 antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen overflow-x-hidden bg-background text-foreground antialiased`}
         suppressHydrationWarning
       >
-        {children}
+        <ThemeProvider defaultTheme="dark">{children}</ThemeProvider>
       </body>
     </html>
   );

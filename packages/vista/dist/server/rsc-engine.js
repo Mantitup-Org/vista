@@ -80,6 +80,7 @@ const request_context_1 = require("./request-context");
 const app_router_runtime_1 = require("./app-router-runtime");
 const fetch_policy_1 = require("./fetch-policy");
 const vista_import_map_1 = require("./vista-import-map");
+const project_alias_resolver_1 = require("./project-alias-resolver");
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
 // - .module.css: return empty class mapping (webpack build handles real mappings)
@@ -273,10 +274,15 @@ function installSingleReactResolution(cwd) {
         }
     }
     originalResolveFilename = CjsModule._resolveFilename;
+    const projectAliasResolver = (0, project_alias_resolver_1.createProjectAliasResolver)(cwd, resolveFromWorkspace);
     CjsModule._resolveFilename = function (request, parent, isMain, options) {
         const vistaResolvedPath = resolveVistaInternalRequest(request);
         if (vistaResolvedPath)
             return vistaResolvedPath;
+        const aliasResolvedPath = projectAliasResolver?.resolve(request);
+        if (aliasResolvedPath) {
+            return originalResolveFilename.call(this, aliasResolvedPath, parent, isMain, options);
+        }
         if (request === 'react')
             return reactPath;
         if (request === 'react-dom')
