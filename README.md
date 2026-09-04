@@ -170,7 +170,7 @@ git push origin vx.y.z
 
 ## Learn More
 
-- Official site: https://vista.xyz/
+- Official site: https://vista-js.vercel.app
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Internal contributor guide: [developer.md](developer.md)
 - Benchmark guide: [bench/README.md](bench/README.md)
