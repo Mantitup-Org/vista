@@ -21,6 +21,7 @@
     "test:rust-bridge": "node scripts/test-rust-bridge.cjs",
     "test:create-vista-app": "node scripts/test-create-vista-app-scaffold.cjs",
     "test:server-runtime": "node scripts/test-server-runtime.cjs",
+    "test:middleware": "node scripts/test-middleware.cjs",
     "test:use-cache": "node scripts/test-use-cache.cjs",
     "test:segment-config": "node scripts/test-segment-config.cjs",
     "test:advanced-runtime": "node scripts/test-advanced-runtime.cjs",

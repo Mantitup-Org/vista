@@ -344,11 +344,11 @@ export class NextResponse extends Response {
         });
     }
 
-    static next(): NextResponse {
+    static next(options?: { request?: { headers?: Headers | Record<string, string> } }): NextResponse {
+        const responseHeaders = new Headers();
+        responseHeaders.set('x-middleware-next', '1');
         return new NextResponse(null, {
-            headers: {
-                'x-middleware-next': '1',
-            },
+            headers: responseHeaders,
         });
     }
 }
@@ -369,3 +369,29 @@ export interface NextRequest extends Request {
 }
 
 export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';
+
+// ============================================================================
+// Middleware System
+// ============================================================================
+
+export {
+    runMiddleware,
+    applyMiddlewareResult,
+    discoverGlobalMiddleware,
+    discoverRouteMiddlewares,
+    clearMiddlewareCaches,
+    buildNextRequest,
+    patternToRegExp,
+    shouldRunMiddleware,
+} from './middleware-runner';
+
+export type {
+    MiddlewareResult,
+    VistaMiddlewareRequest,
+    VistaMiddlewareContext,
+    MiddlewareFunction,
+    MiddlewareConfig,
+    MiddlewareModule,
+    NextFunction,
+} from './middleware-runner';
+
