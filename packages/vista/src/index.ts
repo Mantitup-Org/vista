@@ -35,3 +35,6 @@ export { callServer } from './client/server-actions';
 // Build system exports (for advanced usage)
 export type { ClientManifest, ClientComponentEntry } from './build/rsc/client-manifest';
 export type { ServerManifest, ServerComponentEntry, RouteEntry } from './build/rsc/server-manifest';
+
+// AI Framework
+export * from './ai';
