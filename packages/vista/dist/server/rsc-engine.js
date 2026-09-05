@@ -145,7 +145,9 @@ function parseRevalidationHeader(rawValue) {
     }
     try {
         const parsed = JSON.parse(rawValue);
-        return Array.isArray(parsed) ? parsed.map((entry) => String(entry || '').trim()).filter(Boolean) : [];
+        return Array.isArray(parsed)
+            ? parsed.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : [];
     }
     catch {
         return [];
@@ -343,9 +345,7 @@ function findChunkFiles(cwd, isDev) {
         .filter((name) => name.endsWith('.js') && !name.endsWith('.map') && !name.includes('.hot-update.'));
     // In dev, avoid loading stale production artifacts left from a previous build.
     // Production chunks end with a hash suffix like `main-1a2b3c4d.js`.
-    const normalizedFiles = isDev
-        ? files.filter((name) => !/-[0-9a-f]{8,}\.js$/i.test(name))
-        : files;
+    const normalizedFiles = isDev ? files.filter((name) => !/-[0-9a-f]{8,}\.js$/i.test(name)) : files;
     // Load webpack runtime first, then framework, then the rest alphabetically.
     // This ensures the chunk registry (__webpack_require__) is available before
     // any deferred chunk tries to self-register.
@@ -385,7 +385,10 @@ function normalizeSSRManifest(manifest) {
                 const decoded = decodeURI(key);
                 if (decoded !== key) {
                     aliasEntries.push([decoded, exportsMap]);
-                    aliasEntries.push([decoded.endsWith('#') ? decoded.slice(0, -1) : `${decoded}#`, exportsMap]);
+                    aliasEntries.push([
+                        decoded.endsWith('#') ? decoded.slice(0, -1) : `${decoded}#`,
+                        exportsMap,
+                    ]);
                 }
             }
             catch {
@@ -395,7 +398,10 @@ function normalizeSSRManifest(manifest) {
                 const encoded = encodeURI(key);
                 if (encoded !== key) {
                     aliasEntries.push([encoded, exportsMap]);
-                    aliasEntries.push([encoded.endsWith('#') ? encoded.slice(0, -1) : `${encoded}#`, exportsMap]);
+                    aliasEntries.push([
+                        encoded.endsWith('#') ? encoded.slice(0, -1) : `${encoded}#`,
+                        exportsMap,
+                    ]);
                 }
             }
             catch {
@@ -1318,7 +1324,10 @@ function startRSCServer(options = {}) {
     const proxyRSCRequest = async (req, res) => {
         if (isDev && options.compiler) {
             if (clientCompileState === 'compiling') {
-                res.status(503).type('text/plain').send('[vista] Client bundle is compiling. Retry shortly.');
+                res
+                    .status(503)
+                    .type('text/plain')
+                    .send('[vista] Client bundle is compiling. Retry shortly.');
                 return;
             }
             if (clientCompileState === 'error') {
@@ -1369,10 +1378,8 @@ function startRSCServer(options = {}) {
             res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
         }
     };
-    app.get('/rsc*', proxyRSCRequest);
-    app.get('/_rsc*', proxyRSCRequest);
-    app.post('/rsc*', proxyRSCRequest);
-    app.post('/_rsc*', proxyRSCRequest);
+    app.get(/^\/(?:_rsc|rsc)(?:\/.*)?$/, proxyRSCRequest);
+    app.post(/^\/(?:_rsc|rsc)(?:\/.*)?$/, proxyRSCRequest);
     // -------------------------------------------------------------------
     // User middleware (middleware.ts at project root)
     // -------------------------------------------------------------------
@@ -1432,9 +1439,7 @@ function startRSCServer(options = {}) {
                     return;
                 }
                 if (clientCompileState === 'error') {
-                    const errorInfos = (clientCompileErrors.length > 0
-                        ? clientCompileErrors
-                        : ['Unknown client build error.']).map((message) => ({ type: 'build', message }));
+                    const errorInfos = (clientCompileErrors.length > 0 ? clientCompileErrors : ['Unknown client build error.']).map((message) => ({ type: 'build', message }));
                     res.status(500).type('text/html').send((0, dev_error_1.renderErrorHTML)(errorInfos));
                     return;
                 }

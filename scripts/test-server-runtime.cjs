@@ -46,54 +46,20 @@ function registerTypeScriptRuntime() {
 
 registerTypeScriptRuntime();
 
-const { runWithRequestContext } = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'request-context.ts'
-));
-const serverApi = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'index.ts'
-));
-const cacheApi = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'cache.ts'
-));
-const actionRuntime = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'runtime-actions.ts'
-));
-const { installModuleCompileHook } = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'module-compile-hook.ts'
-));
-const staticCache = require(path.join(
-  repoRoot,
-  'packages',
-  'vista',
-  'src',
-  'server',
-  'static-cache.ts'
-));
+const { runWithRequestContext } = require(
+  path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'request-context.ts')
+);
+const serverApi = require(path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'index.ts'));
+const cacheApi = require(path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'cache.ts'));
+const actionRuntime = require(
+  path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'runtime-actions.ts')
+);
+const { installModuleCompileHook } = require(
+  path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'module-compile-hook.ts')
+);
+const staticCache = require(
+  path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'static-cache.ts')
+);
 
 function createMockReq(overrides = {}) {
   const headers = { ...(overrides.headers || {}) };
@@ -228,7 +194,7 @@ async function main() {
           )});`,
           "const { readValue } = require('./use-cache-state.js');",
           'exports.readCached = function readCached() {',
-          "  cacheLife(30);",
+          '  cacheLife(30);',
           "  cacheTag('runtime-use-cache');",
           '  return { value: readValue() };',
           '};',
@@ -260,14 +226,14 @@ async function main() {
       fs.writeFileSync(
         inlineModulePath,
         [
-          "const { cacheLife, cacheTag } = require(" +
+          'const { cacheLife, cacheTag } = require(' +
             JSON.stringify(path.join(repoRoot, 'packages', 'vista', 'src', 'server', 'index.ts')) +
             ');',
           "const { readValue } = require('./use-cache-state.js');",
           'exports.readInlineCached = async function readInlineCached() {',
           '  async function loadValue() {',
           "    'use cache';",
-          "    cacheLife(30);",
+          '    cacheLife(30);',
           "    cacheTag('runtime-inline-use-cache');",
           '    return { value: readValue() };',
           '  }',
@@ -372,7 +338,11 @@ async function main() {
       delete require.cache[require.resolve(inlineModulePath)];
       const inlineModule = require(inlineModulePath);
       const inlineAction = inlineModule.buildInlineAction();
-      const inlineActionId = actionRuntime.createInlineServerActionId(inlineModulePath, 0, 'inlineEcho');
+      const inlineActionId = actionRuntime.createInlineServerActionId(
+        inlineModulePath,
+        0,
+        'inlineEcho'
+      );
       const registeredInlineAction = actionRuntime.resolveRegisteredServerReference(inlineActionId);
       if (!registeredInlineAction) {
         console.error('Inline action registration mismatch.');
@@ -385,6 +355,26 @@ async function main() {
         inlineAction,
         'Inline action should be registered through the compile hook'
       );
+
+      // Regression test: custom registrar bridging and id sanitation
+      let capturedCall = null;
+      actionRuntime.setRegisterServerReference((ref, id, exp) => {
+        capturedCall = { ref, id, exp };
+      });
+
+      const dummyAction = async function dummyAction() {};
+      const hashedId = actionRuntime.createInlineServerActionId(inlineModulePath, 1, 'dummyAction');
+      actionRuntime.registerInlineServerReference(dummyAction, hashedId, 'dummyAction');
+
+      assert.ok(capturedCall, 'setRegisterServerReference registrar should be invoked');
+      assert.equal(capturedCall.ref, dummyAction, 'Registrar should receive reference function');
+      assert.equal(capturedCall.id, hashedId, 'Registrar should receive exact action id');
+      assert.equal(
+        capturedCall.exp,
+        null,
+        'Registrar should receive null exportName when id contains hash to avoid duplicate hash suffixes'
+      );
+      actionRuntime.setRegisterServerReference(null);
 
       const exportedModulePath = path.join(tempProject, 'exported-actions.js');
       fs.writeFileSync(

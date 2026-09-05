@@ -41,6 +41,14 @@ function getRouteSuspense() {
     return _RouteSuspense;
 }
 const CjsModule = require('module');
+if (process.env.NODE_PATH) {
+    try {
+        CjsModule._initPaths();
+    }
+    catch (_err) {
+        // ignore
+    }
+}
 // Support CSS imports on server runtime
 require.extensions['.css'] = (m, filename) => {
     if (filename.endsWith('.module.css')) {
@@ -230,6 +238,14 @@ function installSingleReactResolution(cwd) {
             const subPath = request.slice('react-dom/'.length);
             try {
                 return require.resolve(`react-dom/${subPath}`, { paths: [path_1.default.dirname(reactDomPath)] });
+            }
+            catch {
+                // fall through
+            }
+        }
+        if (request === 'react-server-dom-webpack' || request.startsWith('react-server-dom-webpack/')) {
+            try {
+                return resolveFromWorkspace(request, cwd);
             }
             catch {
                 // fall through
@@ -482,6 +498,9 @@ function startUpstream() {
     setupTypeScriptRuntime(runtimeRoot);
     const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
     const flightServer = require(flightServerPath);
+    if (typeof flightServer.registerServerReference === 'function') {
+        (0, runtime_actions_1.setRegisterServerReference)(flightServer.registerServerReference);
+    }
     installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
     (0, fetch_policy_1.installSegmentFetchPolicyShim)();
     const serverManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'server', 'server-manifest.json');
@@ -779,8 +798,7 @@ function startUpstream() {
             }
         });
     };
-    app.get('/rsc*', handleRSCRequest);
-    app.get('/_rsc*', handleRSCRequest);
+    app.get(/^\/(?:_rsc|rsc)(?:\/.*)?$/, handleRSCRequest);
     // -----------------------------------------------------------------------
     // Server Actions — POST handler
     // -----------------------------------------------------------------------
@@ -870,8 +888,7 @@ function startUpstream() {
             }
         });
     };
-    app.post('/rsc*', handleServerAction);
-    app.post('/_rsc*', handleServerAction);
+    app.post(/^\/(?:_rsc|rsc)(?:\/.*)?$/, handleServerAction);
     const server = app.listen(port, () => {
         console.log(`[vista:rsc:upstream] Listening on http://127.0.0.1:${port}/rsc`);
     });

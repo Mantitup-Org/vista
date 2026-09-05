@@ -16,7 +16,7 @@ import {
   runWithRequestContext,
   setCurrentSegmentConfig,
 } from './request-context';
-import { resolveRegisteredServerReference } from './runtime-actions';
+import { resolveRegisteredServerReference, setRegisterServerReference } from './runtime-actions';
 import {
   resolveConventionModule,
   resolveDirectoryChain,
@@ -52,6 +52,13 @@ function getRouteSuspense() {
 }
 
 const CjsModule = require('module');
+if (process.env.NODE_PATH) {
+  try {
+    CjsModule._initPaths();
+  } catch (_err) {
+    // ignore
+  }
+}
 // Support CSS imports on server runtime
 require.extensions['.css'] = (m: any, filename: string) => {
   if (filename.endsWith('.module.css')) {
@@ -144,7 +151,9 @@ function setupTypeScriptRuntime(cwd: string): void {
   try {
     const swcRegisterPath = resolveFromWorkspace('@swc-node/register/register', cwd);
     const typescriptPath = resolveFromWorkspace('typescript', cwd);
-    const { register } = require(swcRegisterPath) as { register: (options?: Record<string, any>) => void };
+    const { register } = require(swcRegisterPath) as {
+      register: (options?: Record<string, any>) => void;
+    };
     const ts = require(typescriptPath) as typeof import('typescript');
     register({
       module: ts.ModuleKind.CommonJS,
@@ -267,6 +276,14 @@ function installSingleReactResolution(cwd: string): void {
       const subPath = request.slice('react-dom/'.length);
       try {
         return require.resolve(`react-dom/${subPath}`, { paths: [path.dirname(reactDomPath)] });
+      } catch {
+        // fall through
+      }
+    }
+
+    if (request === 'react-server-dom-webpack' || request.startsWith('react-server-dom-webpack/')) {
+      try {
+        return resolveFromWorkspace(request, cwd);
       } catch {
         // fall through
       }
@@ -573,10 +590,7 @@ async function readRawRequestBody(req: express.Request): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function parseMultipartFormData(
-  req: express.Request,
-  rawBody: Buffer
-): Promise<FormData> {
+async function parseMultipartFormData(req: express.Request, rawBody: Buffer): Promise<FormData> {
   const request = new Request(`http://127.0.0.1${req.originalUrl || req.url || '/'}`, {
     method: req.method || 'POST',
     headers: req.headers as Record<string, string>,
@@ -602,6 +616,9 @@ function startUpstream(): void {
 
   const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
   const flightServer = require(flightServerPath) as FlightServerApi;
+  if (typeof flightServer.registerServerReference === 'function') {
+    setRegisterServerReference(flightServer.registerServerReference);
+  }
   installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
   installSegmentFetchPolicyShim();
 
@@ -773,7 +790,9 @@ function startUpstream(): void {
       }) ||
       null;
 
-    const resolvedActionPath = path.resolve(actionEntry.filePath || resolveActionModulePath(actionId));
+    const resolvedActionPath = path.resolve(
+      actionEntry.filePath || resolveActionModulePath(actionId)
+    );
     const routeParams = actionRoute ? extractParams(pathname, actionRoute) : {};
 
     if (isDev) {
@@ -994,8 +1013,7 @@ function startUpstream(): void {
     );
   };
 
-  app.get('/rsc*', handleRSCRequest);
-  app.get('/_rsc*', handleRSCRequest);
+  app.get(/^\/(?:_rsc|rsc)(?:\/.*)?$/, handleRSCRequest);
 
   // -----------------------------------------------------------------------
   // Server Actions — POST handler
@@ -1069,7 +1087,10 @@ function startUpstream(): void {
             const boundAction = await flightServer.decodeAction(formData, flightManifest);
             result = await boundAction();
           } else {
-            const args = (await flightServer.decodeReply(rawBody.toString('utf-8'), flightManifest)) as unknown[];
+            const args = (await flightServer.decodeReply(
+              rawBody.toString('utf-8'),
+              flightManifest
+            )) as unknown[];
             result = await actionFn(...(Array.isArray(args) ? args : [args]));
           }
 
@@ -1105,8 +1126,7 @@ function startUpstream(): void {
     );
   };
 
-  app.post('/rsc*', handleServerAction);
-  app.post('/_rsc*', handleServerAction);
+  app.post(/^\/(?:_rsc|rsc)(?:\/.*)?$/, handleServerAction);
 
   const server = app.listen(port, () => {
     console.log(`[vista:rsc:upstream] Listening on http://127.0.0.1:${port}/rsc`);
