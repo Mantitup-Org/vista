@@ -12,6 +12,8 @@ import {
 import type { ResolvedTypedApiConfig } from '../config';
 import { mergeSegmentConfigs, parseSegmentConfig, type ResolvedSegmentConfig } from './segment-config';
 import { setCurrentSegmentConfig } from './request-context';
+import { resolveRouteHandler, ROUTE_HANDLER_METHODS } from './route-handler-registry';
+import type { RouteParams } from './route-patterns';
 
 type TypedApiRouter = StackRouter<ProcedureRecord, any, any>;
 type RouteRuntimeMode = 'nodejs' | 'edge' | 'experimental-edge';
@@ -457,11 +459,43 @@ async function executeTypedRoute(
   };
 }
 
+export interface RouteHandlerMatch {
+  /** Absolute path of the resolved `route.*` file. */
+  filePath: string;
+  /** Dynamic segment values, empty for a fully static route. */
+  params: RouteParams;
+}
+
 export function resolveLegacyApiRoutePath(cwd: string, requestPath: string): string | null {
   if (!requestPath.startsWith('/api/')) {
     return null;
   }
   return resolveLegacyRouteHandlerPath(cwd, requestPath);
+}
+
+/**
+ * Resolve a request path to a route handler file plus its dynamic params.
+ *
+ * Static routes are answered by a direct filesystem probe, which keeps the common
+ * case free of any directory walk. Only when that misses do we consult the discovered
+ * route table, which is what makes `app/api/users/[id]/route.ts` reachable.
+ */
+export function resolveRouteHandlerMatch(
+  cwd: string,
+  requestPath: string,
+  options: { isDev?: boolean } = {}
+): RouteHandlerMatch | null {
+  const literalPath = resolveLegacyRouteHandlerPath(cwd, requestPath);
+  if (literalPath) {
+    return { filePath: literalPath, params: {} };
+  }
+
+  const dynamicMatch = resolveRouteHandler(path.resolve(cwd, 'app'), requestPath, options);
+  if (dynamicMatch) {
+    return { filePath: dynamicMatch.filePath, params: dynamicMatch.params };
+  }
+
+  return null;
 }
 
 export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null {
@@ -508,13 +542,20 @@ export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string):
   return null;
 }
 
+/** HTTP methods a module actually exports, in canonical order. */
+function getExportedRouteMethods(apiModule: any): string[] {
+  return ROUTE_HANDLER_METHODS.filter((method) => typeof apiModule?.[method] === 'function');
+}
+
 export async function runLegacyApiRoute(options: {
   req: express.Request;
   res: express.Response;
   apiPath: string;
   isDev: boolean;
+  params?: RouteParams;
 }): Promise<void> {
   const { req, res, apiPath, isDev } = options;
+  const params = options.params || {};
 
   if (isDev) {
     delete require.cache[require.resolve(apiPath)];
@@ -526,13 +567,27 @@ export async function runLegacyApiRoute(options: {
   const runtime = resolvedSegmentConfig.runtime;
   applyRuntimeTraceHeaders(res, resolvedSegmentConfig, 'route-handler');
   const method = req.method?.toUpperCase() || 'GET';
-  const methodHandler = apiModule[method];
+  const exportedMethods = getExportedRouteMethods(apiModule);
+
+  // HEAD falls back to GET, per RFC 9110: same headers, response body dropped by
+  // Express because the request method is HEAD.
+  const methodHandler =
+    apiModule[method] || (method === 'HEAD' ? apiModule.GET : undefined);
+
+  // An unhandled OPTIONS request is answered from the exported method list rather
+  // than 405, so CORS preflight works without every route writing a handler.
+  if (method === 'OPTIONS' && typeof methodHandler !== 'function' && exportedMethods.length > 0) {
+    const allow = [...new Set([...exportedMethods, 'OPTIONS'])].join(', ');
+    res.status(204).setHeader('Allow', allow);
+    res.end();
+    return;
+  }
 
   if (typeof methodHandler === 'function') {
     const requestBody = await readRouteRequestBody(req);
     const request = createRouteRequest(req, requestBody);
 
-    const result = await methodHandler(request, { params: {} });
+    const result = await methodHandler(request, { params });
     if (result instanceof Response) {
       await sendFetchResponse(res, result);
       return;
@@ -559,6 +614,9 @@ export async function runLegacyApiRoute(options: {
     return;
   }
 
+  if (exportedMethods.length > 0) {
+    res.setHeader('Allow', [...new Set([...exportedMethods, 'OPTIONS'])].join(', '));
+  }
   res.status(405).json({ error: `Method ${method} not allowed` });
 }
 
