@@ -82,10 +82,83 @@ import { unstable_cache, revalidateTag, revalidatePath } from 'vista/cache';
 Server helpers from the package:
 
 ```ts
-import { cookies, headers, draftMode } from 'vista/server';
+import { cookies, headers, draftMode, NextResponse } from 'vista/server';
 ```
 
+## Middleware
+
+Vista.js includes a built-in middleware system that intercepts and processes requests before they reach a page or API route.
+
+### 1. Global Middleware
+
+Create a `middleware.ts` (or `.js`) file at the project root or inside `src/`:
+
+```ts
+// middleware.ts
+import { NextResponse } from 'vista/server';
+
+export async function middleware({ request, next }) {
+  // Authentication, logging, validation, etc.
+  if (request.nextUrl.pathname.startsWith('/admin') && !request.cookies.get('token')) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  const res = await next();
+  res.headers.set('x-framework', 'vista');
+  return res;
+}
+
+export const config = {
+  matcher: ['/((?!_vista|static|favicon.ico).*)'],
+};
+```
+
+### 2. Route-Specific Middleware
+
+Vista.js supports route-level middleware in two ways:
+
+- **Co-located segment middleware**: Place a `middleware.ts` inside any `app/` subfolder (e.g. `app/api/auth/middleware.ts` or `app/dashboard/middleware.ts`).
+- **Exported route middleware**: Export a `middleware` function directly from a segment file (e.g. `export const middleware = ...` in `app/api/users/route.ts` or `app/dashboard/page.tsx`).
+
+```ts
+// app/dashboard/middleware.ts
+export async function middleware({ request, next }) {
+  const user = request.headers.get('x-user-role');
+  if (user !== 'admin') {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  return next();
+}
+```
+
+### 3. Execution Order
+
+When multiple middlewares apply to a route, they execute in a deterministic outer-to-inner hierarchy:
+
+1. **Global Middleware**: `<root>/middleware.ts` or `<root>/src/middleware.ts`
+2. **Parent Segment Middleware**: `<root>/app/<segment>/middleware.ts`
+3. **Child Segment Middleware**: `<root>/app/<segment>/<subsegment>/middleware.ts`
+4. **Route File Middleware**: `export const middleware` in `page.tsx` or `route.ts`
+5. **Target Route Handler**: Page component rendering or API route handler
+
+Each middleware can wrap downstream execution using `await next()`, allowing post-processing on the response in reverse order (onion model). If any middleware returns a response without calling `next()`, execution short-circuits immediately and downstream handlers are bypassed.
+
+### 4. Modifying Requests and Responses
+
+- **Modify Request Headers**: Pass updated headers to `next({ request: { headers } })` to forward them to downstream middlewares and route handlers.
+- **Modify Response Headers**: Inspect or add headers on the response returned by `await next()`.
+- **Short-Circuit / Rejection**: Return a standard Fetch `Response`, `NextResponse.json(...)`, or custom error to reject unauthorized requests with full status and body support.
+- **Redirects**: Return `Response.redirect(...)` or `NextResponse.redirect(...)`.
+
+### 5. Interaction with Page & API Routes
+
+Middleware runs before both page routes and API routes (`app/**/route.ts` or `app/api/`). Any rejection or redirect stops execution before page SSR/RSC rendering or API handler invocation occurs.
+
 ## Monorepo Layout
+
 
 ```text
 vista-source/
