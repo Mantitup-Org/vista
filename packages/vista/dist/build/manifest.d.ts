@@ -66,12 +66,19 @@ interface RouteLike {
     pagePath: string;
     type?: 'static' | 'dynamic' | 'catch-all';
 }
-export declare function generateAppPathRoutesManifest(vistaDir: string, routes?: RouteLike[]): Record<string, string>;
+export interface RouteHandlerLike {
+    pattern: string;
+    filePath: string;
+    type?: 'static' | 'dynamic' | 'catch-all';
+    methods?: string[];
+    runtime?: string;
+}
+export declare function generateAppPathRoutesManifest(vistaDir: string, routes?: RouteLike[], routeHandlers?: RouteHandlerLike[]): Record<string, string>;
 export declare function generatePrerenderManifest(vistaDir: string): void;
 export declare function generateRequiredServerFilesManifest(cwd: string, vistaDir: string, extraFiles?: string[], appDir?: string): void;
 export declare function ensureJsonFile(vistaDir: string, relativePath: string, fallback?: unknown): void;
 export declare function writeArtifactManifest(vistaDir: string, buildId: string, extraManifestEntries?: Partial<ArtifactManifest['manifests']>): ArtifactManifest;
-export declare function writeCanonicalVistaArtifacts(cwd: string, vistaDir: string, buildId: string, routes?: RouteLike[]): ArtifactManifest;
+export declare function writeCanonicalVistaArtifacts(cwd: string, vistaDir: string, buildId: string, routes?: RouteLike[], routeHandlers?: RouteHandlerLike[]): ArtifactManifest;
 interface WriteReservedVistaArtifactsOptions {
     buildId: string;
     engineVariant?: VistaEngineVariant;
@@ -84,6 +91,15 @@ export interface RouteInfo {
     routeKeys: Record<string, string>;
     namedRegex?: string;
 }
+/** A file-based API route handler (`app/**\/route.*`) as recorded in the manifest. */
+export interface RouteHandlerInfo {
+    page: string;
+    regex: string;
+    namedRegex: string;
+    routeKeys: Record<string, string>;
+    methods: string[];
+    runtime?: string;
+}
 export interface RoutesManifest {
     version: number;
     basePath: string;
@@ -92,11 +108,16 @@ export interface RoutesManifest {
     headers: any[];
     staticRoutes: RouteInfo[];
     dynamicRoutes: RouteInfo[];
+    /**
+     * File-based API route handlers, kept in their own list so consumers that expect
+     * `staticRoutes`/`dynamicRoutes` to be page routes keep working unchanged.
+     */
+    routeHandlers: RouteHandlerInfo[];
 }
 /**
  * Generate routes-manifest.json from route tree.
  */
-export declare function generateRoutesManifest(vistaDir: string, staticRoutes?: RouteInfo[], dynamicRoutes?: RouteInfo[]): RoutesManifest;
+export declare function generateRoutesManifest(vistaDir: string, staticRoutes?: RouteInfo[], dynamicRoutes?: RouteInfo[], routeHandlers?: RouteHandlerLike[]): RoutesManifest;
 export interface ClientComponentInfo {
     filePath: string;
     chunkName: string;

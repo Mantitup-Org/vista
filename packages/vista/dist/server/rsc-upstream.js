@@ -779,8 +779,8 @@ function startUpstream() {
             }
         });
     };
-    app.get('/rsc*', handleRSCRequest);
-    app.get('/_rsc*', handleRSCRequest);
+    app.get(/^\/rsc/, handleRSCRequest);
+    app.get(/^\/_rsc/, handleRSCRequest);
     // -----------------------------------------------------------------------
     // Server Actions — POST handler
     // -----------------------------------------------------------------------
@@ -870,8 +870,8 @@ function startUpstream() {
             }
         });
     };
-    app.post('/rsc*', handleServerAction);
-    app.post('/_rsc*', handleServerAction);
+    app.post(/^\/rsc/, handleServerAction);
+    app.post(/^\/_rsc/, handleServerAction);
     const server = app.listen(port, () => {
         console.log(`[vista:rsc:upstream] Listening on http://127.0.0.1:${port}/rsc`);
     });

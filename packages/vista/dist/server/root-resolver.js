@@ -41,8 +41,18 @@ function detectRootMode(rootPath) {
     }
     return 'legacy';
 }
-function resolveRootLayout(cwd, isDev) {
+function getAppDir(cwd) {
     const appDir = path_1.default.join(cwd, 'app');
+    if (!fs_1.default.existsSync(appDir)) {
+        const srcAppDir = path_1.default.join(cwd, 'src', 'app');
+        if (fs_1.default.existsSync(srcAppDir)) {
+            return srcAppDir;
+        }
+    }
+    return appDir;
+}
+function resolveRootLayout(cwd, isDev) {
+    const appDir = getAppDir(cwd);
     const rootPath = resolveAppModuleByStem(appDir, 'root');
     const layoutPath = resolveAppModuleByStem(appDir, 'layout');
     const selectedPath = rootPath ?? layoutPath;
@@ -80,7 +90,7 @@ function resolveRootLayout(cwd, isDev) {
     };
 }
 function resolveRoutePagePath(cwd, routePath) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = getAppDir(cwd);
     const normalizedRoute = normalizeNotFoundRoute(routePath);
     if (normalizedRoute === '/' || normalizedRoute === '/index') {
         for (const ext of FILE_EXTENSIONS) {
@@ -111,7 +121,7 @@ function resolveRoutePagePath(cwd, routePath) {
     return null;
 }
 function resolveNotFoundComponent(cwd, rootLayout, isDev) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = getAppDir(cwd);
     const candidates = [];
     // 1. Explicit notFoundRoute (highest priority)
     if (rootLayout.notFoundRoute) {
@@ -177,7 +187,7 @@ function resolveNotFoundComponent(cwd, rootLayout, isDev) {
  * @param isDev   Bust require-cache in development
  */
 function resolveLayoutChain(cwd, pageDir, isDev) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = getAppDir(cwd);
     const chain = [];
     // Walk from app/ root down to the page's directory, collecting layouts
     // Normalise both to forward-slash for reliable prefix comparison
