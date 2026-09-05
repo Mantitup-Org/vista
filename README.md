@@ -20,6 +20,7 @@ Official site: https://vista-js.vercel.app
 Vista currently ships the following core surface:
 
 - App Router-style file conventions under `app/`
+- Built-in Route Handlers (`route.ts`) with HTTP method dispatching, dynamic routes, and Web API Request/Response
 - React Server Components and streaming SSR
 - Server Actions and runtime action manifests
 - Cache APIs: `unstable_cache`, `revalidateTag`, `revalidatePath`, `cacheTag`, `cacheLife`
@@ -84,6 +85,37 @@ Server helpers from the package:
 ```ts
 import { cookies, headers, draftMode } from 'vista/server';
 ```
+
+## Route Handlers & Backend API Support
+
+Vista provides built-in backend API capabilities directly inside the `app/` directory using standard Next.js-compatible `route.ts` file conventions:
+
+```ts
+// app/api/users/[id]/route.ts
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> | { id: string } }
+) {
+  const { id } = await context.params;
+  return Response.json({ userId: id, status: 'active' });
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  return Response.json({ created: true, body }, { status: 201 });
+}
+```
+
+### Route Handler Capabilities
+
+- **HTTP Method Dispatching**: Export standard HTTP method handlers (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`).
+- **Dynamic & Catch-all Parameters**: Full support for single segments (`[id]`), catch-all (`[...slug]`), and optional catch-all (`[[...slug]]`).
+- **Dual Sync/Async Params**: Supports both Next.js 14 synchronous parameter access (`context.params.id`) and Next.js 15+ asynchronous parameter access (`await context.params`).
+- **Automatic `OPTIONS` & `HEAD`**: Unhandled `OPTIONS` requests automatically respond with status 204 and an `Allow` header; `HEAD` requests automatically invoke the `GET` handler and return headers without a body.
+- **Method Not Allowed (405)**: Requests using unsupported methods return a 405 status code with an appropriate `Allow` header listing allowed methods.
+- **Web API Request & Response**: Full support for `request.nextUrl`, `request.cookies`, `await request.json()`, `Response.json(...)`, and multi-cookie `Set-Cookie` responses.
+- **Route Group Isolation**: Route groups (e.g. `app/(marketing)/about/route.ts`) are omitted from the URL path, matching `/about`.
+- **Structure Validation**: The structure validator detects invalid segment names, recognizes `route` as a canonical file convention, and reports `ROUTE_PAGE_CONFLICT` if a `page` and `route` handler exist at the same segment level.
 
 ## Monorepo Layout
 
