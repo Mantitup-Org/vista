@@ -63,8 +63,53 @@ if (
   (explicitFlashpack && explicitDefaultEngine) ||
   (explicitEngineVariant && (explicitFlashpack || explicitDefaultEngine))
 ) {
-  console.error('Use only one engine selector: --engine, --flashpack, or --default-engine/--webpack.');
+  console.error(
+    'Use only one engine selector: --engine, --flashpack, or --default-engine/--webpack.'
+  );
   process.exit(1);
+}
+
+const explicitTargetFlag = getFlagValue('--target');
+if (explicitTargetFlag) {
+  process.env.VISTA_DEPLOY_TARGET = explicitTargetFlag;
+}
+
+if (command === 'blueprint' || command === 'bp') {
+  const target = flags[0] && !flags[0].startsWith('-') ? flags[0] : explicitTargetFlag || 'auto';
+  const { loadConfig, resolveDeploymentConfig } = require('../dist/config');
+  const { detectDeploymentTarget, getDeploymentAdapter } = require('../dist/deployment');
+  const cwd = process.cwd();
+  const config = loadConfig(cwd);
+  const deploymentConfig = resolveDeploymentConfig(config.deployment);
+  const resolvedTarget = detectDeploymentTarget(cwd, deploymentConfig, target);
+  const adapter = getDeploymentAdapter(resolvedTarget);
+  if (!adapter) {
+    console.error(
+      `Unknown deployment target "${target}". Supported: vercel, cloudflare, render, docker, node.`
+    );
+    process.exit(1);
+  }
+  if (!adapter.generateBlueprint) {
+    console.log(
+      `Target "${resolvedTarget}" does not require separate blueprint configuration files.`
+    );
+    return;
+  }
+  const created = adapter.generateBlueprint({
+    cwd,
+    vistaDir: path.join(cwd, '.vista'),
+    config,
+    deploymentConfig,
+    target: resolvedTarget,
+    debug: true,
+  });
+  if (created.length === 0) {
+    console.log(`Blueprint configuration for "${resolvedTarget}" already exists or is not needed.`);
+  } else {
+    console.log(`Generated blueprint configuration for "${resolvedTarget}":`);
+    created.forEach((f) => console.log(`  - ${path.relative(cwd, f) || f}`));
+  }
+  return;
 }
 
 const envEngineVariant = normalizeEngineVariant(
@@ -88,7 +133,10 @@ try {
   // Best effort only; keep CLI resilient if config loading fails.
 }
 
-const forcedByFlag = explicitEngineVariant || (explicitFlashpack ? 'flashpack' : null) || (explicitDefaultEngine ? 'default' : null);
+const forcedByFlag =
+  explicitEngineVariant ||
+  (explicitFlashpack ? 'flashpack' : null) ||
+  (explicitDefaultEngine ? 'default' : null);
 const engineVariant = forcedByFlag || envEngineVariant || configEngineVariant || 'default';
 process.env.VISTA_ENGINE = engineVariant;
 process.env.VISTA_ENGINE_VARIANT = engineVariant;
@@ -238,6 +286,9 @@ if (command === 'dev') {
   console.log('  dev     Start development server with HMR');
   console.log('  build   Create production build');
   console.log('  start   Start production server');
+  console.log(
+    '  blueprint [target]  Generate deployment blueprints (render.yaml, Dockerfile, etc.)'
+  );
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
   console.log('');
   console.log('Options:');
@@ -246,12 +297,19 @@ if (command === 'dev') {
   console.log('  --flashpack   Use Rust-first Flashpack engine path');
   console.log('  --default-engine   Force default engine path');
   console.log('  --webpack   Alias of --default-engine');
+  console.log(
+    '  --target <target>   Deployment target (vercel, cloudflare, render, docker, node, auto)'
+  );
   console.log('');
   console.log('Examples:');
   console.log('  vista dev            # Start dev server (RSC mode)');
   console.log('  vista dev --legacy   # Start dev server with legacy SSR');
   console.log('  vista dev --flashpack   # Start dev server with Flashpack mode');
   console.log('  vista build          # Production build with RSC');
+  console.log('  vista build --target vercel       # Build for Vercel Build Output API v3');
+  console.log('  vista build --target cloudflare   # Build for Cloudflare Pages & Workers');
+  console.log('  vista build --target docker       # Build and generate Docker container config');
+  console.log('  vista blueprint render            # Generate render.yaml and keep-awake workflow');
   console.log('  vista g api-init     # Generate typed API starter files');
   console.log('');
 }
