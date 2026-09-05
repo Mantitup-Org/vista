@@ -23,6 +23,7 @@
     "test:server-runtime": "node scripts/test-server-runtime.cjs",
     "test:use-cache": "node scripts/test-use-cache.cjs",
     "test:segment-config": "node scripts/test-segment-config.cjs",
+    "test:api-routes": "node scripts/test-api-routes.cjs",
     "test:advanced-runtime": "node scripts/test-advanced-runtime.cjs",
     "test:rsc-conformance": "node scripts/test-rsc-conformance.cjs",
     "test:vista-output": "node scripts/test-vista-output.cjs",

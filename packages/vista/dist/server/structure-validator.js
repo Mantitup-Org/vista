@@ -28,6 +28,7 @@ const CONVENTION_FILES = new Set([
     'not-found',
     'template',
     'default',
+    'route',
 ]);
 // ============================================================================
 // Helpers
@@ -208,6 +209,21 @@ function checkRouteConflicts(patternMap, issues) {
         }
     }
 }
+function checkRoutePageConflicts(appDir, issues) {
+    walkRouteDirectories(appDir, (dir) => {
+        const pageFile = fileExistsWithExtensions(dir, 'page');
+        const routeFile = fileExistsWithExtensions(dir, 'route');
+        if (pageFile && routeFile) {
+            issues.push({
+                code: 'ROUTE_PAGE_CONFLICT',
+                severity: 'error',
+                message: `Conflicting route and page at "${path_1.default.relative(appDir, dir) || '/'}" (${path_1.default.basename(pageFile)} and ${path_1.default.basename(routeFile)}). A route handler cannot exist at the same segment level as a page.`,
+                filePath: routeFile,
+                fix: `Remove either ${path_1.default.basename(pageFile)} or ${path_1.default.basename(routeFile)} from ${path_1.default.relative(appDir, dir) || 'app'}.`,
+            });
+        }
+    });
+}
 function checkInvalidSegmentNames(dir, issues) {
     if (!fs_1.default.existsSync(dir))
         return;
@@ -364,7 +380,10 @@ function walkRouteDirectories(dir, callback) {
 }
 function validateAppStructure(input) {
     const { cwd, notFoundRoute } = input;
-    const appDir = path_1.default.join(cwd, 'app');
+    let appDir = path_1.default.join(cwd, 'app');
+    if (!fs_1.default.existsSync(appDir) && fs_1.default.existsSync(path_1.default.join(cwd, 'src', 'app'))) {
+        appDir = path_1.default.join(cwd, 'src', 'app');
+    }
     const issues = [];
     // 1. Root exists
     checkRootExists(appDir, issues);
@@ -375,6 +394,8 @@ function validateAppStructure(input) {
     // 4. Route pattern conflicts
     const patternMap = collectPatterns(routeGraph);
     checkRouteConflicts(patternMap, issues);
+    // 4b. Route vs page conflict
+    checkRoutePageConflicts(appDir, issues);
     // 5. Invalid segment names
     checkInvalidSegmentNames(appDir, issues);
     // 6. Not-found resolution

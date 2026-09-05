@@ -23,6 +23,7 @@ export type IssueCode =
   | 'LAYOUT_FALLBACK_USED'
   | 'RESERVED_NOT_FOUND_PUBLIC'
   | 'ROUTE_PATTERN_CONFLICT'
+  | 'ROUTE_PAGE_CONFLICT'
   | 'INVALID_SEGMENT_NAME'
   | 'INVALID_NOT_FOUND_OVERRIDE_TARGET'
   | 'MULTIPLE_NOT_FOUND_SOURCES'
@@ -76,6 +77,7 @@ const CONVENTION_FILES = new Set([
   'not-found',
   'template',
   'default',
+  'route',
 ]);
 
 // ============================================================================
@@ -278,6 +280,22 @@ function checkRouteConflicts(patternMap: Map<string, string[]>, issues: Structur
   }
 }
 
+function checkRoutePageConflicts(appDir: string, issues: StructureIssue[]): void {
+  walkRouteDirectories(appDir, (dir) => {
+    const pageFile = fileExistsWithExtensions(dir, 'page');
+    const routeFile = fileExistsWithExtensions(dir, 'route');
+    if (pageFile && routeFile) {
+      issues.push({
+        code: 'ROUTE_PAGE_CONFLICT',
+        severity: 'error',
+        message: `Conflicting route and page at "${path.relative(appDir, dir) || '/'}" (${path.basename(pageFile)} and ${path.basename(routeFile)}). A route handler cannot exist at the same segment level as a page.`,
+        filePath: routeFile,
+        fix: `Remove either ${path.basename(pageFile)} or ${path.basename(routeFile)} from ${path.relative(appDir, dir) || 'app'}.`,
+      });
+    }
+  });
+}
+
 function checkInvalidSegmentNames(dir: string, issues: StructureIssue[]): void {
   if (!fs.existsSync(dir)) return;
 
@@ -453,7 +471,10 @@ export interface ValidateAppStructureInput {
 
 export function validateAppStructure(input: ValidateAppStructureInput): StructureValidationResult {
   const { cwd, notFoundRoute } = input;
-  const appDir = path.join(cwd, 'app');
+  let appDir = path.join(cwd, 'app');
+  if (!fs.existsSync(appDir) && fs.existsSync(path.join(cwd, 'src', 'app'))) {
+    appDir = path.join(cwd, 'src', 'app');
+  }
   const issues: StructureIssue[] = [];
 
   // 1. Root exists
@@ -468,6 +489,9 @@ export function validateAppStructure(input: ValidateAppStructureInput): Structur
   // 4. Route pattern conflicts
   const patternMap = collectPatterns(routeGraph);
   checkRouteConflicts(patternMap, issues);
+
+  // 4b. Route vs page conflict
+  checkRoutePageConflicts(appDir, issues);
 
   // 5. Invalid segment names
   checkInvalidSegmentNames(appDir, issues);

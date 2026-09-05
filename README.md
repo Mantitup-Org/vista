@@ -22,6 +22,7 @@ Vista currently ships the following core surface:
 - App Router-style file conventions under `app/`
 - React Server Components and streaming SSR
 - Server Actions and runtime action manifests
+- File-based API routes: `app/**/route.ts` handlers with dynamic segments, on both engines
 - Cache APIs: `unstable_cache`, `revalidateTag`, `revalidatePath`, `cacheTag`, `cacheLife`
 - Route groups, parallel routes, interception routes, slot defaults, loading/error/not-found boundaries
 - Segment config support (`dynamic`, `revalidate`, `runtime`, `preferredRegion`, `maxDuration`, `fetchCache`)
@@ -64,6 +65,94 @@ npm run start
 ```
 
 The selected engine is stored in `vista.config.ts`.
+
+## API Routes
+
+Add a `route.ts` file anywhere under `app/` and that directory becomes an HTTP
+endpoint. No config, no separate backend, no server wiring:
+
+```
+src/
+└── app/
+    ├── page.tsx            ->  /
+    └── api/
+        ├── users/
+        │   ├── route.ts    ->  /api/users
+        │   └── [id]/
+        │       └── route.ts ->  /api/users/:id
+        └── health/
+            └── route.ts    ->  /api/health
+```
+
+Export one function per HTTP method. `GET`, `HEAD`, `POST`, `PUT`, `PATCH`,
+`DELETE`, and `OPTIONS` are supported:
+
+```ts
+// app/api/users/route.ts
+import { listUsers, createUser } from './user-store';
+
+export async function GET() {
+  return Response.json({ users: await listUsers() });
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  const user = await createUser(body);
+
+  return Response.json({ user }, { status: 201 });
+}
+```
+
+Dynamic segments follow the same `[param]` conventions as pages, and their values
+arrive on the second argument:
+
+```ts
+// app/api/users/[id]/route.ts
+export async function GET(request: Request, { params }: { params: { id: string } }) {
+  return Response.json({ id: params.id });
+}
+```
+
+| File | URL | `params` |
+| --- | --- | --- |
+| `app/api/users/route.ts` | `/api/users` | `{}` |
+| `app/api/users/[id]/route.ts` | `/api/users/42` | `{ id: '42' }` |
+| `app/api/files/[...path]/route.ts` | `/api/files/a/b.txt` | `{ path: ['a', 'b.txt'] }` |
+| `app/api/docs/[[...slug]]/route.ts` | `/api/docs` | `{ slug: [] }` |
+| `app/(internal)/metrics/route.ts` | `/metrics` | `{}` |
+
+A more specific route always wins, so `app/api/users/me/route.ts` is matched before
+`app/api/users/[id]/route.ts`.
+
+Route handlers are server-only by construction. They are never entered into the
+client graph, so anything they import - database clients, secrets, private helpers -
+stays out of the browser bundle:
+
+```ts
+// app/api/users/user-store.ts  (never shipped to the client)
+import { db } from '@/lib/db';
+
+export function listUsers() {
+  return db.user.findMany();
+}
+```
+
+Two things happen automatically:
+
+- **Method handling.** A method with no export returns `405` with an `Allow` header,
+  `HEAD` falls back to the `GET` handler, and an unhandled `OPTIONS` is answered from
+  the exported method list so CORS preflight works out of the box.
+- **Registration.** Route files are discovered at build time and recorded in
+  `.vista/routes-manifest.json` and `.vista/app-path-routes-manifest.json`, so
+  deployment adapters can see them without re-scanning your source.
+
+Opt a handler into the edge runtime with the usual segment config:
+
+```ts
+export const runtime = 'edge';
+```
+
+A runnable example lives in [`sample-app/app/api/hello/route.ts`](sample-app/app/api/hello/route.ts).
 
 ## Package Examples
 

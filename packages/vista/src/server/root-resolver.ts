@@ -47,8 +47,19 @@ function detectRootMode(rootPath: string): RootRenderMode {
   return 'legacy';
 }
 
-export function resolveRootLayout(cwd: string, isDev: boolean): ResolvedRootLayout {
+function getAppDir(cwd: string): string {
   const appDir = path.join(cwd, 'app');
+  if (!fs.existsSync(appDir)) {
+    const srcAppDir = path.join(cwd, 'src', 'app');
+    if (fs.existsSync(srcAppDir)) {
+      return srcAppDir;
+    }
+  }
+  return appDir;
+}
+
+export function resolveRootLayout(cwd: string, isDev: boolean): ResolvedRootLayout {
+  const appDir = getAppDir(cwd);
   const rootPath = resolveAppModuleByStem(appDir, 'root');
   const layoutPath = resolveAppModuleByStem(appDir, 'layout');
 
@@ -97,7 +108,7 @@ export function resolveRootLayout(cwd: string, isDev: boolean): ResolvedRootLayo
 }
 
 export function resolveRoutePagePath(cwd: string, routePath: string): string | null {
-  const appDir = path.join(cwd, 'app');
+  const appDir = getAppDir(cwd);
   const normalizedRoute = normalizeNotFoundRoute(routePath);
 
   if (normalizedRoute === '/' || normalizedRoute === '/index') {
@@ -142,7 +153,7 @@ export function resolveNotFoundComponent(
   rootLayout: ResolvedRootLayout,
   isDev: boolean
 ): ResolvedNotFoundComponent | null {
-  const appDir = path.join(cwd, 'app');
+  const appDir = getAppDir(cwd);
   const candidates: string[] = [];
 
   // 1. Explicit notFoundRoute (highest priority)
@@ -230,7 +241,7 @@ export interface ResolvedLayout {
  * @param isDev   Bust require-cache in development
  */
 export function resolveLayoutChain(cwd: string, pageDir: string, isDev: boolean): ResolvedLayout[] {
-  const appDir = path.join(cwd, 'app');
+  const appDir = getAppDir(cwd);
   const chain: ResolvedLayout[] = [];
 
   // Walk from app/ root down to the page's directory, collecting layouts

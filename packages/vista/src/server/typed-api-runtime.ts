@@ -12,6 +12,36 @@ import {
 import type { ResolvedTypedApiConfig } from '../config';
 import { mergeSegmentConfigs, parseSegmentConfig, type ResolvedSegmentConfig } from './segment-config';
 import { setCurrentSegmentConfig } from './request-context';
+import {
+  resolveRouteHandler as resolveRegistryRouteHandler,
+  ROUTE_HANDLER_METHODS,
+  type DiscoveredRouteHandler,
+  type ResolvedRouteHandler,
+} from './route-handler-registry';
+import type { RouteParams } from './route-patterns';
+
+export interface RouteHandlerMatch {
+  /** Absolute path of the resolved route file. */
+  filePath: string;
+  /** Dynamic segment values, empty for a fully static route. */
+  params: RouteParams;
+}
+
+export function getAppDirectories(cwd: string): string[] {
+  const dirs: string[] = [];
+  const appDir = path.resolve(cwd, 'app');
+  if (fs.existsSync(appDir)) {
+    dirs.push(appDir);
+  }
+  const srcAppDir = path.resolve(cwd, 'src', 'app');
+  if (fs.existsSync(srcAppDir)) {
+    dirs.push(srcAppDir);
+  }
+  if (dirs.length === 0) {
+    dirs.push(appDir);
+  }
+  return dirs;
+}
 
 type TypedApiRouter = StackRouter<ProcedureRecord, any, any>;
 type RouteRuntimeMode = 'nodejs' | 'edge' | 'experimental-edge';
@@ -29,6 +59,14 @@ const TYPED_API_ENTRYPOINTS = [
   path.join('app', 'typed-api.tsx'),
   path.join('app', 'typed-api.js'),
   path.join('app', 'typed-api.jsx'),
+  path.join('src', 'app', 'api', 'typed.ts'),
+  path.join('src', 'app', 'api', 'typed.tsx'),
+  path.join('src', 'app', 'api', 'typed.js'),
+  path.join('src', 'app', 'api', 'typed.jsx'),
+  path.join('src', 'app', 'typed-api.ts'),
+  path.join('src', 'app', 'typed-api.tsx'),
+  path.join('src', 'app', 'typed-api.js'),
+  path.join('src', 'app', 'typed-api.jsx'),
 ];
 
 const METADATA_ROUTE_MAPPINGS: MetadataRouteMapping[] = [
@@ -123,8 +161,11 @@ function isRouteGroupDirectory(name: string): boolean {
   return /^\([\w-]+\)$/.test(name);
 }
 
-function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
-  const appDir = path.resolve(cwd, 'app');
+function resolveMetadataRoutePath(cwdOrAppDir: string, stem: string): string | null {
+  const dirs =
+    path.basename(cwdOrAppDir) === 'app'
+      ? [cwdOrAppDir]
+      : getAppDirectories(cwdOrAppDir);
 
   const tryStemInDirectory = (dir: string): string | null => {
     for (const extension of ROUTE_FILE_EXTENSIONS) {
@@ -136,12 +177,8 @@ function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
     return null;
   };
 
-  const directMatch = tryStemInDirectory(appDir);
-  if (directMatch) {
-    return directMatch;
-  }
-
   const searchGroupDirectories = (dir: string): string | null => {
+    if (!fs.existsSync(dir)) return null;
     const entries = fs
       .readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && isRouteGroupDirectory(entry.name))
@@ -163,7 +200,14 @@ function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
     return null;
   };
 
-  return searchGroupDirectories(appDir);
+  for (const appDir of dirs) {
+    const directMatch = tryStemInDirectory(appDir);
+    if (directMatch) return directMatch;
+    const groupMatch = searchGroupDirectories(appDir);
+    if (groupMatch) return groupMatch;
+  }
+
+  return null;
 }
 
 function hasMethodMatch(router: TypedApiRouter, pathname: string, method: string): boolean {
@@ -221,14 +265,41 @@ async function parseRequestBody(req: express.Request, bodySizeLimitBytes: number
   return raw;
 }
 
-async function sendFetchResponse(res: express.Response, response: Response): Promise<void> {
+async function sendFetchResponse(
+  res: express.Response,
+  response: Response,
+  options?: { isHead?: boolean }
+): Promise<void> {
+  const setCookies =
+    typeof (response.headers as any).getSetCookie === 'function'
+      ? (response.headers as any).getSetCookie()
+      : null;
+
   response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie' && Array.isArray(setCookies) && setCookies.length > 0) {
+      return;
+    }
     res.setHeader(key, value);
   });
 
-  const arrayBuffer = await response.arrayBuffer();
-  const body = Buffer.from(arrayBuffer);
-  res.status(response.status).send(body);
+  if (Array.isArray(setCookies) && setCookies.length > 0) {
+    res.setHeader('Set-Cookie', setCookies);
+  }
+
+  res.status(response.status);
+
+  if (options?.isHead) {
+    res.end();
+    return;
+  }
+
+  if (response.body) {
+    const arrayBuffer = await response.arrayBuffer();
+    const body = Buffer.from(arrayBuffer);
+    res.send(body);
+  } else {
+    res.end();
+  }
 }
 
 function applyRuntimeTraceHeaders(
@@ -271,16 +342,35 @@ async function readRouteRequestBody(req: express.Request): Promise<Buffer | unde
     return undefined;
   }
 
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  if (Buffer.isBuffer((req as any).rawBody)) {
+    return (req as any).rawBody;
   }
 
-  if (chunks.length === 0) {
-    return undefined;
+  if (Buffer.isBuffer(req.body)) {
+    return req.body;
   }
 
-  return Buffer.concat(chunks);
+  if (typeof req.body === 'string') {
+    return Buffer.from(req.body, 'utf-8');
+  }
+
+  if (req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0) {
+    return Buffer.from(JSON.stringify(req.body), 'utf-8');
+  }
+
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    if (chunks.length > 0) {
+      return Buffer.concat(chunks);
+    }
+  } catch {
+    // Stream may have already been consumed
+  }
+
+  return undefined;
 }
 
 function buildRequestUrl(req: express.Request): URL {
@@ -457,8 +547,45 @@ async function executeTypedRoute(
   };
 }
 
+export function createParamsContext(rawParams: Record<string, string | string[]>): any {
+  const promise = Promise.resolve(rawParams) as any;
+  for (const [key, value] of Object.entries(rawParams)) {
+    Object.defineProperty(promise, key, {
+      value,
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  return promise;
+}
+
+export function resolveRouteHandler(
+  cwd: string,
+  requestPath: string,
+  options: { isDev?: boolean } = {}
+): RouteHandlerMatch | null {
+  // 1. Literal path probe (fast path for exact matches and metadata routes)
+  const literalPath = resolveLegacyRouteHandlerPath(cwd, requestPath);
+  if (literalPath) {
+    return { filePath: literalPath, params: {} };
+  }
+
+  // 2. Discovered route handler resolution (dynamic segments, catch-alls, etc.)
+  for (const appDir of getAppDirectories(cwd)) {
+    const dynamicMatch = resolveRegistryRouteHandler(appDir, requestPath, options);
+    if (dynamicMatch) {
+      return { filePath: dynamicMatch.filePath, params: dynamicMatch.params };
+    }
+  }
+
+  return null;
+}
+
+export const resolveRouteHandlerMatch = resolveRouteHandler;
+
 export function resolveLegacyApiRoutePath(cwd: string, requestPath: string): string | null {
-  if (!requestPath.startsWith('/api/')) {
+  if (!requestPath.startsWith('/api/') && requestPath !== '/api') {
     return null;
   }
   return resolveLegacyRouteHandlerPath(cwd, requestPath);
@@ -478,26 +605,29 @@ export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string):
     }
   }
 
-  if (normalized.startsWith('api/')) {
-    const apiRoute = normalized.slice('api/'.length);
+  const appDirs = getAppDirectories(cwd);
+  for (const appDir of appDirs) {
+    if (normalized.startsWith('api/')) {
+      const apiRoute = normalized.slice('api/'.length);
+      routeCandidates.push(
+        path.resolve(appDir, 'api', apiRoute, 'route.ts'),
+        path.resolve(appDir, 'api', apiRoute, 'route.tsx'),
+        path.resolve(appDir, 'api', apiRoute, 'route.js'),
+        path.resolve(appDir, 'api', apiRoute, 'route.jsx'),
+        path.resolve(appDir, 'api', `${apiRoute}.ts`),
+        path.resolve(appDir, 'api', `${apiRoute}.tsx`),
+        path.resolve(appDir, 'api', `${apiRoute}.js`),
+        path.resolve(appDir, 'api', `${apiRoute}.jsx`)
+      );
+    }
+
     routeCandidates.push(
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.ts'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.tsx'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.js'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.jsx'),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.ts`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.tsx`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.js`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.jsx`)
+      path.resolve(appDir, normalized, 'route.ts'),
+      path.resolve(appDir, normalized, 'route.tsx'),
+      path.resolve(appDir, normalized, 'route.js'),
+      path.resolve(appDir, normalized, 'route.jsx')
     );
   }
-
-  routeCandidates.push(
-    path.resolve(cwd, 'app', normalized, 'route.ts'),
-    path.resolve(cwd, 'app', normalized, 'route.tsx'),
-    path.resolve(cwd, 'app', normalized, 'route.js'),
-    path.resolve(cwd, 'app', normalized, 'route.jsx')
-  );
 
   for (const routePath of routeCandidates) {
     if (fs.existsSync(routePath)) {
@@ -508,31 +638,107 @@ export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string):
   return null;
 }
 
-export async function runLegacyApiRoute(options: {
+export async function runRouteHandler(options: {
   req: express.Request;
   res: express.Response;
   apiPath: string;
   isDev: boolean;
+  params?: Record<string, string | string[]>;
 }): Promise<void> {
-  const { req, res, apiPath, isDev } = options;
+  const { req, res, apiPath, isDev, params = {} } = options;
 
   if (isDev) {
     delete require.cache[require.resolve(apiPath)];
   }
 
-  const apiModule = require(apiPath);
+  const rawModule = require(apiPath);
+  const apiModule =
+    rawModule && typeof rawModule === 'object' && rawModule.__esModule && rawModule.default && typeof rawModule.default === 'object'
+      ? { ...rawModule.default, ...rawModule }
+      : rawModule;
+
   const resolvedSegmentConfig = resolveRouteSegmentRuntime(apiPath, apiModule);
   setCurrentSegmentConfig(resolvedSegmentConfig);
   const runtime = resolvedSegmentConfig.runtime;
   applyRuntimeTraceHeaders(res, resolvedSegmentConfig, 'route-handler');
-  const method = req.method?.toUpperCase() || 'GET';
-  const methodHandler = apiModule[method];
 
+  const rawMethod = (req.method || 'GET').toUpperCase();
+
+  const getHandler = (methodName: string) => {
+    if (typeof apiModule?.[methodName] === 'function') return apiModule[methodName];
+    if (typeof rawModule?.[methodName] === 'function') return rawModule[methodName];
+    if (typeof apiModule?.default?.[methodName] === 'function') return apiModule.default[methodName];
+    return null;
+  };
+
+  const exportedMethods = ROUTE_HANDLER_METHODS.filter((m) => getHandler(m) !== null);
+  const allowHeader = [...new Set([...exportedMethods, 'OPTIONS'])].join(', ');
+
+  // 1. OPTIONS auto-handling
+  if (rawMethod === 'OPTIONS') {
+    const customOptionsHandler = getHandler('OPTIONS');
+    if (customOptionsHandler) {
+      const requestBody = await readRouteRequestBody(req);
+      const request = createRouteRequest(req, requestBody);
+      const paramsContext = createParamsContext(params);
+      const result = await customOptionsHandler(request, { params: paramsContext });
+      if (result instanceof Response) {
+        await sendFetchResponse(res, result);
+        return;
+      }
+      if (result !== undefined) {
+        res.status(200).json(result);
+        return;
+      }
+      res.status(204).end();
+      return;
+    }
+
+    if (exportedMethods.length > 0) {
+      res.setHeader('Allow', allowHeader);
+      res.status(204).end();
+      return;
+    }
+  }
+
+  // 2. HEAD auto-fallback to GET
+  if (rawMethod === 'HEAD') {
+    const headHandler = getHandler('HEAD');
+    if (headHandler) {
+      const requestBody = await readRouteRequestBody(req);
+      const request = createRouteRequest(req, requestBody);
+      const paramsContext = createParamsContext(params);
+      const result = await headHandler(request, { params: paramsContext });
+      if (result instanceof Response) {
+        await sendFetchResponse(res, result, { isHead: true });
+        return;
+      }
+      res.status(204).end();
+      return;
+    }
+
+    const getHandlerFn = getHandler('GET');
+    if (getHandlerFn) {
+      const request = createRouteRequest(req, undefined);
+      const paramsContext = createParamsContext(params);
+      const result = await getHandlerFn(request, { params: paramsContext });
+      if (result instanceof Response) {
+        await sendFetchResponse(res, result, { isHead: true });
+        return;
+      }
+      res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8').end();
+      return;
+    }
+  }
+
+  // 3. Directly exported HTTP method
+  const methodHandler = getHandler(rawMethod);
   if (typeof methodHandler === 'function') {
     const requestBody = await readRouteRequestBody(req);
     const request = createRouteRequest(req, requestBody);
+    const paramsContext = createParamsContext(params);
 
-    const result = await methodHandler(request, { params: {} });
+    const result = await methodHandler(request, { params: paramsContext });
     if (result instanceof Response) {
       await sendFetchResponse(res, result);
       return;
@@ -547,6 +753,14 @@ export async function runLegacyApiRoute(options: {
     return;
   }
 
+  // 4. Method not allowed if other HTTP methods are exported
+  if (exportedMethods.length > 0) {
+    res.setHeader('Allow', allowHeader);
+    res.status(405).json({ error: `Method ${rawMethod} Not Allowed` });
+    return;
+  }
+
+  // 5. Legacy default Express export (req, res)
   if (isEdgeRuntime(runtime) && typeof apiModule.default === 'function') {
     res.status(500).json({
       error: 'Edge runtime route handlers must export HTTP method functions instead of a default Express handler.',
@@ -559,7 +773,17 @@ export async function runLegacyApiRoute(options: {
     return;
   }
 
-  res.status(405).json({ error: `Method ${method} not allowed` });
+  res.status(405).json({ error: `Method ${rawMethod} Not Allowed` });
+}
+
+export async function runLegacyApiRoute(options: {
+  req: express.Request;
+  res: express.Response;
+  apiPath: string;
+  isDev: boolean;
+  params?: Record<string, string | string[]>;
+}): Promise<void> {
+  return runRouteHandler(options);
 }
 
 export async function runTypedApiRoute(options: {
