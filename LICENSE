@@ -1,53 +1,51 @@
-# Vista.js Open Source License
+Vista.js Open Source License
 
 Copyright (c) 2026 Mantitup and Vista.js Contributors
 
-Permission is hereby granted to any person obtaining a copy of this software and associated documentation files (the "Software") to use, copy, modify, and distribute the Software, subject to the conditions below.
+Permission is hereby granted to any person obtaining a copy of this software and associated documentation files (the "Software") to use, copy, modify, publish, and distribute the Software, subject to the conditions below.
 
-## Conditions
+1. Attribution
 
-### 1. Attribution
-
-All copies, substantial portions, modified versions, forks, and derivative works of the Software must retain the original copyright notice, license notice, and attribution to **Vista.js** and **Mantitup**.
+All copies, substantial portions, modified versions, forks, and derivative works of the Software must retain the original copyright notice, license notice, and attribution to Vista.js and Mantitup.
 
 The original project name, copyright notices, and attribution notices must not be removed, hidden, or intentionally altered.
 
-### 2. No False Ownership or Authorship
+2. No False Ownership or Authorship
 
 You may not represent or imply that:
 
-* Vista.js was originally created by you or your organization.
-* The original Vista.js project was independently developed by you.
-* You are the original copyright holder of Vista.js.
-* Mantitup or the Vista.js contributors have endorsed, sponsored, or officially approved your derivative project unless explicit written permission has been obtained.
+- Vista.js was originally created by you or your organization.
+- The original Vista.js project was independently developed by you.
+- You are the original copyright holder of Vista.js.
+- Mantitup or the Vista.js contributors have endorsed, sponsored, or officially approved your derivative project unless explicit written permission has been obtained.
 
 You may create, modify, fork, publish, and distribute derivative works, but such works must clearly acknowledge their relationship to the original Vista.js project.
 
-### 3. Derivative Works and Forks
+3. Derivative Works and Forks
 
 Forks and derivative projects are permitted.
 
-However, when distributing a fork or derivative work, you must clearly state that it is derived from Vista.js and retain the original attribution and copyright notices.
+When distributing a fork or derivative work, you must clearly state that it is derived from Vista.js and retain the original attribution and copyright notices.
 
 For example:
 
-> This project is based on Vista.js, originally developed and maintained by Mantitup and Vista.js contributors.
+"This project is based on Vista.js, originally developed and maintained by Mantitup and Vista.js contributors."
 
 You may use a different project name for your derivative work, provided that you do not imply that it is the official Vista.js project.
 
-### 4. Project Branding
+4. Project Branding
 
-The names **Vista.js** and **Mantitup**, along with associated logos, trademarks, and branding, may not be used to falsely imply official ownership, endorsement, sponsorship, or affiliation.
+The names Vista.js and Mantitup, along with associated logos, trademarks, and branding, may not be used to falsely imply official ownership, endorsement, sponsorship, or affiliation.
 
 Use of the project's name solely to accurately describe compatibility, origin, or derivation is permitted.
 
-### 5. Contributions
+5. Contributions
 
 By submitting a contribution to the official Vista.js repository, you represent that you have the right to submit the contribution and that the contribution may be distributed under the terms of this license.
 
 Unless otherwise agreed in writing, contributions submitted to the official Vista.js repository become part of the Vista.js project and remain subject to this license.
 
-### 6. Compliance and Enforcement
+6. Compliance and Enforcement
 
 Any use, distribution, modification, or representation that violates the conditions of this license is unauthorized.
 
@@ -55,14 +53,12 @@ Mantitup and the applicable copyright holders reserve all rights and remedies av
 
 Nothing in this license limits any rights or remedies available to the copyright holders under applicable copyright, trademark, or other applicable laws.
 
-### 7. No Warranty
+7. No Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 IN NO EVENT SHALL THE AUTHORS, COPYRIGHT HOLDERS, MANTITUP, OR VISTA.JS CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
----
+Vista.js is an open-source project maintained by Mantitup and its contributors.
 
-**Vista.js** is an open-source project maintained by **Mantitup and its contributors**.
-
-Copyright © 2026 Mantitup and Vista.js Contributors.
+Copyright (c) 2026 Mantitup and Vista.js Contributors.
