@@ -9,11 +9,11 @@ Official site: https://vista-js.vercel.app
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
+| Package             | Purpose                                                                      |
+| ------------------- | ---------------------------------------------------------------------------- |
 | `@vistagenic/vista` | Framework runtime, CLI, server/client exports, cache APIs, fonts, theme APIs |
-| `create-vista-app` | Scaffolds Vista apps with engine selection and package-manager prompts |
-| `vista-native` | Internal Rust/NAPI bridge used by the repo |
+| `create-vista-app`  | Scaffolds Vista apps with engine selection and package-manager prompts       |
+| `vista-native`      | Internal Rust/NAPI bridge used by the repo                                   |
 
 ## Current Capabilities
 
@@ -131,18 +131,60 @@ npm --prefix crates/vista-napi run build
 
 ## Common Commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm build` | Build the workspace through `flash-run.cjs` |
-| `pnpm dev` | Run workspace dev tasks |
-| `pnpm test` | Full repo test chain |
-| `pnpm test:integrity` | Framework integrity guard |
-| `pnpm test:rsc-conformance` | RSC and route conformance suite |
-| `pnpm test:vista-output` | `.vista` standalone/output verification |
-| `pnpm test:flashpack-dev` | Flashpack dev/restart verification |
+| Command                     | Purpose                                      |
+| --------------------------- | -------------------------------------------- |
+| `pnpm build`                | Build the workspace through `flash-run.cjs`  |
+| `pnpm dev`                  | Run workspace dev tasks                      |
+| `pnpm test`                 | Full repo test chain                         |
+| `pnpm test:integrity`       | Framework integrity guard                    |
+| `pnpm test:rsc-conformance` | RSC and route conformance suite              |
+| `pnpm test:vista-output`    | `.vista` standalone/output verification      |
+| `pnpm test:flashpack-dev`   | Flashpack dev/restart verification           |
 | `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification |
-| `pnpm bench` | Full benchmark run |
-| `pnpm bench:quick` | Quick benchmark smoke run |
+| `pnpm bench`                | Full benchmark run                           |
+| `pnpm bench:quick`          | Quick benchmark smoke run                    |
+
+## Multi-Platform Deployment Support
+
+Vista includes a unified deployment adapter pipeline supporting zero-config deployment across major cloud providers and container environments:
+
+- **Vercel**: Native Build Output API v3 (`.vercel/output`) with static asset edge routing and Node.js 20 serverless function execution (`index.func`).
+- **Cloudflare Pages & Workers**: Edge deployment with `_routes.json` static bypass caching and `_worker.js` dynamic fetch handler.
+- **Render**: Production web service with automated `render.yaml` and keep-awake GitHub Action workflows.
+- **Docker**: Production-ready multi-stage `Dockerfile` and `.dockerignore` targeting the unprivileged standalone Node runtime.
+- **Node.js**: Zero-dependency standalone server bundle in `.vista/standalone`.
+
+### Deployment CLI Commands
+
+```bash
+# Target-specific production builds
+vista build --target vercel       # Build for Vercel Build Output API v3
+vista build --target cloudflare   # Build for Cloudflare Pages & Workers
+vista build --target docker       # Build and containerize
+vista build --target render       # Build for Render Web Services
+
+# On-demand blueprint generation
+vista blueprint vercel            # Generate vercel.json
+vista blueprint cloudflare        # Generate wrangler.toml
+vista blueprint render            # Generate render.yaml and keep-awake workflow
+vista blueprint docker            # Generate Dockerfile and .dockerignore
+```
+
+### Deployment Configuration (`vista.config.ts`)
+
+```typescript
+import { defineConfig } from '@vistagenic/vista';
+
+export default defineConfig({
+  deployment: {
+    target: 'auto', // 'auto' | 'vercel' | 'cloudflare' | 'render' | 'docker' | 'node'
+    generateBlueprints: true,
+    port: 3003,
+  },
+});
+```
+
+Automatic platform detection recognizes environment variables (`VERCEL`, `CF_PAGES`, `RENDER`, `DOCKER`) and project files (`vercel.json`, `wrangler.toml`, `render.yaml`, `Dockerfile`) without manual flags.
 
 ## Deployment Notes
 

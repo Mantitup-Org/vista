@@ -11,6 +11,27 @@ updatedAt: 2026-03-17
 
 If you are launching now, use Render first. This setup is written for end-users deploying a Vista app directly from project root.
 
+## Automatic Blueprint Generation
+
+You can automatically generate `render.yaml` and keep-awake workflows using the Vista CLI:
+
+```bash
+vista blueprint render
+```
+
+Or configure in `vista.config.ts`:
+
+```typescript
+import { defineConfig } from '@vistagenic/vista';
+
+export default defineConfig({
+  deployment: {
+    target: 'render',
+    generateBlueprints: true,
+  },
+});
+```
+
 ## render.yaml Blueprint
 
 ```yaml title="render.yaml"
@@ -41,7 +62,7 @@ name: Keep Render Awake
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 jobs:

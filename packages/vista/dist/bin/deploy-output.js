@@ -4,75 +4,38 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateDeploymentOutputs = generateDeploymentOutputs;
-const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-function isVercelBuildEnvironment() {
-    return process.env.VERCEL === '1' || process.env.NOW_REGION !== undefined;
-}
-function hasUserVercelConfig(cwd) {
-    return fs_1.default.existsSync(path_1.default.join(cwd, 'vercel.json'));
-}
-function copyDirectoryRecursive(sourceDir, targetDir) {
-    if (!fs_1.default.existsSync(sourceDir))
-        return;
-    fs_1.default.mkdirSync(targetDir, { recursive: true });
-    const entries = fs_1.default.readdirSync(sourceDir, { withFileTypes: true });
-    for (const entry of entries) {
-        const from = path_1.default.join(sourceDir, entry.name);
-        const to = path_1.default.join(targetDir, entry.name);
-        if (entry.isDirectory()) {
-            copyDirectoryRecursive(from, to);
-        }
-        else if (entry.isFile()) {
-            fs_1.default.copyFileSync(from, to);
-        }
-    }
-}
-function copyFileIfPresent(sourceFile, targetFile) {
-    if (!fs_1.default.existsSync(sourceFile))
-        return;
-    fs_1.default.mkdirSync(path_1.default.dirname(targetFile), { recursive: true });
-    fs_1.default.copyFileSync(sourceFile, targetFile);
-}
-function writeVercelBuildOutput(options) {
-    const { cwd, vistaDir, debug } = options;
-    if (!isVercelBuildEnvironment()) {
-        return;
-    }
-    if (hasUserVercelConfig(cwd)) {
-        if (debug) {
-            console.log('[vista:deploy] Found custom vercel.json, skipping internal Vercel output.');
-        }
-        return;
-    }
-    const vercelOutputDir = path_1.default.join(cwd, '.vercel', 'output');
-    const vercelStaticDir = path_1.default.join(vercelOutputDir, 'static');
-    fs_1.default.rmSync(vercelOutputDir, { recursive: true, force: true });
-    fs_1.default.mkdirSync(vercelStaticDir, { recursive: true });
-    // Public assets: /favicon.ico, /vista.svg, etc.
-    copyDirectoryRecursive(path_1.default.join(cwd, 'public'), vercelStaticDir);
-    // Vista static artifacts: /static/pages, /static/chunks, etc.
-    copyDirectoryRecursive(path_1.default.join(vistaDir, 'static'), path_1.default.join(vercelStaticDir, 'static'));
-    // Global CSS alias support (/styles.css and /client.css)
-    const clientCssPath = path_1.default.join(vistaDir, 'client.css');
-    copyFileIfPresent(clientCssPath, path_1.default.join(vercelStaticDir, 'client.css'));
-    copyFileIfPresent(clientCssPath, path_1.default.join(vercelStaticDir, 'styles.css'));
-    const config = {
-        version: 3,
-        routes: [
-            { handle: 'filesystem' },
-            { src: '^/_vista/(.*)$', dest: '/$1' },
-            { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
-            { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
-            { src: '^/$', dest: '/static/pages/index.html' },
-            { src: '^/(.+)$', dest: '/static/pages/$1.html' },
-        ],
-    };
-    fs_1.default.writeFileSync(path_1.default.join(vercelOutputDir, 'config.json'), JSON.stringify(config, null, 2));
-    if (debug) {
-        console.log('[vista:deploy] Generated internal Vercel Build Output at .vercel/output/');
-    }
-}
+const config_1 = require("../config");
+const deployment_1 = require("../deployment");
 function generateDeploymentOutputs(options) {
-    writeVercelBuildOutput(options);
+    const { cwd, vistaDir, debug } = options;
+    const config = options.config || (0, config_1.loadConfig)(cwd);
+    const deploymentConfig = (0, config_1.resolveDeploymentConfig)(config.deployment);
+    const target = (0, deployment_1.detectDeploymentTarget)(cwd, deploymentConfig, options.target);
+    const adapter = (0, deployment_1.getDeploymentAdapter)(target);
+    if (!adapter) {
+        if (debug) {
+            console.log(`[vista:deploy] No deployment adapter found for target: "${target}". Skipping.`);
+        }
+        return null;
+    }
+    const context = {
+        cwd,
+        vistaDir,
+        config,
+        deploymentConfig,
+        target,
+        debug,
+    };
+    const result = adapter.generate(context);
+    if (debug || process.env.VISTA_DEBUG) {
+        console.log(`[vista:deploy] Applied deployment adapter "${adapter.name}" (target: ${target})`);
+        if (result.generatedFiles.length > 0) {
+            console.log(`[vista:deploy] Generated files:`);
+            for (const file of result.generatedFiles) {
+                console.log(`  - ${path_1.default.relative(cwd, file) || file}`);
+            }
+        }
+    }
+    return result;
 }
