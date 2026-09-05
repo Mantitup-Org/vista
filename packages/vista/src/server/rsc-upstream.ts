@@ -16,7 +16,10 @@ import {
   runWithRequestContext,
   setCurrentSegmentConfig,
 } from './request-context';
-import { resolveRegisteredServerReference } from './runtime-actions';
+import {
+  resolveRegisteredServerReference,
+  setServerReferenceRegistrar,
+} from './runtime-actions';
 import {
   resolveConventionModule,
   resolveDirectoryChain,
@@ -602,6 +605,7 @@ function startUpstream(): void {
 
   const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
   const flightServer = require(flightServerPath) as FlightServerApi;
+  setServerReferenceRegistrar(flightServer.registerServerReference);
   installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
   installSegmentFetchPolicyShim();
 
@@ -815,7 +819,15 @@ function startUpstream(): void {
         isDev,
         runtimeRoot
       );
-      await drainFlightModel(model);
+      try {
+        await drainFlightModel(model);
+      } catch (error) {
+        const primed = resolveRegisteredServerReference(actionId);
+        if (primed) {
+          return primed;
+        }
+        throw error;
+      }
       return resolveRegisteredServerReference(actionId);
     }
 

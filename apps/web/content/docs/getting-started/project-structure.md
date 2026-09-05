@@ -20,6 +20,9 @@ my-app/
     api/
       health/route.ts
       typed.ts
+    agents/
+      support/agent.ts
+  middleware.ts
   components/
   lib/
   data/
@@ -34,6 +37,8 @@ my-app/
 - `lib/` contains pure helpers and adapters.
 - `data/` contains local data maps like docs catalogs or feature lists.
 - `app/api/` is for HTTP APIs, legacy route handlers, and typed API entrypoint.
+- `app/agents/` is for first-class AI agents that deploy next to the UI.
+- `middleware.ts` intercepts pages and API routes before they run.
 
 ## Recommended Team Rule
 

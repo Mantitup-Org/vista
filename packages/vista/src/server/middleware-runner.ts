@@ -1,33 +1,30 @@
 /**
  * Vista Middleware Runner
  *
- * Shared middleware execution logic used by both the standard SSR engine
- * and the RSC engine. Discovers `middleware.ts` / `.tsx` / `.js` at the
- * project root, constructs a NextRequest-like object from the Express
- * request, invokes the user middleware, and returns a disposition that
- * the caller can act on.
+ * Discovers and runs middleware for pages and API routes.
+ *
+ * Execution order (parent to child):
+ *   1. Project-root middleware.ts / middleware.js
+ *   2. app/middleware.ts
+ *   3. Nested segment middleware files along the request path
+ *
+ * Supported signatures:
+ *   export async function middleware(request) { return next() }
+ *   export async function middleware({ request, next }) { return next() }
  */
 
 import path from 'path';
 import fs from 'fs';
 import type { Request } from 'express';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface MiddlewareResult {
-  /** 'redirect' — send Location header and status */
   kind: 'redirect' | 'rewrite' | 'next' | 'short-circuit' | 'skip';
-  /** HTTP status (e.g. 307 for redirect, 403 for short-circuit) */
   status?: number;
-  /** Redirect target URL or rewrite path */
   location?: string;
-  /** Extra response headers the middleware set (forwarded to client) */
+  body?: string;
   responseHeaders?: Map<string, string>;
 }
 
-/** The NextRequest-like object we hand to middleware. */
 export interface VistaMiddlewareRequest {
   url: string;
   method: string;
@@ -45,37 +42,18 @@ export interface VistaMiddlewareRequest {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Middleware discovery cache (per-cwd)
-// ---------------------------------------------------------------------------
-
-const discoveryCache = new Map<string, string | null>();
-
-function discoverMiddleware(cwd: string, bustCache: boolean): string | null {
-  if (!bustCache && discoveryCache.has(cwd)) {
-    return discoveryCache.get(cwd)!;
-  }
-
-  const candidates = [
-    path.resolve(cwd, 'middleware.ts'),
-    path.resolve(cwd, 'middleware.tsx'),
-    path.resolve(cwd, 'middleware.js'),
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      discoveryCache.set(cwd, p);
-      return p;
-    }
-  }
-
-  discoveryCache.set(cwd, null);
-  return null;
+export interface VistaMiddlewareContext {
+  request: VistaMiddlewareRequest & RequestLike;
+  next: () => Promise<Response>;
 }
 
-// ---------------------------------------------------------------------------
-// Build NextRequest-like object
-// ---------------------------------------------------------------------------
+type RequestLike = VistaMiddlewareRequest & {
+  request?: VistaMiddlewareRequest;
+  next?: () => Promise<Response>;
+};
+
+const MIDDLEWARE_FILENAMES = ['middleware.ts', 'middleware.tsx', 'middleware.js', 'middleware.jsx'];
+const discoveryCache = new Map<string, string[]>();
 
 function buildNextRequest(req: Request): VistaMiddlewareRequest {
   const protocol = req.protocol;
@@ -105,160 +83,213 @@ function buildNextRequest(req: Request): VistaMiddlewareRequest {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Matcher support
-// ---------------------------------------------------------------------------
+function patternToRegExp(pattern: string): RegExp {
+  let re = pattern
+    .replace(/:[^/]+\*/g, '(.*)')
+    .replace(/:[^/]+/g, '[^/]+')
+    .replace(/\*/g, '(.*)');
 
-/**
- * Evaluate the optional `config.matcher` exported alongside the middleware.
- * Returns `true` if the request matches (or if no matcher is defined).
- */
+  return new RegExp(`^${re}(/)?$`);
+}
+
 function shouldRunMiddleware(middlewareModule: any, pathname: string): boolean {
   const config = middlewareModule.config;
   if (!config?.matcher) return true;
 
   const matchers: string[] = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
-
-  return matchers.some((pattern) => {
-    // Simple path-prefix matching with basic wildcard support
-    // e.g. '/dashboard/:path*' → matches /dashboard, /dashboard/settings …
-    const re = patternToRegExp(pattern);
-    return re.test(pathname);
-  });
+  return matchers.some((pattern) => patternToRegExp(pattern).test(pathname));
 }
 
-function patternToRegExp(pattern: string): RegExp {
-  // Convert Next.js-style matcher patterns to RegExp:
-  //   /foo/:path*  → /foo(/.*)?
-  //   /foo/:bar    → /foo/[^/]+
-  //   /foo/*       → /foo(/.*)?
-  let re = pattern
-    .replace(/:[^/]+\*/g, '(.*)') // :path*
-    .replace(/:[^/]+/g, '[^/]+') // :param
-    .replace(/\*/g, '(.*)'); // bare *
-
-  return new RegExp(`^${re}(/)?$`);
+function firstExistingFile(candidates: string[]): string | null {
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Run user-defined middleware for the given request.
- *
- * @param req   Express request
- * @param cwd   Project root (where middleware.ts lives)
- * @param isDev Whether we're in dev mode (busts require cache)
- */
-export async function runMiddleware(
-  req: Request,
-  cwd: string,
-  isDev: boolean
-): Promise<MiddlewareResult> {
-  const middlewareFile = discoverMiddleware(cwd, isDev);
-  if (!middlewareFile) {
-    return { kind: 'skip' };
+function collectMiddlewareFiles(cwd: string, pathname: string, bustCache: boolean): string[] {
+  const cacheKey = `${cwd}::${pathname}`;
+  if (!bustCache && discoveryCache.has(cacheKey)) {
+    return discoveryCache.get(cacheKey)!;
   }
 
+  const files: string[] = [];
+  const seen = new Set<string>();
+  const add = (filePath: string | null) => {
+    if (!filePath || seen.has(filePath)) return;
+    seen.add(filePath);
+    files.push(filePath);
+  };
+
+  add(firstExistingFile(MIDDLEWARE_FILENAMES.map((name) => path.resolve(cwd, name))));
+  add(firstExistingFile(MIDDLEWARE_FILENAMES.map((name) => path.resolve(cwd, 'src', name))));
+
+  const segments = String(pathname || '/')
+    .split('/')
+    .filter(Boolean);
+
+  const appRoots = [path.resolve(cwd, 'app'), path.resolve(cwd, 'src', 'app')].filter((dir) =>
+    fs.existsSync(dir)
+  );
+
+  for (const appRoot of appRoots) {
+    add(firstExistingFile(MIDDLEWARE_FILENAMES.map((name) => path.join(appRoot, name))));
+
+    let current = appRoot;
+    for (const segment of segments) {
+      current = path.join(current, segment);
+      add(firstExistingFile(MIDDLEWARE_FILENAMES.map((name) => path.join(current, name))));
+    }
+  }
+
+  discoveryCache.set(cacheKey, files);
+  return files;
+}
+
+function interpretMiddlewareResponse(response: any, nextCalled: boolean): MiddlewareResult {
+  if (!response) {
+    return nextCalled ? { kind: 'next' } : { kind: 'next' };
+  }
+
+  const responseHeaders = new Map<string, string>();
+  if (response.headers && typeof response.headers.forEach === 'function') {
+    response.headers.forEach((value: string, key: string) => {
+      responseHeaders.set(key, value);
+    });
+  }
+
+  const location = response.headers?.get?.('Location') || response.headers?.get?.('location');
+  if (location) {
+    return {
+      kind: 'redirect',
+      status: response.status || 307,
+      location,
+      responseHeaders,
+    };
+  }
+
+  const rewrite = response.headers?.get?.('x-middleware-rewrite');
+  if (rewrite) {
+    return {
+      kind: 'rewrite',
+      location: rewrite,
+      responseHeaders,
+    };
+  }
+
+  const shouldContinue = response.headers?.get?.('x-middleware-next');
+  if (shouldContinue || nextCalled) {
+    return { kind: 'next', responseHeaders };
+  }
+
+  if (response.status && response.status !== 200) {
+    return {
+      kind: 'short-circuit',
+      status: response.status,
+      responseHeaders,
+      body: typeof response.bodyUsed === 'boolean' && !response.bodyUsed ? undefined : undefined,
+    };
+  }
+
+  return { kind: 'next', responseHeaders };
+}
+
+async function invokeMiddlewareModule(
+  middlewareFile: string,
+  req: Request,
+  isDev: boolean
+): Promise<MiddlewareResult> {
   try {
-    // Hot-reload: bust require cache in dev
     if (isDev) {
       try {
         delete require.cache[require.resolve(middlewareFile)];
       } catch {
-        // resolve may throw if file was just deleted — treat as skip
-        discoveryCache.delete(cwd);
         return { kind: 'skip' };
       }
     }
 
     const middlewareModule = require(middlewareFile);
     const middleware = middlewareModule.default || middlewareModule.middleware;
-
     if (typeof middleware !== 'function') {
       return { kind: 'skip' };
     }
 
-    // Matcher check
     if (!shouldRunMiddleware(middlewareModule, req.path)) {
       return { kind: 'skip' };
     }
 
-    const nextRequest = buildNextRequest(req);
-    const response = await middleware(nextRequest);
+    let nextCalled = false;
+    const next = async () => {
+      nextCalled = true;
+      const response = new Response(null, { status: 200 });
+      response.headers.set('x-middleware-next', '1');
+      return response;
+    };
 
-    if (!response) {
-      return { kind: 'next' };
+    const vistaRequest = buildNextRequest(req);
+    const hybrid: RequestLike = Object.assign(vistaRequest, {
+      request: vistaRequest,
+      next,
+    });
+
+    let response: any;
+    try {
+      response = await middleware(hybrid, next);
+    } catch {
+      response = await middleware({ request: vistaRequest, next });
     }
 
-    // Collect response headers the middleware may have set
-    const responseHeaders = new Map<string, string>();
-    if (response.headers && typeof response.headers.forEach === 'function') {
-      response.headers.forEach((value: string, key: string) => {
-        responseHeaders.set(key, value);
-      });
+    if (response instanceof Promise) {
+      response = await response;
     }
 
-    // 1. Redirect
-    const location = response.headers?.get?.('Location');
-    if (location) {
-      return {
-        kind: 'redirect',
-        status: response.status || 307,
-        location,
-        responseHeaders,
-      };
-    }
-
-    // 2. Rewrite
-    const rewrite = response.headers?.get?.('x-middleware-rewrite');
-    if (rewrite) {
-      return {
-        kind: 'rewrite',
-        location: rewrite,
-        responseHeaders,
-      };
-    }
-
-    // 3. Continue
-    const shouldContinue = response.headers?.get?.('x-middleware-next');
-    if (shouldContinue) {
-      return { kind: 'next', responseHeaders };
-    }
-
-    // 4. Short-circuit (non-200 status with no continue/redirect/rewrite)
-    if (response.status && response.status !== 200) {
-      return {
-        kind: 'short-circuit',
-        status: response.status,
-        responseHeaders,
-      };
-    }
-
-    // Default — continue
-    return { kind: 'next', responseHeaders };
+    return interpretMiddlewareResponse(response, nextCalled);
   } catch (err) {
-    console.error(`[vista] Middleware error: ${(err as Error)?.message ?? String(err)}`);
-    // On error, let the request continue rather than crashing
+    console.error(`[vista] Middleware error in ${path.basename(middlewareFile)}: ${(err as Error)?.message ?? String(err)}`);
     return { kind: 'next' };
   }
 }
 
-/**
- * Apply a MiddlewareResult to the Express request/response.
- * Returns `true` if the response was finalized (caller should `return`),
- * `false` if the request should continue to the next handler.
- */
+export async function runMiddleware(
+  req: Request,
+  cwd: string,
+  isDev: boolean
+): Promise<MiddlewareResult> {
+  const files = collectMiddlewareFiles(cwd, req.path, isDev);
+  if (files.length === 0) {
+    return { kind: 'skip' };
+  }
+
+  const mergedHeaders = new Map<string, string>();
+  for (const file of files) {
+    const result = await invokeMiddlewareModule(file, req, isDev);
+    if (result.responseHeaders) {
+      result.responseHeaders.forEach((value, key) => mergedHeaders.set(key, value));
+    }
+
+    if (result.kind === 'skip' || result.kind === 'next') {
+      continue;
+    }
+
+    return {
+      ...result,
+      responseHeaders: mergedHeaders,
+    };
+  }
+
+  return {
+    kind: 'next',
+    responseHeaders: mergedHeaders.size > 0 ? mergedHeaders : undefined,
+  };
+}
+
 export function applyMiddlewareResult(
   result: MiddlewareResult,
   req: Request,
   res: import('express').Response
 ): boolean {
-  // Forward any response headers the middleware set
   if (result.responseHeaders) {
     result.responseHeaders.forEach((value, key) => {
-      // Skip internal headers
       if (key === 'x-middleware-next' || key === 'x-middleware-rewrite' || key === 'Location') {
         return;
       }
@@ -273,15 +304,24 @@ export function applyMiddlewareResult(
 
     case 'rewrite':
       req.url = result.location!;
-      return false; // continue with rewritten URL
+      return false;
 
     case 'short-circuit':
-      res.status(result.status || 403).end();
+      res.status(result.status || 403);
+      if (result.body) {
+        res.send(result.body);
+      } else {
+        res.end();
+      }
       return true;
 
     case 'next':
     case 'skip':
     default:
-      return false; // continue
+      return false;
   }
+}
+
+export function listMiddlewareFiles(cwd: string, pathname: string): string[] {
+  return collectMiddlewareFiles(cwd, pathname, true);
 }

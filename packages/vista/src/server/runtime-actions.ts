@@ -1,14 +1,24 @@
 import { pathToFileURL } from 'url';
 import path from 'path';
 
-type RegisterServerReferenceFn = (reference: Function, id: string, exportName: string) => void;
+type RegisterServerReferenceFn = (
+  reference: Function,
+  id: string,
+  exportName: string | null
+) => Function | void;
 
+const SERVER_REFERENCE_TYPE = Symbol.for('react.server.reference');
 const registeredReferences = new Map<string, Function>();
 
+let injectedRegisterServerReference: RegisterServerReferenceFn | null = null;
 let cachedRegisterServerReference: RegisterServerReferenceFn | null | undefined;
 
 function getRegisterServerReference(): RegisterServerReferenceFn | null {
-  if (cachedRegisterServerReference !== undefined) {
+  if (injectedRegisterServerReference) {
+    return injectedRegisterServerReference;
+  }
+
+  if (cachedRegisterServerReference) {
     return cachedRegisterServerReference;
   }
 
@@ -16,27 +26,30 @@ function getRegisterServerReference(): RegisterServerReferenceFn | null {
     const runtime = require('react-server-dom-webpack/server.node') as {
       registerServerReference?: RegisterServerReferenceFn;
     };
-    cachedRegisterServerReference =
-      typeof runtime.registerServerReference === 'function'
-        ? runtime.registerServerReference
-        : null;
+    if (typeof runtime.registerServerReference === 'function') {
+      cachedRegisterServerReference = runtime.registerServerReference;
+      return cachedRegisterServerReference;
+    }
   } catch {
-    cachedRegisterServerReference = null;
+    // Requiring the Flight server entry can fail when `--conditions react-server`
+    // is not active. Manual $$typeof stamping still lets functions serialize.
   }
 
-  return cachedRegisterServerReference;
+  return null;
 }
 
-function normalizeExportName(exportName?: string): string {
+function normalizeExportName(exportName?: string | null): string {
   const value = String(exportName || 'default').trim();
   return value || 'default';
 }
 
 function normalizeHint(value: string): string {
-  return String(value || 'action')
-    .trim()
-    .replace(/[^a-zA-Z0-9_$]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'action';
+  return (
+    String(value || 'action')
+      .trim()
+      .replace(/[^a-zA-Z0-9_$]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'action'
+  );
 }
 
 function createStableFileUrl(filePath: string): string {
@@ -44,6 +57,34 @@ function createStableFileUrl(filePath: string): string {
   return href.replace(/^file:\/\/\/([A-Z]):/, (_match, driveLetter: string) => {
     return `file:///${driveLetter.toLowerCase()}:`;
   });
+}
+
+function stampServerReference<T extends Function>(reference: T, id: string): T {
+  if (typeof reference !== 'function') {
+    return reference;
+  }
+
+  try {
+    Object.defineProperties(reference, {
+      $$typeof: { value: SERVER_REFERENCE_TYPE },
+      $$id: { value: id, configurable: true },
+      $$bound: { value: null, configurable: true },
+    });
+  } catch {
+    try {
+      (reference as any).$$typeof = SERVER_REFERENCE_TYPE;
+      (reference as any).$$id = id;
+      (reference as any).$$bound = null;
+    } catch {
+      // Ignore frozen functions; the registrar Map still keeps a callable.
+    }
+  }
+
+  return reference;
+}
+
+export function setServerReferenceRegistrar(fn: RegisterServerReferenceFn | null): void {
+  injectedRegisterServerReference = fn;
 }
 
 export function createExportServerReferenceId(filePath: string, exportName = 'default'): string {
@@ -61,20 +102,28 @@ export function createInlineServerActionId(
 export function registerInlineServerReference<T extends Function>(
   reference: T,
   id: string,
-  exportName = 'default'
+  exportName: string | null = null
 ): T {
   if (typeof reference !== 'function') {
     return reference;
   }
 
-  const normalizedExportName = normalizeExportName(exportName);
+  let tagged: Function = reference;
   const registerServerReference = getRegisterServerReference();
   if (registerServerReference) {
-    registerServerReference(reference, id, normalizedExportName);
+    try {
+      const registered = registerServerReference(reference, id, exportName);
+      if (typeof registered === 'function') {
+        tagged = registered;
+      }
+    } catch {
+      // Fall through to manual stamping so Client Components can still receive the action.
+    }
   }
 
-  registeredReferences.set(id, reference);
-  return reference;
+  stampServerReference(tagged, id);
+  registeredReferences.set(id, tagged);
+  return tagged as T;
 }
 
 export function registerServerActionModule(
@@ -91,11 +140,14 @@ export function registerServerActionModule(
       continue;
     }
 
-    registerInlineServerReference(
+    const registered = registerInlineServerReference(
       exportedValue,
       createExportServerReferenceId(filePath, exportName),
-      exportName
+      null
     );
+    if (registered !== exportedValue) {
+      record[exportName] = registered;
+    }
   }
 
   return moduleExports;
@@ -103,4 +155,8 @@ export function registerServerActionModule(
 
 export function resolveRegisteredServerReference(id: string): Function | undefined {
   return registeredReferences.get(id);
+}
+
+export function isServerReference(value: unknown): value is Function {
+  return typeof value === 'function' && (value as any).$$typeof === SERVER_REFERENCE_TYPE;
 }

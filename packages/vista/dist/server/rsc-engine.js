@@ -75,6 +75,7 @@ const structure_log_1 = require("./structure-log");
 const error_boundary_1 = require("../components/error-boundary");
 const route_suspense_1 = require("../components/route-suspense");
 const typed_api_runtime_1 = require("./typed-api-runtime");
+const runtime_1 = require("../ai/runtime");
 const module_compile_hook_1 = require("./module-compile-hook");
 const request_context_1 = require("./request-context");
 const app_router_runtime_1 = require("./app-router-runtime");
@@ -696,14 +697,8 @@ function appendVaryHeader(existing, nextValue) {
 }
 async function handleApiRoute(req, res, runtimeRoot, isDev, typedApiConfig) {
     try {
-        const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(runtimeRoot, req.path);
-        if (legacyApiPath) {
-            await (0, typed_api_runtime_1.runLegacyApiRoute)({
-                req,
-                res,
-                apiPath: legacyApiPath,
-                isDev,
-            });
+        const agentHandled = await (0, runtime_1.tryHandleAgentRequest)(req, res, runtimeRoot, isDev);
+        if (agentHandled) {
             return;
         }
         const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
@@ -1439,14 +1434,15 @@ function startRSCServer(options = {}) {
                     return;
                 }
             }
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(runtimeRoot, req.path);
-            if (routeHandlerPath) {
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveLegacyRouteHandlerMatch)(runtimeRoot, req.path);
+            if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: routeHandlerMatch.filePath,
                         isDev,
+                        params: routeHandlerMatch.params,
                     });
                     return;
                 }

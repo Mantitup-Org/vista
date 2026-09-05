@@ -192,6 +192,7 @@ test('package.json has bin.vista', () => {
   assert(pkg.bin && pkg.bin.vista, 'Missing bin.vista command');
   assert(pkg.exports && pkg.exports['./server'], 'Missing ./server export in vista package');
   assert(pkg.exports && pkg.exports['./cache'], 'Missing ./cache export in vista package');
+  assert(pkg.exports && pkg.exports['./ai'], 'Missing ./ai export in vista package');
   assert(
     pkg.exports && pkg.exports['./server/runtime-actions'],
     'Missing ./server/runtime-actions export in vista package'

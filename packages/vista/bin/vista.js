@@ -228,6 +228,12 @@ if (command === 'dev') {
     const { startServer } = require('../dist/server/engine');
     startServer(process.env.PORT || 3003);
   }
+} else if (command === 'deploy') {
+  const { generateDeploymentOutputs, printDeployHelp } = require('../dist/bin/deploy-output');
+  const vistaDir = path.join(process.cwd(), '.vista');
+  fs.mkdirSync(vistaDir, { recursive: true });
+  generateDeploymentOutputs({ cwd: process.cwd(), vistaDir, debug: true });
+  printDeployHelp(process.cwd());
 } else {
   console.log('');
   console.log('Vista JS Framework CLI');
@@ -239,6 +245,7 @@ if (command === 'dev') {
   console.log('  build   Create production build');
   console.log('  start   Start production server');
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
+  console.log('  deploy  Write zero-config adapters for Vercel, Cloudflare, Render, and Docker');
   console.log('');
   console.log('Options:');
   console.log('  --legacy   Use traditional SSR mode (instead of RSC)');

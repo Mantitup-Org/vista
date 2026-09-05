@@ -20,21 +20,27 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
     order: 3,
   },
   {
+    id: 'ai',
+    title: 'AI',
+    description: 'Native agents, tools, streaming, and model providers.',
+    order: 4,
+  },
+  {
     id: 'cli-workflow',
     title: 'CLI Workflow',
     description: 'Scaffold, generate, and standardize team workflows.',
-    order: 4,
+    order: 5,
   },
   {
     id: 'reference',
     title: 'Reference',
     description: 'Config options, API signatures, and file maps.',
-    order: 5,
+    order: 6,
   },
   {
     id: 'deployment',
     title: 'Deployment',
     description: 'Release, publish, and production checks.',
-    order: 6,
+    order: 7,
   },
 ];

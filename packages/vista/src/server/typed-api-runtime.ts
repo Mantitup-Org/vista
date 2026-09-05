@@ -457,6 +457,109 @@ async function executeTypedRoute(
   };
 }
 
+const ROUTE_HANDLER_FILENAMES = ROUTE_FILE_EXTENSIONS.map((ext) => `route${ext}`);
+
+export type LegacyRouteHandlerMatch = {
+  filePath: string;
+  params: Record<string, string>;
+};
+
+function isRouteGroupSegment(segment: string): boolean {
+  return segment.startsWith('(') && segment.endsWith(')');
+}
+
+function collectRouteHandlerFiles(dir: string, results: string[]): void {
+  if (!fs.existsSync(dir)) return;
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectRouteHandlerFiles(fullPath, results);
+      continue;
+    }
+    if (entry.isFile() && ROUTE_HANDLER_FILENAMES.includes(entry.name)) {
+      results.push(fullPath);
+    }
+  }
+}
+
+function filePathToHandlerPattern(appDir: string, filePath: string): string {
+  const relativeDir = path.relative(appDir, path.dirname(filePath)).replace(/\\/g, '/');
+  const segments = relativeDir.split('/').filter(Boolean).filter((segment) => !isRouteGroupSegment(segment));
+  if (segments.length === 0) return '/';
+
+  const patterned = segments.map((segment) => {
+    if (segment.startsWith('[[...') && segment.endsWith(']]')) {
+      return `:${segment.slice(4, -2)}*?`;
+    }
+    if (segment.startsWith('[...') && segment.endsWith(']')) {
+      return `:${segment.slice(4, -1)}*`;
+    }
+    if (segment.startsWith('[') && segment.endsWith(']')) {
+      return `:${segment.slice(1, -1)}`;
+    }
+    return segment;
+  });
+
+  return `/${patterned.join('/')}`;
+}
+
+function matchHandlerPattern(
+  pathname: string,
+  pattern: string
+): Record<string, string> | null {
+  const patternParts = pattern.split('/').filter(Boolean);
+  const pathParts = pathname.split('/').filter(Boolean);
+  const params: Record<string, string> = {};
+
+  for (let i = 0; i < patternParts.length; i++) {
+    const patternPart = patternParts[i];
+    const pathPart = pathParts[i];
+
+    if (patternPart.endsWith('*?')) {
+      const name = patternPart.slice(1, -2);
+      params[name] = pathParts.slice(i).join('/');
+      return params;
+    }
+
+    if (patternPart.endsWith('*')) {
+      if (pathParts.length < i + 1) return null;
+      const name = patternPart.slice(1, -1);
+      params[name] = pathParts.slice(i).join('/');
+      return params;
+    }
+
+    if (patternPart.startsWith(':')) {
+      if (!pathPart) return null;
+      params[patternPart.slice(1)] = pathPart;
+      continue;
+    }
+
+    if (patternPart !== pathPart) return null;
+  }
+
+  return patternParts.length === pathParts.length ? params : null;
+}
+
+function handlerSpecificity(pattern: string): number {
+  const parts = pattern.split('/').filter(Boolean);
+  let score = parts.length * 10;
+  for (const part of parts) {
+    if (part.endsWith('*?')) score -= 3;
+    else if (part.endsWith('*')) score -= 2;
+    else if (part.startsWith(':')) score -= 1;
+  }
+  return score;
+}
+
 export function resolveLegacyApiRoutePath(cwd: string, requestPath: string): string | null {
   if (!requestPath.startsWith('/api/')) {
     return null;
@@ -464,7 +567,39 @@ export function resolveLegacyApiRoutePath(cwd: string, requestPath: string): str
   return resolveLegacyRouteHandlerPath(cwd, requestPath);
 }
 
+export function resolveLegacyRouteHandlerMatch(
+  cwd: string,
+  requestPath: string
+): LegacyRouteHandlerMatch | null {
+  const exactPath = resolveExactLegacyRouteHandlerPath(cwd, requestPath);
+  if (exactPath) {
+    return { filePath: exactPath, params: {} };
+  }
+
+  const appDir = path.resolve(cwd, 'app');
+  const handlers: string[] = [];
+  collectRouteHandlerFiles(appDir, handlers);
+
+  const pathname = `/${normalizeRouteRequestPath(requestPath)}`;
+  const matches: Array<LegacyRouteHandlerMatch & { score: number }> = [];
+
+  for (const filePath of handlers) {
+    const pattern = filePathToHandlerPattern(appDir, filePath);
+    const params = matchHandlerPattern(pathname, pattern);
+    if (params) {
+      matches.push({ filePath, params, score: handlerSpecificity(pattern) });
+    }
+  }
+
+  matches.sort((a, b) => b.score - a.score);
+  return matches[0] ? { filePath: matches[0].filePath, params: matches[0].params } : null;
+}
+
 export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null {
+  return resolveLegacyRouteHandlerMatch(cwd, requestPath)?.filePath ?? null;
+}
+
+function resolveExactLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null {
   const normalized = normalizeRouteRequestPath(requestPath);
   const routeCandidates: string[] = [];
 
@@ -513,8 +648,9 @@ export async function runLegacyApiRoute(options: {
   res: express.Response;
   apiPath: string;
   isDev: boolean;
+  params?: Record<string, string>;
 }): Promise<void> {
-  const { req, res, apiPath, isDev } = options;
+  const { req, res, apiPath, isDev, params = {} } = options;
 
   if (isDev) {
     delete require.cache[require.resolve(apiPath)];
@@ -532,7 +668,7 @@ export async function runLegacyApiRoute(options: {
     const requestBody = await readRouteRequestBody(req);
     const request = createRouteRequest(req, requestBody);
 
-    const result = await methodHandler(request, { params: {} });
+    const result = await methodHandler(request, { params });
     if (result instanceof Response) {
       await sendFetchResponse(res, result);
       return;
