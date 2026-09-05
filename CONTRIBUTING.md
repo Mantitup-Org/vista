@@ -1,10 +1,10 @@
 # Contributing to Vista.js
 
-Thanks for helping improve Vista.js. This repo moves quickly, so the most helpful contributions are the ones that stay aligned with the current package/runtime architecture instead of older assumptions.
+Thanks for helping improve Vista.js. This repository moves quickly, so the most helpful contributions are the ones that stay aligned with the current package and runtime architecture.
 
 ## Contribution Priorities
 
-The repository contains a number of high-priority issues and feature requests. Contributors are encouraged to start with the listed issues before exploring additional improvements.
+The repository contains several high-priority issues and feature requests. Contributors are encouraged to start with the listed issues before exploring additional improvements.
 
 However, you are **not limited to the existing issue list**.
 
@@ -21,32 +21,41 @@ You are welcome to:
 - Identify and solve architectural or runtime problems.
 - Propose and implement improvements that are not currently listed.
 
-Listed issues will generally receive **higher priority during contribution evaluation**, especially issues explicitly marked as high priority.
+Listed issues will generally receive **higher priority during contribution evaluation**.
 
 ## Ground Rules
 
 - Never push directly to `main`.
-- Start work from `development` unless a maintainer asks for a different base.
+- Fork the repository before making changes.
+- Create a separate branch for your contribution.
 - Keep each branch focused on one fix, feature, or contribution.
-- If you change published package source, rebuild the committed package output before opening a PR.
-- Do not submit unrelated changes in the same PR unless they are necessary for the contribution.
+- Do not submit unrelated changes in the same Pull Request unless they are required for the contribution.
+- If you change published package source, rebuild the committed package output before opening a Pull Request.
 
 ## Prerequisites
 
 - Node.js 20+
 - pnpm 8.15+
-- npm (used for package publish flow)
+- npm
 - Rust stable toolchain
 
-## Clone and Setup
+## Fork and Clone
+
+Fork the repository from GitHub:
+
+```text
+https://github.com/vistakit/Vista-Js
+```
+
+Then clone your fork:
 
 ```bash
-git clone https://github.com/vistakit/Vista-Js.git vista-source
-cd vista-source
+git clone https://github.com/<your-username>/Vista-Js.git
+cd Vista-Js
 pnpm install
 ```
 
-Optional but recommended when you touch native code:
+Optional but recommended when working with native code:
 
 ```bash
 npm --prefix crates/vista-napi run build
@@ -60,48 +69,68 @@ npm --prefix packages/vista run build
 
 ## Branch Workflow
 
-Create your branch from `development`:
+All contributions must be made through a separate branch.
+
+First, make sure you are on the latest `main` branch:
 
 ```bash
-git checkout development
-git pull origin development
-git checkout -b feat/my-change
+git checkout main
+git pull origin main
 ```
 
-Use a descriptive branch name such as:
-
-```text
-fix/rsc-conformance-username
-feat/ai-agent-username
-docs/deployment-username
-```
-
-For contributions specifically requested by the Mantitup contribution program, use the required branch naming format:
+Create a new branch using the following format:
 
 ```text
 branch-name-username
 ```
 
-Keep branch names short, descriptive, and related to the work being performed.
+For example:
+
+```text
+fix-rsc-conformance-ankan
+feature-ai-agent-ankan
+deployment-vercel-ankan
+middleware-support-ankan
+docs-contributing-ankan
+```
+
+Create the branch with:
+
+```bash
+git checkout -b branch-name-username
+```
+
+For example:
+
+```bash
+git checkout -b fix-rsc-conformance-ankan
+```
+
+Use a short and descriptive branch name that clearly represents your contribution.
 
 ## Contribution Workflow
 
-A recommended contribution workflow is:
+Follow these steps when making a contribution:
 
-1. Check the existing issues and identify a contribution you want to work on.
-2. If you discover a problem that is not already listed, create an issue describing the problem before implementing a significant change.
-3. Fork the repository and create a branch from `development`.
-4. Implement the fix, feature, or improvement.
-5. Run the relevant tests and builds.
-6. Update the README or relevant documentation when the contribution changes user-facing behavior or introduces a new feature.
-7. Provide clear proof that the contribution works.
-8. Push your branch and open a Pull Request against `development`.
-9. Clearly explain what changed, why it was needed, and how it was tested.
-10. Respond to review feedback and keep the PR focused.
+1. Fork the Vista.js repository.
+2. Clone your fork locally.
+3. Make sure your local repository is up to date with `main`.
+4. Create a new branch using the `branch-name-username` format.
+5. Identify an existing issue or create your own issue if you have found a new problem or improvement.
+6. Implement your fix, feature, or improvement.
+7. Run the relevant tests and builds.
+8. Update the README or relevant documentation when required.
+9. Provide clear and verifiable proof of completion.
+10. Push your branch to your fork.
+11. Open a Pull Request against the `main` branch.
+12. Clearly explain what changed, why it was needed, and how it was tested.
+13. Respond to review feedback and make any requested changes.
 
 ## Contribution Proof
 
 Every contribution must include clear and verifiable proof of completion in the Pull Request.
+
+The proof should demonstrate that the submitted fix, feature, or improvement actually works.
 
 Depending on the type of contribution, acceptable proof may include:
 
@@ -112,13 +141,14 @@ Depending on the type of contribution, acceptable proof may include:
 - Benchmark results, where applicable.
 - Reproduction steps demonstrating that a bug has been fixed.
 - Before-and-after comparisons.
-- Any other clear and verifiable evidence that demonstrates the contribution works as intended.
+- Logs or console output where relevant.
+- Any other clear and verifiable evidence demonstrating successful completion.
 
 For larger features, a **demo video or deployed example is strongly recommended**.
 
-The proof should clearly demonstrate the contribution and, where applicable, reference the issue or feature being addressed.
+The proof should clearly demonstrate the contribution and, where applicable, reference the issue being addressed.
 
-Maintainers may request additional proof, reproduction steps, tests, or other evidence during review.
+Maintainers may request additional proof, reproduction steps, tests, or other evidence during the review process.
 
 ## README and Documentation
 
@@ -137,7 +167,7 @@ Documentation should reflect the current implementation and should not describe 
 
 ## What to Run Before a PR
 
-Choose the narrowest relevant checks first, then run the bigger suite before asking for review.
+Choose the narrowest relevant checks first, then run the larger suite before requesting review.
 
 ### If you change framework runtime, RSC, routing, cache, or manifests
 
@@ -183,18 +213,18 @@ pnpm test
 
 ## Dist and Generated Output Rules
 
-These repo rules matter:
+These repository rules matter:
 
 - `packages/vista/dist` is committed. If you change `packages/vista/src`, rebuild and include the matching `dist` updates.
-- If you change package exports or native bridge behavior, verify the published package shape still works.
-- Do not commit random temporary folders or local smoke apps.
+- If you change package exports or native bridge behavior, verify that the published package shape still works.
+- Do not commit random temporary folders or local smoke applications.
 - Do not commit generated files unless they are expected to be part of the repository.
 
 ## Repo Areas
 
 - `packages/vista/`: framework package, CLI, runtime, build system, theme exports, cache APIs
 - `packages/create-vista-app/`: scaffolding CLI and starter templates
-- `apps/web/`: official site and docs at `vista.xyz`
+- `apps/web/`: official site and documentation at `vista.xyz`
 - `crates/`: top-level Rust crates (`vista-core`, `vista-api`, `vista-napi`, etc.)
 - `flashpack/`: Rust-backed Flashpack engine crates
 - `bench/`: Vista-first benchmark fixtures
@@ -222,6 +252,7 @@ If you discover an important issue that is not currently listed, you are encoura
 A Pull Request should:
 
 - Have a clear and descriptive title.
+- Target the `main` branch.
 - Reference the relevant issue when applicable.
 - Explain what was changed.
 - Explain why the change was necessary.
@@ -234,18 +265,21 @@ Avoid large unrelated refactors unless they are specifically required for the co
 
 ## PR Checklist
 
-Before opening a PR, make sure:
+Before opening a Pull Request, make sure:
 
-- [ ] The branch is based on `development`.
+- [ ] The repository was forked from Vista.js.
+- [ ] The branch was created from the latest `main`.
+- [ ] The branch follows the `branch-name-username` naming format.
 - [ ] The branch is focused on a single fix, feature, or contribution.
 - [ ] The relevant issue is referenced, if applicable.
-- [ ] Changed docs mention the correct repo URL: `https://github.com/vistakit/Vista-Js.git`
+- [ ] Changed documentation mentions the correct repository URL: `https://github.com/vistakit/Vista-Js.git`
 - [ ] Package versions are not bumped unless this is a release task.
 - [ ] Committed `dist` output matches changed source where required.
 - [ ] Relevant tests/builds have been run.
 - [ ] Proof of completion has been provided.
 - [ ] README or relevant documentation has been updated where necessary.
-- [ ] The PR explains what changed and why.
+- [ ] The Pull Request targets `main`.
+- [ ] The Pull Request explains what changed and why.
 - [ ] No unrelated temporary files or local test applications have been included.
 
 ## Maintainer Review
@@ -258,29 +292,14 @@ Maintainers may:
 - Ask for additional tests.
 - Request additional proof of completion.
 - Request documentation updates.
-- Ask contributors to split large PRs.
+- Ask contributors to split large Pull Requests.
 - Reject changes that do not align with the project's direction or architecture.
 
 For contributions submitted through the Mantitup contribution program, the Mantitup team may additionally verify the contribution before the first rollout.
 
-## Maintainer Release Notes
-
-Maintainers publish from `development` using Lerna:
-
-```bash
-git add -A
-git commit -m "release: x.y.z"
-git push origin development
-npx lerna publish from-package --yes
-git tag vx.y.z
-git push origin vx.y.z
-```
-
-If `lerna publish` dirties `packages/*/package.json` because a publish attempt wrote `gitHead`, restore those files before retrying.
-
 ## Need Help?
 
 - Open an issue for bugs or feature requests.
-- Start a draft PR early if you want feedback on direction.
+- Start a draft Pull Request early if you want feedback on your approach.
 - When in doubt, prefer smaller, reviewable changes over large refactors.
-- If you are unsure whether a change fits the project, open an issue or draft PR and explain your approach.
+- If you are unsure whether a change fits the project, open an issue or draft Pull Request and explain your approach.
