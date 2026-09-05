@@ -9,11 +9,11 @@ Official site: https://vista-js.vercel.app
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
+| Package             | Purpose                                                                      |
+| ------------------- | ---------------------------------------------------------------------------- |
 | `@vistagenic/vista` | Framework runtime, CLI, server/client exports, cache APIs, fonts, theme APIs |
-| `create-vista-app` | Scaffolds Vista apps with engine selection and package-manager prompts |
-| `vista-native` | Internal Rust/NAPI bridge used by the repo |
+| `create-vista-app`  | Scaffolds Vista apps with engine selection and package-manager prompts       |
+| `vista-native`      | Internal Rust/NAPI bridge used by the repo                                   |
 
 ## Current Capabilities
 
@@ -85,6 +85,36 @@ Server helpers from the package:
 import { cookies, headers, draftMode } from 'vista/server';
 ```
 
+AI agent primitives from the package:
+
+```ts
+import { agent, tool } from 'vista/ai';
+import { useAgent } from 'vista/ai/react';
+```
+
+## AI-Native Application Framework
+
+Vista.js provides first-class primitives for building AI applications, autonomous agents, and multi-agent workflows:
+
+- **Unified Agent Loop**: Define autonomous agents with `agent({ name, model, tools, memory })`.
+- **Multi-Step Tool Reasoning**: Define type-safe tools with `tool({ name, description, parameters, execute })`.
+- **Multi-Agent Composition**: Delegate tasks from one agent to another using `agent.asTool()`.
+- **Multi-Provider Support**: Switch seamlessly between OpenAI (`openai:gpt-4o`), Anthropic (`anthropic:claude-3-5-sonnet`), Google Gemini (`gemini:gemini-1.5-flash`), Ollama (`ollama:llama3`), and local models.
+- **Streaming & SSE**: Stream real-time agent output directly from API routes via `stream.toDataStreamResponse()`.
+- **React UI Hook**: Connect client components to streaming agents with zero boilerplate using `useAgent()`.
+- **CLI Scaffolding**: Generate agents and companion streaming route handlers via `vista g agent <name>`.
+
+```ts
+// Define an agent with tools and memory
+export const supportAgent = agent({
+  name: 'support',
+  model: 'openai:gpt-4o',
+  systemPrompt: 'You are a helpful customer support agent.',
+  tools: [searchKnowledgeBase, lookupUserOrder],
+  memory: true,
+});
+```
+
 ## Monorepo Layout
 
 ```text
@@ -131,18 +161,18 @@ npm --prefix crates/vista-napi run build
 
 ## Common Commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm build` | Build the workspace through `flash-run.cjs` |
-| `pnpm dev` | Run workspace dev tasks |
-| `pnpm test` | Full repo test chain |
-| `pnpm test:integrity` | Framework integrity guard |
-| `pnpm test:rsc-conformance` | RSC and route conformance suite |
-| `pnpm test:vista-output` | `.vista` standalone/output verification |
-| `pnpm test:flashpack-dev` | Flashpack dev/restart verification |
+| Command                     | Purpose                                      |
+| --------------------------- | -------------------------------------------- |
+| `pnpm build`                | Build the workspace through `flash-run.cjs`  |
+| `pnpm dev`                  | Run workspace dev tasks                      |
+| `pnpm test`                 | Full repo test chain                         |
+| `pnpm test:integrity`       | Framework integrity guard                    |
+| `pnpm test:rsc-conformance` | RSC and route conformance suite              |
+| `pnpm test:vista-output`    | `.vista` standalone/output verification      |
+| `pnpm test:flashpack-dev`   | Flashpack dev/restart verification           |
 | `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification |
-| `pnpm bench` | Full benchmark run |
-| `pnpm bench:quick` | Quick benchmark smoke run |
+| `pnpm bench`                | Full benchmark run                           |
+| `pnpm bench:quick`          | Quick benchmark smoke run                    |
 
 ## Deployment Notes
 

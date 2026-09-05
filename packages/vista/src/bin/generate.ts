@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-type GenerateCommand = 'api-init' | 'router' | 'procedure';
+type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent';
 type ProcedureMethod = 'get' | 'post';
 
 interface RunGenerateOptions {
@@ -52,6 +52,42 @@ function writeFileIfMissing(baseDir: string, relativePath: string, content: stri
   return { path: absolutePath, created: true };
 }
 
+function renderAgent(kebabName: string): string {
+  const camelName = toCamelCase(kebabName);
+  return [
+    "import { agent, tool } from '@vistagenic/vista/ai';",
+    '',
+    `export const ${camelName}Agent = agent({`,
+    `  name: '${kebabName}',`,
+    "  model: process.env.VISTA_AI_MODEL || 'openai:gpt-4o',",
+    `  systemPrompt: 'You are a helpful AI assistant for ${kebabName}.',`,
+    '  tools: [',
+    '    tool({',
+    "      name: 'ping',",
+    "      description: 'Check agent connectivity',",
+    '      execute: async () => ({ status: \"ok\", time: new Date().toISOString() }),',
+    '    }),',
+    '  ],',
+    '  memory: true,',
+    '});',
+    '',
+  ].join('\n');
+}
+
+function renderAgentRoute(kebabName: string): string {
+  const camelName = toCamelCase(kebabName);
+  return [
+    `import { ${camelName}Agent } from '../../agents/${kebabName}/agent';`,
+    '',
+    'export async function POST(req: Request) {',
+    '  const { prompt, messages, sessionId } = await req.json();',
+    `  const stream = ${camelName}Agent.stream({ prompt, messages, sessionId });`,
+    '  return stream.toDataStreamResponse();',
+    '}',
+    '',
+  ].join('\n');
+}
+
 function findMatchingBrace(source: string, openBraceIndex: number): number {
   let depth = 0;
   for (let i = openBraceIndex; i < source.length; i++) {
@@ -79,7 +115,9 @@ function insertTypedApiConfigIntoObject(source: string, objectStartIndex: number
   return `${before}${insertion}${after}`;
 }
 
-function ensureTypedApiEnabledInConfig(cwd: string): 'created' | 'updated' | 'unchanged' | 'manual' {
+function ensureTypedApiEnabledInConfig(
+  cwd: string
+): 'created' | 'updated' | 'unchanged' | 'manual' {
   const tsPath = path.join(cwd, 'vista.config.ts');
   const jsPath = path.join(cwd, 'vista.config.js');
 
@@ -185,7 +223,7 @@ function renderRouter(name: string): string {
     '  return v.router({',
     `    ${camel}: v.procedure.query(() => ({`,
     `      route: '${toKebabCase(name)}',`,
-    "      ok: true,",
+    '      ok: true,',
     '    })),',
     '  });',
     '}',
@@ -198,6 +236,7 @@ function printGenerateUsage(log: (message: string) => void): void {
   log('  vista g api-init');
   log('  vista g router <name>');
   log('  vista g procedure <name> [get|post]');
+  log('  vista g agent <name>');
 }
 
 export async function runGenerateCommand(
@@ -209,7 +248,7 @@ export async function runGenerateCommand(
   const error = options.error ?? console.error;
 
   const command = (args[0] || '').toLowerCase() as GenerateCommand;
-  if (!command || !['api-init', 'router', 'procedure'].includes(command)) {
+  if (!command || !['api-init', 'router', 'procedure', 'agent'].includes(command)) {
     printGenerateUsage(log);
     return 1;
   }
@@ -239,7 +278,9 @@ export async function runGenerateCommand(
     } else if (configState === 'unchanged') {
       log('typed API config already enabled');
     } else {
-      error('Could not update vista.config automatically. Please enable experimental.typedApi.enabled manually.');
+      error(
+        'Could not update vista.config automatically. Please enable experimental.typedApi.enabled manually.'
+      );
       return 1;
     }
 
@@ -294,6 +335,37 @@ export async function runGenerateCommand(
     );
     const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
     log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
+    return 0;
+  }
+
+  if (command === 'agent') {
+    const rawName = args[1];
+    if (!rawName) {
+      error('Missing agent name. Example: vista g agent support');
+      return 1;
+    }
+
+    const safeName = toKebabCase(rawName);
+    if (!safeName) {
+      error(`Invalid agent name "${rawName}".`);
+      return 1;
+    }
+
+    const agentFile = writeFileIfMissing(
+      cwd,
+      path.join('app', 'agents', safeName, 'agent.ts'),
+      renderAgent(safeName)
+    );
+    const routeFile = writeFileIfMissing(
+      cwd,
+      path.join('app', 'api', 'agents', safeName, 'route.ts'),
+      renderAgentRoute(safeName)
+    );
+
+    [agentFile, routeFile].forEach((res) => {
+      const relativePath = path.relative(cwd, res.path).replace(/\\/g, '/');
+      log(`${res.created ? 'created' : 'skipped'} ${relativePath}`);
+    });
     return 0;
   }
 

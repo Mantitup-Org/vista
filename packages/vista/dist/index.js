@@ -55,3 +55,5 @@ Object.defineProperty(exports, "RSCRouterContext", { enumerable: true, get: func
 Object.defineProperty(exports, "useRSCRouter", { enumerable: true, get: function () { return rsc_router_1.useRSCRouter; } });
 var server_actions_1 = require("./client/server-actions");
 Object.defineProperty(exports, "callServer", { enumerable: true, get: function () { return server_actions_1.callServer; } });
+// AI Framework
+__exportStar(require("./ai"), exports);
