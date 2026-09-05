@@ -9,6 +9,7 @@
  * - Have access to server resources (DB, file system, env vars)
  * - Contribute 0kb to the client JavaScript bundle
  */
+import { type RouteHandlerMethod } from '../../server/route-handler-registry';
 import { type ResolvedSegmentConfig, type SegmentConfig } from '../../server/segment-config';
 export interface ServerComponentEntry {
     /** Unique ID for this component */
@@ -45,6 +46,22 @@ export interface ServerManifest {
     routes: RouteEntry[];
     /** Discovered server actions keyed by action id */
     serverActions: Record<string, ServerActionEntry>;
+    /** Discovered file-based API route handlers (`app/**\/route.*`) */
+    routeHandlers: RouteHandlerEntry[];
+}
+export interface RouteHandlerEntry {
+    /** URL pattern, e.g. `/api/users/:id` */
+    pattern: string;
+    /** Absolute path of the route file */
+    filePath: string;
+    /** Raw filesystem segments from `app/` to the route directory */
+    sourceSegments: string[];
+    /** Route shape, using the same vocabulary as page routes */
+    type: 'static' | 'dynamic' | 'catch-all';
+    /** HTTP methods the route file exports */
+    methods: RouteHandlerMethod[];
+    /** Runtime requested via `export const runtime`, when present */
+    runtime?: string;
 }
 export interface ServerActionEntry {
     /** Stable action id used by the runtime */

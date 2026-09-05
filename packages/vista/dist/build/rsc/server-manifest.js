@@ -22,6 +22,7 @@ const path_1 = __importDefault(require("path"));
 const component_identity_1 = require("./component-identity");
 const constants_1 = require("../../constants");
 const runtime_actions_1 = require("../../server/runtime-actions");
+const route_handler_registry_1 = require("../../server/route-handler-registry");
 const segment_config_1 = require("../../server/segment-config");
 const RESERVED_INTERNAL_SEGMENTS = new Set(['[not-found]']);
 function hasReservedInternalSegment(relativePath) {
@@ -433,6 +434,23 @@ function buildRoutes(components, appDir) {
     return routes;
 }
 /**
+ * Collect file-based API route handlers.
+ *
+ * Route handlers live in the same `app/` tree as pages but are not React components,
+ * so they are discovered separately from `scanForServerComponents` (which skips the
+ * `api` directory and treats every file it finds as a component).
+ */
+function buildRouteHandlerEntries(appDir) {
+    return (0, route_handler_registry_1.discoverRouteHandlers)(appDir).map((handler) => ({
+        pattern: handler.pattern,
+        filePath: handler.filePath,
+        sourceSegments: handler.sourceSegments,
+        type: handler.type,
+        methods: handler.methods,
+        ...(handler.runtime ? { runtime: handler.runtime } : {}),
+    }));
+}
+/**
  * Generate the server component manifest
  */
 function generateServerManifest(cwd, appDir) {
@@ -460,6 +478,7 @@ function generateServerManifest(cwd, appDir) {
         }
     }
     const routes = buildRoutes(components, appDir);
+    const routeHandlers = buildRouteHandlerEntries(appDir);
     // Get or generate build ID
     const buildIdPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'BUILD_ID');
     let buildId = 'dev';
@@ -477,6 +496,7 @@ function generateServerManifest(cwd, appDir) {
         pathToId,
         routes,
         serverActions,
+        routeHandlers,
     };
 }
 /**

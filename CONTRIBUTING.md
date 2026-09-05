@@ -174,9 +174,14 @@ Choose the narrowest relevant checks first, then run the larger suite before req
 ```bash
 npm --prefix packages/vista run build
 pnpm test:server-runtime
+pnpm test:api-routes
 pnpm test:rsc-conformance
 pnpm test:vista-output
 ```
+
+If you change file-based API routes (`app/**/route.ts` discovery, matching, or method
+dispatch), `pnpm test:api-routes` is the fast guard - it needs no dev server and no
+Rust toolchain. See section 5.4 of `developer.md` for which file owns what.
 
 ### If you change Flashpack behavior
 

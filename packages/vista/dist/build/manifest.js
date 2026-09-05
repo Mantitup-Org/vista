@@ -122,6 +122,16 @@ function toRegexFromPattern(pattern) {
     });
     return `^/${regexParts.join('/')}$`;
 }
+function toRouteHandlerInfo(handler) {
+    return {
+        page: handler.filePath,
+        regex: toRegexFromPattern(handler.pattern),
+        namedRegex: toRegexFromPattern(handler.pattern),
+        routeKeys: {},
+        methods: handler.methods || [],
+        ...(handler.runtime ? { runtime: handler.runtime } : {}),
+    };
+}
 function toRouteInfo(route) {
     return {
         page: route.pagePath,
@@ -130,10 +140,17 @@ function toRouteInfo(route) {
         namedRegex: toRegexFromPattern(route.pattern),
     };
 }
-function generateAppPathRoutesManifest(vistaDir, routes = []) {
+function generateAppPathRoutesManifest(vistaDir, routes = [], routeHandlers = []) {
     const manifest = {};
     routes.forEach((route) => {
         manifest[route.pattern] = route.pagePath;
+    });
+    // A page and a route handler cannot both own a URL. Pages win, so a stray
+    // `route.ts` next to a `page.tsx` cannot silently take over the route.
+    routeHandlers.forEach((handler) => {
+        if (!(handler.pattern in manifest)) {
+            manifest[handler.pattern] = handler.filePath;
+        }
     });
     fs_1.default.writeFileSync(path_1.default.join(vistaDir, 'app-path-routes-manifest.json'), JSON.stringify(manifest, null, 2));
     return manifest;
@@ -196,12 +213,12 @@ function writeArtifactManifest(vistaDir, buildId, extraManifestEntries = {}) {
     fs_1.default.writeFileSync(path_1.default.join(vistaDir, 'artifact-manifest.json'), JSON.stringify(artifactManifest, null, 2));
     return artifactManifest;
 }
-function writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, routes = []) {
+function writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, routes = [], routeHandlers = []) {
     const staticRoutes = routes.filter((route) => route.type === 'static').map(toRouteInfo);
     const dynamicRoutes = routes.filter((route) => route.type !== 'static').map(toRouteInfo);
     generateBuildManifest(vistaDir, buildId);
-    generateRoutesManifest(vistaDir, staticRoutes, dynamicRoutes);
-    generateAppPathRoutesManifest(vistaDir, routes);
+    generateRoutesManifest(vistaDir, staticRoutes, dynamicRoutes, routeHandlers);
+    generateAppPathRoutesManifest(vistaDir, routes, routeHandlers);
     generatePrerenderManifest(vistaDir);
     generateRequiredServerFilesManifest(cwd, vistaDir);
     // Keep canonical React manifest filenames present for validation consistency.
@@ -265,7 +282,7 @@ function writeReservedVistaArtifacts(vistaDir, options) {
 /**
  * Generate routes-manifest.json from route tree.
  */
-function generateRoutesManifest(vistaDir, staticRoutes = [], dynamicRoutes = []) {
+function generateRoutesManifest(vistaDir, staticRoutes = [], dynamicRoutes = [], routeHandlers = []) {
     const manifest = {
         version: 1,
         basePath: '',
@@ -274,6 +291,7 @@ function generateRoutesManifest(vistaDir, staticRoutes = [], dynamicRoutes = [])
         headers: [],
         staticRoutes,
         dynamicRoutes,
+        routeHandlers: routeHandlers.map(toRouteHandlerInfo),
     };
     const manifestPath = path_1.default.join(vistaDir, 'routes-manifest.json');
     fs_1.default.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));

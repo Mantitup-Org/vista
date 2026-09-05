@@ -20,6 +20,11 @@ import {
 import { BUILD_DIR } from '../../constants';
 import { createExportServerReferenceId, createInlineServerActionId } from '../../server/runtime-actions';
 import {
+  discoverRouteHandlers,
+  type DiscoveredRouteHandler,
+  type RouteHandlerMethod,
+} from '../../server/route-handler-registry';
+import {
   type ResolvedSegmentConfig,
   type SegmentConfig,
   mergeSegmentConfigs,
@@ -91,6 +96,23 @@ export interface ServerManifest {
   routes: RouteEntry[];
   /** Discovered server actions keyed by action id */
   serverActions: Record<string, ServerActionEntry>;
+  /** Discovered file-based API route handlers (`app/**\/route.*`) */
+  routeHandlers: RouteHandlerEntry[];
+}
+
+export interface RouteHandlerEntry {
+  /** URL pattern, e.g. `/api/users/:id` */
+  pattern: string;
+  /** Absolute path of the route file */
+  filePath: string;
+  /** Raw filesystem segments from `app/` to the route directory */
+  sourceSegments: string[];
+  /** Route shape, using the same vocabulary as page routes */
+  type: 'static' | 'dynamic' | 'catch-all';
+  /** HTTP methods the route file exports */
+  methods: RouteHandlerMethod[];
+  /** Runtime requested via `export const runtime`, when present */
+  runtime?: string;
 }
 
 export interface ServerActionEntry {
@@ -582,6 +604,24 @@ function buildRoutes(components: ServerComponentEntry[], appDir: string): RouteE
 }
 
 /**
+ * Collect file-based API route handlers.
+ *
+ * Route handlers live in the same `app/` tree as pages but are not React components,
+ * so they are discovered separately from `scanForServerComponents` (which skips the
+ * `api` directory and treats every file it finds as a component).
+ */
+function buildRouteHandlerEntries(appDir: string): RouteHandlerEntry[] {
+  return discoverRouteHandlers(appDir).map((handler: DiscoveredRouteHandler) => ({
+    pattern: handler.pattern,
+    filePath: handler.filePath,
+    sourceSegments: handler.sourceSegments,
+    type: handler.type,
+    methods: handler.methods,
+    ...(handler.runtime ? { runtime: handler.runtime } : {}),
+  }));
+}
+
+/**
  * Generate the server component manifest
  */
 export function generateServerManifest(cwd: string, appDir: string): ServerManifest {
@@ -614,6 +654,7 @@ export function generateServerManifest(cwd: string, appDir: string): ServerManif
   }
 
   const routes = buildRoutes(components, appDir);
+  const routeHandlers = buildRouteHandlerEntries(appDir);
 
   // Get or generate build ID
   const buildIdPath = path.join(cwd, BUILD_DIR, 'BUILD_ID');
@@ -632,6 +673,7 @@ export function generateServerManifest(cwd: string, appDir: string): ServerManif
     pathToId,
     routes,
     serverActions,
+    routeHandlers,
   };
 }
 

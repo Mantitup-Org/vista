@@ -185,6 +185,25 @@ function toRegexFromPattern(pattern: string): string {
   return `^/${regexParts.join('/')}$`;
 }
 
+export interface RouteHandlerLike {
+  pattern: string;
+  filePath: string;
+  type?: 'static' | 'dynamic' | 'catch-all';
+  methods?: string[];
+  runtime?: string;
+}
+
+function toRouteHandlerInfo(handler: RouteHandlerLike): RouteHandlerInfo {
+  return {
+    page: handler.filePath,
+    regex: toRegexFromPattern(handler.pattern),
+    namedRegex: toRegexFromPattern(handler.pattern),
+    routeKeys: {},
+    methods: handler.methods || [],
+    ...(handler.runtime ? { runtime: handler.runtime } : {}),
+  };
+}
+
 function toRouteInfo(route: RouteLike): RouteInfo {
   return {
     page: route.pagePath,
@@ -196,11 +215,19 @@ function toRouteInfo(route: RouteLike): RouteInfo {
 
 export function generateAppPathRoutesManifest(
   vistaDir: string,
-  routes: RouteLike[] = []
+  routes: RouteLike[] = [],
+  routeHandlers: RouteHandlerLike[] = []
 ): Record<string, string> {
   const manifest: Record<string, string> = {};
   routes.forEach((route) => {
     manifest[route.pattern] = route.pagePath;
+  });
+  // A page and a route handler cannot both own a URL. Pages win, so a stray
+  // `route.ts` next to a `page.tsx` cannot silently take over the route.
+  routeHandlers.forEach((handler) => {
+    if (!(handler.pattern in manifest)) {
+      manifest[handler.pattern] = handler.filePath;
+    }
   });
   fs.writeFileSync(
     path.join(vistaDir, 'app-path-routes-manifest.json'),
@@ -300,14 +327,15 @@ export function writeCanonicalVistaArtifacts(
   cwd: string,
   vistaDir: string,
   buildId: string,
-  routes: RouteLike[] = []
+  routes: RouteLike[] = [],
+  routeHandlers: RouteHandlerLike[] = []
 ): ArtifactManifest {
   const staticRoutes = routes.filter((route) => route.type === 'static').map(toRouteInfo);
   const dynamicRoutes = routes.filter((route) => route.type !== 'static').map(toRouteInfo);
 
   generateBuildManifest(vistaDir, buildId);
-  generateRoutesManifest(vistaDir, staticRoutes, dynamicRoutes);
-  generateAppPathRoutesManifest(vistaDir, routes);
+  generateRoutesManifest(vistaDir, staticRoutes, dynamicRoutes, routeHandlers);
+  generateAppPathRoutesManifest(vistaDir, routes, routeHandlers);
   generatePrerenderManifest(vistaDir);
   generateRequiredServerFilesManifest(cwd, vistaDir);
 
@@ -420,6 +448,16 @@ export interface RouteInfo {
   namedRegex?: string;
 }
 
+/** A file-based API route handler (`app/**\/route.*`) as recorded in the manifest. */
+export interface RouteHandlerInfo {
+  page: string;
+  regex: string;
+  namedRegex: string;
+  routeKeys: Record<string, string>;
+  methods: string[];
+  runtime?: string;
+}
+
 export interface RoutesManifest {
   version: number;
   basePath: string;
@@ -428,6 +466,11 @@ export interface RoutesManifest {
   headers: any[];
   staticRoutes: RouteInfo[];
   dynamicRoutes: RouteInfo[];
+  /**
+   * File-based API route handlers, kept in their own list so consumers that expect
+   * `staticRoutes`/`dynamicRoutes` to be page routes keep working unchanged.
+   */
+  routeHandlers: RouteHandlerInfo[];
 }
 
 /**
@@ -436,7 +479,8 @@ export interface RoutesManifest {
 export function generateRoutesManifest(
   vistaDir: string,
   staticRoutes: RouteInfo[] = [],
-  dynamicRoutes: RouteInfo[] = []
+  dynamicRoutes: RouteInfo[] = [],
+  routeHandlers: RouteHandlerLike[] = []
 ): RoutesManifest {
   const manifest: RoutesManifest = {
     version: 1,
@@ -446,6 +490,7 @@ export function generateRoutesManifest(
     headers: [],
     staticRoutes,
     dynamicRoutes,
+    routeHandlers: routeHandlers.map(toRouteHandlerInfo),
   };
 
   const manifestPath = path.join(vistaDir, 'routes-manifest.json');
