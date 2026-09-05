@@ -179,6 +179,11 @@ async function main() {
 
       const blocked = await fetch(`${url}/blocked`);
       assert.equal(blocked.status, 401);
+      assert.equal(
+        await blocked.text(),
+        'denied',
+        'middleware short-circuit must forward the response body'
+      );
 
       const created = await fetch(`${url}/api/health`, {
         method: 'POST',

@@ -54,6 +54,22 @@ type RequestLike = VistaMiddlewareRequest & {
 
 const MIDDLEWARE_FILENAMES = ['middleware.ts', 'middleware.tsx', 'middleware.js', 'middleware.jsx'];
 const discoveryCache = new Map<string, string[]>();
+// Request pathnames are unbounded (dynamic ids), so the discovery cache is
+// capped and evicts oldest-first to keep long-running servers from leaking.
+const DISCOVERY_CACHE_MAX_ENTRIES = 512;
+
+function setDiscoveryCacheEntry(cacheKey: string, files: string[]): void {
+  if (discoveryCache.has(cacheKey)) {
+    discoveryCache.delete(cacheKey);
+  } else if (discoveryCache.size >= DISCOVERY_CACHE_MAX_ENTRIES) {
+    const oldestKey = discoveryCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      discoveryCache.delete(oldestKey);
+    }
+  }
+
+  discoveryCache.set(cacheKey, files);
+}
 
 function buildNextRequest(req: Request): VistaMiddlewareRequest {
   const protocol = req.protocol;
@@ -110,7 +126,11 @@ function firstExistingFile(candidates: string[]): string | null {
 function collectMiddlewareFiles(cwd: string, pathname: string, bustCache: boolean): string[] {
   const cacheKey = `${cwd}::${pathname}`;
   if (!bustCache && discoveryCache.has(cacheKey)) {
-    return discoveryCache.get(cacheKey)!;
+    const cached = discoveryCache.get(cacheKey)!;
+    // Re-insert so frequently hit paths are evicted last.
+    discoveryCache.delete(cacheKey);
+    discoveryCache.set(cacheKey, cached);
+    return cached;
   }
 
   const files: string[] = [];
@@ -142,11 +162,27 @@ function collectMiddlewareFiles(cwd: string, pathname: string, bustCache: boolea
     }
   }
 
-  discoveryCache.set(cacheKey, files);
+  setDiscoveryCacheEntry(cacheKey, files);
   return files;
 }
 
-function interpretMiddlewareResponse(response: any, nextCalled: boolean): MiddlewareResult {
+async function readResponseBody(response: any): Promise<string | undefined> {
+  if (!response || response.bodyUsed || typeof response.text !== 'function') {
+    return undefined;
+  }
+
+  try {
+    const text = await response.text();
+    return text ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function interpretMiddlewareResponse(
+  response: any,
+  nextCalled: boolean
+): Promise<MiddlewareResult> {
   if (!response) {
     return nextCalled ? { kind: 'next' } : { kind: 'next' };
   }
@@ -187,7 +223,7 @@ function interpretMiddlewareResponse(response: any, nextCalled: boolean): Middle
       kind: 'short-circuit',
       status: response.status,
       responseHeaders,
-      body: typeof response.bodyUsed === 'boolean' && !response.bodyUsed ? undefined : undefined,
+      body: await readResponseBody(response),
     };
   }
 
@@ -243,7 +279,7 @@ async function invokeMiddlewareModule(
       response = await response;
     }
 
-    return interpretMiddlewareResponse(response, nextCalled);
+    return await interpretMiddlewareResponse(response, nextCalled);
   } catch (err) {
     console.error(`[vista] Middleware error in ${path.basename(middlewareFile)}: ${(err as Error)?.message ?? String(err)}`);
     return { kind: 'next' };

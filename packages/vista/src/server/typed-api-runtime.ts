@@ -468,6 +468,30 @@ function isRouteGroupSegment(segment: string): boolean {
   return segment.startsWith('(') && segment.endsWith(')');
 }
 
+type RouteHandlerScan = {
+  files: string[];
+  scannedAt: number;
+};
+
+// `resolveLegacyRouteHandlerMatch` runs for every request without an exact
+// `route.*` match (pages included), so the recursive `app/` walk is cached per
+// app directory. Production apps never change on disk, so the scan is kept for
+// the life of the process; dev re-scans on a short TTL to pick up new files.
+const routeHandlerScanCache = new Map<string, RouteHandlerScan>();
+const ROUTE_HANDLER_SCAN_TTL_MS = process.env.NODE_ENV === 'production' ? Infinity : 500;
+
+function getRouteHandlerFiles(appDir: string): string[] {
+  const cached = routeHandlerScanCache.get(appDir);
+  if (cached && Date.now() - cached.scannedAt < ROUTE_HANDLER_SCAN_TTL_MS) {
+    return cached.files;
+  }
+
+  const files: string[] = [];
+  collectRouteHandlerFiles(appDir, files);
+  routeHandlerScanCache.set(appDir, { files, scannedAt: Date.now() });
+  return files;
+}
+
 function collectRouteHandlerFiles(dir: string, results: string[]): void {
   if (!fs.existsSync(dir)) return;
 
@@ -577,8 +601,7 @@ export function resolveLegacyRouteHandlerMatch(
   }
 
   const appDir = path.resolve(cwd, 'app');
-  const handlers: string[] = [];
-  collectRouteHandlerFiles(appDir, handlers);
+  const handlers = getRouteHandlerFiles(appDir);
 
   const pathname = `/${normalizeRouteRequestPath(requestPath)}`;
   const matches: Array<LegacyRouteHandlerMatch & { score: number }> = [];

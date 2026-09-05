@@ -20,7 +20,7 @@ function getRegisterServerReference() {
     if (injectedRegisterServerReference) {
         return injectedRegisterServerReference;
     }
-    if (cachedRegisterServerReference) {
+    if (cachedRegisterServerReference !== undefined) {
         return cachedRegisterServerReference;
     }
     try {
@@ -34,6 +34,8 @@ function getRegisterServerReference() {
         // Requiring the Flight server entry can fail when `--conditions react-server`
         // is not active. Manual $$typeof stamping still lets functions serialize.
     }
+    // Cache the negative result so the require() is attempted only once per process.
+    cachedRegisterServerReference = null;
     return null;
 }
 function normalizeExportName(exportName) {

@@ -18,7 +18,7 @@ function getRegisterServerReference(): RegisterServerReferenceFn | null {
     return injectedRegisterServerReference;
   }
 
-  if (cachedRegisterServerReference) {
+  if (cachedRegisterServerReference !== undefined) {
     return cachedRegisterServerReference;
   }
 
@@ -35,6 +35,8 @@ function getRegisterServerReference(): RegisterServerReferenceFn | null {
     // is not active. Manual $$typeof stamping still lets functions serialize.
   }
 
+  // Cache the negative result so the require() is attempted only once per process.
+  cachedRegisterServerReference = null;
   return null;
 }
 
