@@ -5,7 +5,7 @@ Vista.js is a React 19 framework with App Router conventions, React Server Compo
 - `default`: the main webpack-backed RSC/SSR engine
 - `flashpack`: a Rust-backed engine path that records graph/runtime state in `.flash`
 
-Official site: https://vista.xyz/
+Official site: https://vista-js.vercel.app
 
 ## Packages
 
