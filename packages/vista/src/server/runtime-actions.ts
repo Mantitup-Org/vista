@@ -7,6 +7,12 @@ const registeredReferences = new Map<string, Function>();
 
 let cachedRegisterServerReference: RegisterServerReferenceFn | null | undefined;
 
+export function configureServerReferenceRegistration(
+  registerServerReference: RegisterServerReferenceFn
+): void {
+  cachedRegisterServerReference = registerServerReference;
+}
+
 function getRegisterServerReference(): RegisterServerReferenceFn | null {
   if (cachedRegisterServerReference !== undefined) {
     return cachedRegisterServerReference;
