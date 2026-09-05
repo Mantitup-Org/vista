@@ -1,11 +1,15 @@
 import { pathToFileURL } from 'url';
 import path from 'path';
 
-type RegisterServerReferenceFn = (reference: Function, id: string, exportName: string) => void;
+type RegisterServerReferenceFn = (reference: any, id: string, exportName: string | null) => void;
 
 const registeredReferences = new Map<string, Function>();
 
 let cachedRegisterServerReference: RegisterServerReferenceFn | null | undefined;
+
+export function setRegisterServerReference(fn: RegisterServerReferenceFn | null): void {
+  cachedRegisterServerReference = fn;
+}
 
 function getRegisterServerReference(): RegisterServerReferenceFn | null {
   if (cachedRegisterServerReference !== undefined) {
@@ -33,10 +37,12 @@ function normalizeExportName(exportName?: string): string {
 }
 
 function normalizeHint(value: string): string {
-  return String(value || 'action')
-    .trim()
-    .replace(/[^a-zA-Z0-9_$]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'action';
+  return (
+    String(value || 'action')
+      .trim()
+      .replace(/[^a-zA-Z0-9_$]+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'action'
+  );
 }
 
 function createStableFileUrl(filePath: string): string {
@@ -70,17 +76,15 @@ export function registerInlineServerReference<T extends Function>(
   const normalizedExportName = normalizeExportName(exportName);
   const registerServerReference = getRegisterServerReference();
   if (registerServerReference) {
-    registerServerReference(reference, id, normalizedExportName);
+    const effectiveExportName = id.includes('#') ? null : normalizedExportName;
+    registerServerReference(reference, id, effectiveExportName);
   }
 
   registeredReferences.set(id, reference);
   return reference;
 }
 
-export function registerServerActionModule(
-  moduleExports: unknown,
-  filePath: string
-): unknown {
+export function registerServerActionModule(moduleExports: unknown, filePath: string): unknown {
   if (!moduleExports || typeof moduleExports !== 'object') {
     return moduleExports;
   }
