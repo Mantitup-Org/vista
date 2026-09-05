@@ -61,10 +61,11 @@ function createDirectiveError(filename, message) {
 }
 function isProjectModule(filename, roots) {
     const normalized = normalizeModulePath(filename);
-    const matchesRoot = roots.some((root) => {
+    const matchingRoot = roots.find((root) => {
         const rootPrefix = normalizeModulePath(`${root}${path_1.default.sep}`);
         return normalized.startsWith(rootPrefix);
     });
+    const matchesRoot = Boolean(matchingRoot);
     const isStandaloneProjectModule = roots.some((root) => {
         const normalizedRoot = normalizeModulePath(root);
         return (normalizedRoot.includes('/.vista/standalone/') &&
@@ -72,8 +73,9 @@ function isProjectModule(filename, roots) {
     });
     if (!matchesRoot)
         return false;
-    if (normalized.includes('/node_modules/'))
+    if (normalized.includes('/node_modules/') && !normalizeModulePath(matchingRoot).includes('/node_modules/')) {
         return false;
+    }
     if (normalized.includes('/.vista/') && !isStandaloneProjectModule)
         return false;
     if (normalized.includes('/.flash/'))
@@ -86,14 +88,17 @@ function isStringDirectiveStatement(statement, directive) {
             (statement.expression?.type === 'StringLiteral' &&
                 statement.expression?.value === directive)));
 }
+function isFunctionBody(node) {
+    return node?.type === 'BlockStatement' || node?.type === 'FunctionBody';
+}
 function hasServerDirectiveInFunctionLike(node) {
-    return (node?.body?.type === 'BlockStatement' &&
+    return (isFunctionBody(node?.body) &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use server'));
 }
 function hasCacheDirectiveInFunctionLike(node) {
-    return (node?.body?.type === 'BlockStatement' &&
+    return (isFunctionBody(node?.body) &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use cache'));
@@ -212,7 +217,7 @@ function createRuntimeRequireDeclaration(runtimeIdentifier, runtimeSpecifier) {
     };
 }
 function processFunctionLikeDeclaration(statement, filename, state, nextStatements) {
-    if (statement?.body?.type !== 'BlockStatement') {
+    if (!isFunctionBody(statement?.body)) {
         return false;
     }
     statement.body.stmts = processStatementList(statement.body.stmts || [], filename, state);
@@ -241,11 +246,7 @@ function processStatementList(statements, filename, state) {
             continue;
         }
         if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-            if (statement.decl.body?.type === 'BlockStatement') {
-                statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
-            }
-            else if ((statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
-                statement.decl.body?.type === 'BlockStatement') {
+            if (isFunctionBody(statement.decl.body)) {
                 statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
             }
             if ((statement.decl.type === 'FunctionDeclaration' ||
@@ -366,7 +367,7 @@ function processExpression(expression, filename, state, hint = 'action') {
         return expression;
     }
     if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-        if (expression.body?.type === 'BlockStatement') {
+        if (isFunctionBody(expression.body)) {
             expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
         }
         if (hasServerDirectiveInFunctionLike(expression)) {

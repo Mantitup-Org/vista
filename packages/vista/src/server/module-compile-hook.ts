@@ -84,10 +84,11 @@ function createDirectiveError(filename: string, message: string): Error {
 
 function isProjectModule(filename: string, roots: string[]): boolean {
   const normalized = normalizeModulePath(filename);
-  const matchesRoot = roots.some((root) => {
+  const matchingRoot = roots.find((root) => {
     const rootPrefix = normalizeModulePath(`${root}${path.sep}`);
     return normalized.startsWith(rootPrefix);
   });
+  const matchesRoot = Boolean(matchingRoot);
   const isStandaloneProjectModule = roots.some((root) => {
     const normalizedRoot = normalizeModulePath(root);
     return (
@@ -97,7 +98,9 @@ function isProjectModule(filename: string, roots: string[]): boolean {
   });
 
   if (!matchesRoot) return false;
-  if (normalized.includes('/node_modules/')) return false;
+  if (normalized.includes('/node_modules/') && !normalizeModulePath(matchingRoot!).includes('/node_modules/')) {
+    return false;
+  }
   if (normalized.includes('/.vista/') && !isStandaloneProjectModule) return false;
   if (normalized.includes('/.flash/')) return false;
 
@@ -113,9 +116,13 @@ function isStringDirectiveStatement(statement: any, directive: string): boolean 
   );
 }
 
+function isFunctionBody(node: any): boolean {
+  return node?.type === 'BlockStatement' || node?.type === 'FunctionBody';
+}
+
 function hasServerDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    isFunctionBody(node?.body) &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use server')
@@ -124,7 +131,7 @@ function hasServerDirectiveInFunctionLike(node: any): boolean {
 
 function hasCacheDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    isFunctionBody(node?.body) &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use cache')
@@ -266,7 +273,7 @@ function processFunctionLikeDeclaration(
   state: InlineTransformState,
   nextStatements: any[]
 ): boolean {
-  if (statement?.body?.type !== 'BlockStatement') {
+  if (!isFunctionBody(statement?.body)) {
     return false;
   }
 
@@ -303,12 +310,7 @@ function processStatementList(statements: any[], filename: string, state: Inline
     }
 
     if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-      if (statement.decl.body?.type === 'BlockStatement') {
-        statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
-      } else if (
-        (statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
-        statement.decl.body?.type === 'BlockStatement'
-      ) {
+      if (isFunctionBody(statement.decl.body)) {
         statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
       }
 
@@ -470,7 +472,7 @@ function processExpression(
   }
 
   if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-    if (expression.body?.type === 'BlockStatement') {
+    if (isFunctionBody(expression.body)) {
       expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
     }
 
