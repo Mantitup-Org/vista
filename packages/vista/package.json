@@ -81,6 +81,10 @@
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
     },
+    "./deployment": {
+      "types": "./dist/deployment/index.d.ts",
+      "default": "./dist/deployment/index.js"
+    },
     "./stack": {
       "types": "./dist/stack/index.d.ts",
       "default": "./dist/stack/index.js"
