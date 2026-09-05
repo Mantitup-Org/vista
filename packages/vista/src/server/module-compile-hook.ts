@@ -113,9 +113,20 @@ function isStringDirectiveStatement(statement: any, directive: string): boolean 
   );
 }
 
+/**
+ * SWC labels the body of a function/method/arrow as `FunctionBody`, while a bare
+ * block (`{ ... }`, loop/if/try bodies) stays `BlockStatement`. Older versions
+ * reported `BlockStatement` for both, so accept either shape here - otherwise
+ * every function-body walk silently no-ops and inline `'use server'` /
+ * `'use cache'` directives never get transformed.
+ */
+function isFunctionBodyBlock(node: any): boolean {
+  return node?.type === 'BlockStatement' || node?.type === 'FunctionBody';
+}
+
 function hasServerDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    isFunctionBodyBlock(node?.body) &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use server')
@@ -124,7 +135,7 @@ function hasServerDirectiveInFunctionLike(node: any): boolean {
 
 function hasCacheDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    isFunctionBodyBlock(node?.body) &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use cache')
@@ -266,7 +277,10 @@ function processFunctionLikeDeclaration(
   state: InlineTransformState,
   nextStatements: any[]
 ): boolean {
-  if (statement?.body?.type !== 'BlockStatement') {
+  if (!isFunctionBodyBlock(statement?.body)) {
+    // Bodyless declarations (TS overload signatures, `declare function`) still
+    // have to survive into the emitted module.
+    nextStatements.push(statement);
     return false;
   }
 
@@ -303,11 +317,11 @@ function processStatementList(statements: any[], filename: string, state: Inline
     }
 
     if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-      if (statement.decl.body?.type === 'BlockStatement') {
+      if (isFunctionBodyBlock(statement.decl.body)) {
         statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
       } else if (
         (statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
-        statement.decl.body?.type === 'BlockStatement'
+        isFunctionBodyBlock(statement.decl.body)
       ) {
         statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
       }
@@ -470,7 +484,7 @@ function processExpression(
   }
 
   if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-    if (expression.body?.type === 'BlockStatement') {
+    if (isFunctionBodyBlock(expression.body)) {
       expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
     }
 

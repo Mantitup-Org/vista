@@ -286,6 +286,7 @@ These are the most important scripts to know:
 - `scripts/test-rust-bridge.cjs`
 - `scripts/test-create-vista-app-scaffold.cjs`
 - `scripts/test-server-runtime.cjs`
+- `scripts/test-inline-server-actions.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`
@@ -347,7 +348,50 @@ The repo now expects metadata route files to work from app code, including route
 
 If those stop resolving, look at `typed-api-runtime.ts` and route resolution logic, not just `apps/web`.
 
-### 13.4 Keep-awake workflow should skip when no secret exists
+### 13.4 Inline `'use server'` depends on the SWC function-body node type
+
+`/conformance/actions-inline` once failed CI with:
+
+```text
+Error: Action request failed (500) for /conformance/actions-inline
+Functions cannot be passed directly to Client Components unless you explicitly
+expose it by marking it with "use server". Or maybe you meant to call this
+function rather than return it.
+{label: "inline", action: function inlineEcho}
+```
+
+The page itself was correct. The bug was in `packages/vista/src/server/module-compile-hook.ts`.
+
+That hook rewrites project modules at require time: when it sees a function whose
+body starts with `'use server'`, it appends a
+`registerInlineServerReference(fn, actionId, exportName)` call so React can
+serialize the function as a server reference instead of a plain closure. It finds
+those functions by walking the SWC AST and checking `node.body.type` against
+`'BlockStatement'`.
+
+Newer `@swc/core` labels the body of a function, method, or arrow as
+`FunctionBody`, and reserves `BlockStatement` for bare blocks (`{ ... }`, `if`,
+loop, and `try` bodies). Every function-body check in the hook therefore returned
+false, the whole inline transform silently no-opped, and `inlineEcho` reached the
+Client Component as an unregistered function — hence the 500.
+
+The hook now accepts either node type through `isFunctionBodyBlock()`. The same
+walk drives inline `'use cache'`, so that directive was broken by this too.
+
+Things to remember here:
+
+- The transform swallows its own failures and falls back to the untouched source,
+  so a broken walk looks like "nothing happened", not like a build error. Set
+  `VISTA_DEBUG=1` to surface transform errors.
+- Inline action ids are ordinal-based (`<file-url>#inline_<n>_<name>`). The build
+  manifest (`packages/vista/src/build/rsc/server-manifest.ts`, regex-based) and
+  the runtime hook (AST-based) must assign the same ordinals, or an action
+  request 404s/500s even though both sides look fine in isolation.
+- `pnpm test:inline-server-actions` guards all of this without a dev server or a
+  Rust toolchain, and it pins the AST node types the hook relies on, so an
+  `@swc/core` upgrade that renames them fails there first.
+
+### 13.5 Keep-awake workflow should skip when no secret exists
 
 The `Keep Deployment Awake` GitHub Action is configured to skip cleanly when `KEEP_AWAKE_URL`, `APP_URL`, and `RENDER_APP_URL` are all missing. If it fails hard again, check `.github/workflows/keep-render-awake.yml`.
 
@@ -398,7 +442,7 @@ pnpm bench:quick
 ## 15. If You Touch These Areas, Also Check These
 
 - `packages/vista/src/server/*`
-  - run `pnpm test:server-runtime`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
+  - run `pnpm test:server-runtime`, `pnpm test:inline-server-actions`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
 - `packages/vista/src/flashpack/*`
   - run `pnpm test:flashpack-dev`, `pnpm test:flashpack-state`
 - `packages/vista/src/theme/*`
