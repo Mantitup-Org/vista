@@ -9,11 +9,11 @@ Official site: https://vista-js.vercel.app
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
+| Package             | Purpose                                                                      |
+| ------------------- | ---------------------------------------------------------------------------- |
 | `@vistagenic/vista` | Framework runtime, CLI, server/client exports, cache APIs, fonts, theme APIs |
-| `create-vista-app` | Scaffolds Vista apps with engine selection and package-manager prompts |
-| `vista-native` | Internal Rust/NAPI bridge used by the repo |
+| `create-vista-app`  | Scaffolds Vista apps with engine selection and package-manager prompts       |
+| `vista-native`      | Internal Rust/NAPI bridge used by the repo                                   |
 
 ## Current Capabilities
 
@@ -21,7 +21,7 @@ Vista currently ships the following core surface:
 
 - App Router-style file conventions under `app/`
 - React Server Components and streaming SSR
-- Server Actions and runtime action manifests
+- Server Actions (both exported modules and inline actions passed across Client Component boundaries) with runtime action manifests
 - Cache APIs: `unstable_cache`, `revalidateTag`, `revalidatePath`, `cacheTag`, `cacheLife`
 - Route groups, parallel routes, interception routes, slot defaults, loading/error/not-found boundaries
 - Segment config support (`dynamic`, `revalidate`, `runtime`, `preferredRegion`, `maxDuration`, `fetchCache`)
@@ -85,6 +85,42 @@ Server helpers from the package:
 import { cookies, headers, draftMode } from 'vista/server';
 ```
 
+## Server Actions
+
+Vista.js supports React 19 Server Actions with full React Server Component conformance. Server Actions can be declared as module exports or defined inline within Server Components and passed across client boundaries:
+
+### Inline Server Actions
+
+Define inline server actions with `'use server'` inside Server Components and pass them as props directly to Client Components:
+
+```tsx
+// app/page.tsx (Server Component)
+import { ActionProbe } from './action-probe';
+
+export default function Page() {
+  async function inlineEcho(value: string) {
+    'use server';
+    return { ok: true, value: `echo-${value}` };
+  }
+
+  return <ActionProbe action={inlineEcho} />;
+}
+```
+
+### Exported Server Actions
+
+Define actions in dedicated files marked with `'use server'` at the top level:
+
+```ts
+// app/actions.ts
+'use server';
+
+export async function updateUser(userId: string, data: FormData) {
+  // Mutation executed securely on the server
+  return { success: true };
+}
+```
+
 ## Monorepo Layout
 
 ```text
@@ -131,18 +167,19 @@ npm --prefix crates/vista-napi run build
 
 ## Common Commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm build` | Build the workspace through `flash-run.cjs` |
-| `pnpm dev` | Run workspace dev tasks |
-| `pnpm test` | Full repo test chain |
-| `pnpm test:integrity` | Framework integrity guard |
-| `pnpm test:rsc-conformance` | RSC and route conformance suite |
-| `pnpm test:vista-output` | `.vista` standalone/output verification |
-| `pnpm test:flashpack-dev` | Flashpack dev/restart verification |
-| `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification |
-| `pnpm bench` | Full benchmark run |
-| `pnpm bench:quick` | Quick benchmark smoke run |
+| Command                     | Purpose                                          |
+| --------------------------- | ------------------------------------------------ |
+| `pnpm build`                | Build the workspace through `flash-run.cjs`      |
+| `pnpm dev`                  | Run workspace dev tasks                          |
+| `pnpm test`                 | Full repo test chain                             |
+| `pnpm test:integrity`       | Framework integrity guard                        |
+| `pnpm test:server-runtime`  | Server runtime & action reference unit tests     |
+| `pnpm test:rsc-conformance` | RSC, server actions, and route conformance suite |
+| `pnpm test:vista-output`    | `.vista` standalone/output verification          |
+| `pnpm test:flashpack-dev`   | Flashpack dev/restart verification               |
+| `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification     |
+| `pnpm bench`                | Full benchmark run                               |
+| `pnpm bench:quick`          | Quick benchmark smoke run                        |
 
 ## Deployment Notes
 
