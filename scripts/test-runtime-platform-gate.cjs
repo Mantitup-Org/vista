@@ -7,6 +7,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const ALLOWED_PLATFORMS = new Set(['win32', 'linux']);
 const COMMANDS = [
   ['scripts/test-integrity.cjs'],
+  ['scripts/test-server-runtime.cjs'],
+  ['scripts/test-fullstack-runtime.cjs'],
   ['scripts/test-vista-hardening.cjs'],
   ['scripts/test-vista-output.cjs'],
   ['scripts/test-rsc-conformance.cjs'],

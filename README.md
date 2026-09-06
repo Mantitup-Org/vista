@@ -6,6 +6,7 @@ Vista.js is a React 19 framework with App Router conventions, React Server Compo
 - `flashpack`: a Rust-backed engine path that records graph/runtime state in `.flash`
 
 Official site: https://vista-js.vercel.app
+Demo link: https://youtu.be/yks70n3oJIE
 
 ## Packages
 
@@ -30,6 +31,10 @@ Vista currently ships the following core surface:
 - Metadata route support through app files like `app/(seo)/sitemap.ts`, `robots.ts`, and `manifest.ts`
 - Package-level theme primitives via `vista/theme`
 - Experimental typed API package surface via `vista/stack` and `vista/stack/client`
+- App Router `route.ts` handlers (`GET` / `POST` / `PUT` / `PATCH` / `DELETE`) with dynamic params
+- Global and route-specific middleware with `{ request, next }`
+- First-class agents via `vista/ai` and `app/agents/*/agent.ts`
+- Generated deploy adapters for Render, Docker, Vercel, and Cloudflare (`.vista/deploy/`)
 
 ## Quick Start
 
@@ -83,6 +88,12 @@ Server helpers from the package:
 
 ```ts
 import { cookies, headers, draftMode } from 'vista/server';
+```
+
+Agents from the package:
+
+```ts
+import { agent, tool } from 'vista/ai';
 ```
 
 ## Monorepo Layout

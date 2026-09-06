@@ -482,6 +482,7 @@ function startUpstream() {
     setupTypeScriptRuntime(runtimeRoot);
     const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
     const flightServer = require(flightServerPath);
+    (0, runtime_actions_1.setServerReferenceRegistrar)(flightServer.registerServerReference);
     installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
     (0, fetch_policy_1.installSegmentFetchPolicyShim)();
     const serverManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'server', 'server-manifest.json');
@@ -649,7 +650,16 @@ function startUpstream() {
         if (actionRoute) {
             const params = routeParams;
             const model = await createRouteElement(actionRoute, { pathname, params, searchParams, req }, isDev, runtimeRoot);
-            await drainFlightModel(model);
+            try {
+                await drainFlightModel(model);
+            }
+            catch (error) {
+                const primed = (0, runtime_actions_1.resolveRegisteredServerReference)(actionId);
+                if (primed) {
+                    return primed;
+                }
+                throw error;
+            }
             return (0, runtime_actions_1.resolveRegisteredServerReference)(actionId);
         }
         return undefined;

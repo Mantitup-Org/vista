@@ -11,9 +11,22 @@ updatedAt: "2026-03-04"
 
 Keep using `app/api/*/route.ts` for traditional endpoint files. Existing projects continue to work without any changes.
 
+Supported methods: `GET`, `POST`, `PUT`, `PATCH`, `DELETE` (plus a default Express handler if you still need one). Dynamic segments like `app/api/users/[id]/route.ts` receive `{ params }`.
+
 ```ts title="app/api/health/route.ts"
 export async function GET() {
   return Response.json({ ok: true, uptime: process.uptime() });
+}
+
+export async function POST(request: Request) {
+  const body = await request.json();
+  return Response.json(body);
+}
+```
+
+```ts title="app/api/users/[id]/route.ts"
+export async function GET(_request: Request, { params }: { params: { id: string } }) {
+  return Response.json({ id: params.id });
 }
 ```
 

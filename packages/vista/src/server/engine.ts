@@ -41,11 +41,11 @@ import { revalidatePath } from './static-generator';
 import { getAllFontHTML as getFontHeadHTML } from '../font/registry';
 import { getStyledNotFoundHTML } from './not-found-page';
 import {
-  resolveLegacyRouteHandlerPath,
-  resolveLegacyApiRoutePath,
+  resolveLegacyRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
+import { tryHandleAgentRequest } from '../ai/runtime';
 import {
   printServerReady,
   requestLogger,
@@ -560,14 +560,15 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     const finalized = applyMiddlewareResult(middlewareResult, req, res);
     if (finalized) return;
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(cwd, req.path);
-    if (routeHandlerPath) {
+    const routeHandlerMatch = resolveLegacyRouteHandlerMatch(cwd, req.path);
+    if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: routeHandlerMatch.filePath,
           isDev,
+          params: routeHandlerMatch.params,
         });
         return;
       } catch (error) {
@@ -580,23 +581,9 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
 
     // API ROUTES SUPPORT - Next.js App Router Style
     if (req.path.startsWith('/api/')) {
-      const legacyApiPath = resolveLegacyApiRoutePath(cwd, req.path);
-
-      if (legacyApiPath) {
-        try {
-          await runLegacyApiRoute({
-            req,
-            res,
-            apiPath: legacyApiPath,
-            isDev,
-          });
-          return;
-        } catch (error) {
-          console.error(
-            `[vista:ssr] API route error: ${(error as Error)?.message ?? String(error)}`
-          );
-          return res.status(500).json({ error: 'Internal Server Error in API' });
-        }
+      const agentHandled = await tryHandleAgentRequest(req, res, cwd, isDev);
+      if (agentHandled) {
+        return;
       }
 
       const typedHandled = await runTypedApiRoute({
