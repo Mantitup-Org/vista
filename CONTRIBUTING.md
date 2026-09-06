@@ -44,14 +44,14 @@ Listed issues will generally receive **higher priority during contribution evalu
 Fork the repository from GitHub:
 
 ```text
-https://github.com/vistakit/Vista-Js
+https://github.com/Mantitup-Org/vista
 ```
 
 Then clone your fork:
 
 ```bash
-git clone https://github.com/<your-username>/Vista-Js.git
-cd Vista-Js
+git clone https://github.com/<your-username>/vista.git
+cd vista
 pnpm install
 ```
 
@@ -272,7 +272,7 @@ Before opening a Pull Request, make sure:
 - [ ] The branch follows the `branch-name-username` naming format.
 - [ ] The branch is focused on a single fix, feature, or contribution.
 - [ ] The relevant issue is referenced, if applicable.
-- [ ] Changed documentation mentions the correct repository URL: `https://github.com/vistakit/Vista-Js.git`
+- [ ] Changed documentation mentions the correct repository URL: `https://github.com/Mantitup-Org/vista.git`
 - [ ] Package versions are not bumped unless this is a release task.
 - [ ] Committed `dist` output matches changed source where required.
 - [ ] Relevant tests/builds have been run.

@@ -6,7 +6,7 @@ Render is the recommended platform for Vista since it supports **long-running No
 
 1. **Go to [render.com/new](https://dashboard.render.com/new)**
 
-2. **Select "Blueprint"** and connect your GitHub repo (`vistagen/Vista-Js`)
+2. **Select "Blueprint"** and connect your GitHub repo (`Mantitup-Org/vista`)
 
 3. **Render will auto-detect `render.yaml`** and configure everything
 
@@ -22,7 +22,7 @@ If you prefer manual configuration:
 
 2. **Select "Web Service"**
 
-3. **Connect your GitHub repo** (`vistagen/Vista-Js`)
+3. **Connect your GitHub repo** (`Mantitup-Org/vista`)
 
 4. **Configure:**
    - **Name:** `vista-web`

@@ -7,6 +7,8 @@ Vista.js is a React 19 framework with App Router conventions, React Server Compo
 
 Official site: https://vista-js.vercel.app
 
+Repository: https://github.com/Mantitup-Org/vista
+
 ## Packages
 
 | Package | Purpose |
@@ -88,7 +90,7 @@ import { cookies, headers, draftMode } from 'vista/server';
 ## Monorepo Layout
 
 ```text
-vista-source/
+vista/
 ├── apps/
 │   └── web/                    # Official website and docs at vista.xyz
 ├── bench/                      # Vista-first benchmark fixtures
@@ -170,6 +172,7 @@ git push origin vx.y.z
 
 ## Learn More
 
+- Repository: https://github.com/Mantitup-Org/vista
 - Official site: https://vista-js.vercel.app
 - Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Internal contributor guide: [developer.md](developer.md)

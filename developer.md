@@ -2,7 +2,7 @@
 
 Version: 0.2.16
 Last updated: 2026-03-29
-Repository: https://github.com/vistakit/Vista-Js.git
+Repository: https://github.com/Mantitup-Org/vista.git
 Primary site: https://vista.xyz/
 Main package: `@vistagenic/vista`
 
@@ -47,7 +47,7 @@ git push origin vx.y.z
 ## 3. Repository Map
 
 ```text
-vista-source/
+vista/
 ├── apps/
 │   └── web/                    # official website/docs, built with Vista itself
 ├── bench/                      # Vista-only benchmark fixtures and runners

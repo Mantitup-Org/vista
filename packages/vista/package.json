@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vistakit/Vista-Js.git",
+    "url": "git+https://github.com/Mantitup-Org/vista.git",
     "directory": "packages/vista"
   },
   "author": "Vista Team",
