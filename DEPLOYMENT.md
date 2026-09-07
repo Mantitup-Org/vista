@@ -1,3 +1,7 @@
+# Deploying Vista
+
+`vista build` writes zero-config adapters to `.vista/deploy/` for Render, Docker, Vercel, and Cloudflare. Full-stack apps (API routes, Server Actions, agents) should use a Node.js host.
+
 # Deploying Vista to Render
 
 Render is the recommended platform for Vista since it supports **long-running Node.js servers**.

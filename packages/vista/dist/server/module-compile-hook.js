@@ -118,6 +118,12 @@ function createStringLiteral(value) {
         span: createSpan(),
     };
 }
+function createNullLiteral() {
+    return {
+        type: 'NullLiteral',
+        span: createSpan(),
+    };
+}
 function createRuntimeMemberExpression(runtimeIdentifier, propertyName) {
     return {
         type: 'MemberExpression',
@@ -130,7 +136,7 @@ function createRuntimeMemberExpression(runtimeIdentifier, propertyName) {
         span: createSpan(),
     };
 }
-function createRegisterReferenceCall(targetExpression, id, exportName = 'default') {
+function createRegisterReferenceCall(targetExpression, id, exportName = null) {
     return {
         type: 'CallExpression',
         ctxt: 0,
@@ -139,16 +145,25 @@ function createRegisterReferenceCall(targetExpression, id, exportName = 'default
         arguments: [
             { spread: null, expression: targetExpression },
             { spread: null, expression: createStringLiteral(id) },
-            { spread: null, expression: createStringLiteral(exportName) },
+            {
+                spread: null,
+                expression: exportName == null ? createNullLiteral() : createStringLiteral(exportName),
+            },
         ],
         typeArguments: null,
     };
 }
-function createRegistrationStatement(identifierName, id, exportName = 'default') {
+function createRegistrationStatement(identifierName, id, exportName = null) {
     return {
         type: 'ExpressionStatement',
         span: createSpan(),
-        expression: createRegisterReferenceCall(createIdentifier(identifierName), id, exportName),
+        expression: {
+            type: 'AssignmentExpression',
+            span: createSpan(),
+            operator: '=',
+            left: createIdentifier(identifierName),
+            right: createRegisterReferenceCall(createIdentifier(identifierName), id, exportName),
+        },
     };
 }
 function createUseCacheWrapCall(targetExpression, filename, exportName) {
@@ -220,7 +235,7 @@ function processFunctionLikeDeclaration(statement, filename, state, nextStatemen
     const identifierName = statement.identifier?.value;
     if (identifierName && hasServerDirectiveInFunctionLike(statement)) {
         const actionId = (0, runtime_actions_1.createInlineServerActionId)(filename, state.nextOrdinal++, identifierName);
-        nextStatements.push(createRegistrationStatement(identifierName, actionId, identifierName));
+        nextStatements.push(createRegistrationStatement(identifierName, actionId, null));
         state.serverActionsTransformed = true;
     }
     if (identifierName && hasCacheDirectiveInFunctionLike(statement)) {
@@ -265,7 +280,7 @@ function processStatementList(statements, filename, state) {
                 nextStatements.push(statement);
                 if (identifierName && hasServerDirectiveInFunctionLike(statement.declaration)) {
                     const actionId = (0, runtime_actions_1.createInlineServerActionId)(filename, state.nextOrdinal++, identifierName);
-                    nextStatements.push(createRegistrationStatement(identifierName, actionId, identifierName));
+                    nextStatements.push(createRegistrationStatement(identifierName, actionId, null));
                     state.serverActionsTransformed = true;
                 }
                 if (identifierName && hasCacheDirectiveInFunctionLike(statement.declaration)) {
@@ -372,7 +387,7 @@ function processExpression(expression, filename, state, hint = 'action') {
         if (hasServerDirectiveInFunctionLike(expression)) {
             const actionId = (0, runtime_actions_1.createInlineServerActionId)(filename, state.nextOrdinal++, expression.identifier?.value || hint);
             state.serverActionsTransformed = true;
-            return createRegisterReferenceCall(expression, actionId, expression.identifier?.value || hint);
+            return createRegisterReferenceCall(expression, actionId, null);
         }
         if (hasCacheDirectiveInFunctionLike(expression)) {
             state.useCacheTransformed = true;

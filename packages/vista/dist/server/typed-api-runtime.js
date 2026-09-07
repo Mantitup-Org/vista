@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.resolveLegacyApiRoutePath = resolveLegacyApiRoutePath;
+exports.resolveLegacyRouteHandlerMatch = resolveLegacyRouteHandlerMatch;
 exports.resolveLegacyRouteHandlerPath = resolveLegacyRouteHandlerPath;
 exports.runLegacyApiRoute = runLegacyApiRoute;
 exports.runTypedApiRoute = runTypedApiRoute;
@@ -342,13 +343,140 @@ async function executeTypedRoute(router, options) {
         payload: result.serializedData,
     };
 }
+const ROUTE_HANDLER_FILENAMES = ROUTE_FILE_EXTENSIONS.map((ext) => `route${ext}`);
+function isRouteGroupSegment(segment) {
+    return segment.startsWith('(') && segment.endsWith(')');
+}
+// `resolveLegacyRouteHandlerMatch` runs for every request without an exact
+// `route.*` match (pages included), so the recursive `app/` walk is cached per
+// app directory. Production apps never change on disk, so the scan is kept for
+// the life of the process; dev re-scans on a short TTL to pick up new files.
+const routeHandlerScanCache = new Map();
+const ROUTE_HANDLER_SCAN_TTL_MS = process.env.NODE_ENV === 'production' ? Infinity : 500;
+function getRouteHandlerFiles(appDir) {
+    const cached = routeHandlerScanCache.get(appDir);
+    if (cached && Date.now() - cached.scannedAt < ROUTE_HANDLER_SCAN_TTL_MS) {
+        return cached.files;
+    }
+    const files = [];
+    collectRouteHandlerFiles(appDir, files);
+    routeHandlerScanCache.set(appDir, { files, scannedAt: Date.now() });
+    return files;
+}
+function collectRouteHandlerFiles(dir, results) {
+    if (!fs_1.default.existsSync(dir))
+        return;
+    let entries;
+    try {
+        entries = fs_1.default.readdirSync(dir, { withFileTypes: true });
+    }
+    catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules')
+            continue;
+        const fullPath = path_1.default.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            collectRouteHandlerFiles(fullPath, results);
+            continue;
+        }
+        if (entry.isFile() && ROUTE_HANDLER_FILENAMES.includes(entry.name)) {
+            results.push(fullPath);
+        }
+    }
+}
+function filePathToHandlerPattern(appDir, filePath) {
+    const relativeDir = path_1.default.relative(appDir, path_1.default.dirname(filePath)).replace(/\\/g, '/');
+    const segments = relativeDir.split('/').filter(Boolean).filter((segment) => !isRouteGroupSegment(segment));
+    if (segments.length === 0)
+        return '/';
+    const patterned = segments.map((segment) => {
+        if (segment.startsWith('[[...') && segment.endsWith(']]')) {
+            return `:${segment.slice(4, -2)}*?`;
+        }
+        if (segment.startsWith('[...') && segment.endsWith(']')) {
+            return `:${segment.slice(4, -1)}*`;
+        }
+        if (segment.startsWith('[') && segment.endsWith(']')) {
+            return `:${segment.slice(1, -1)}`;
+        }
+        return segment;
+    });
+    return `/${patterned.join('/')}`;
+}
+function matchHandlerPattern(pathname, pattern) {
+    const patternParts = pattern.split('/').filter(Boolean);
+    const pathParts = pathname.split('/').filter(Boolean);
+    const params = {};
+    for (let i = 0; i < patternParts.length; i++) {
+        const patternPart = patternParts[i];
+        const pathPart = pathParts[i];
+        if (patternPart.endsWith('*?')) {
+            const name = patternPart.slice(1, -2);
+            params[name] = pathParts.slice(i).join('/');
+            return params;
+        }
+        if (patternPart.endsWith('*')) {
+            if (pathParts.length < i + 1)
+                return null;
+            const name = patternPart.slice(1, -1);
+            params[name] = pathParts.slice(i).join('/');
+            return params;
+        }
+        if (patternPart.startsWith(':')) {
+            if (!pathPart)
+                return null;
+            params[patternPart.slice(1)] = pathPart;
+            continue;
+        }
+        if (patternPart !== pathPart)
+            return null;
+    }
+    return patternParts.length === pathParts.length ? params : null;
+}
+function handlerSpecificity(pattern) {
+    const parts = pattern.split('/').filter(Boolean);
+    let score = parts.length * 10;
+    for (const part of parts) {
+        if (part.endsWith('*?'))
+            score -= 3;
+        else if (part.endsWith('*'))
+            score -= 2;
+        else if (part.startsWith(':'))
+            score -= 1;
+    }
+    return score;
+}
 function resolveLegacyApiRoutePath(cwd, requestPath) {
     if (!requestPath.startsWith('/api/')) {
         return null;
     }
     return resolveLegacyRouteHandlerPath(cwd, requestPath);
 }
+function resolveLegacyRouteHandlerMatch(cwd, requestPath) {
+    const exactPath = resolveExactLegacyRouteHandlerPath(cwd, requestPath);
+    if (exactPath) {
+        return { filePath: exactPath, params: {} };
+    }
+    const appDir = path_1.default.resolve(cwd, 'app');
+    const handlers = getRouteHandlerFiles(appDir);
+    const pathname = `/${normalizeRouteRequestPath(requestPath)}`;
+    const matches = [];
+    for (const filePath of handlers) {
+        const pattern = filePathToHandlerPattern(appDir, filePath);
+        const params = matchHandlerPattern(pathname, pattern);
+        if (params) {
+            matches.push({ filePath, params, score: handlerSpecificity(pattern) });
+        }
+    }
+    matches.sort((a, b) => b.score - a.score);
+    return matches[0] ? { filePath: matches[0].filePath, params: matches[0].params } : null;
+}
 function resolveLegacyRouteHandlerPath(cwd, requestPath) {
+    return resolveLegacyRouteHandlerMatch(cwd, requestPath)?.filePath ?? null;
+}
+function resolveExactLegacyRouteHandlerPath(cwd, requestPath) {
     const normalized = normalizeRouteRequestPath(requestPath);
     const routeCandidates = [];
     const metadataRoute = METADATA_ROUTE_MAPPINGS.find((entry) => entry.requestPath === String(requestPath || '').split('?')[0]);
@@ -371,7 +499,7 @@ function resolveLegacyRouteHandlerPath(cwd, requestPath) {
     return null;
 }
 async function runLegacyApiRoute(options) {
-    const { req, res, apiPath, isDev } = options;
+    const { req, res, apiPath, isDev, params = {} } = options;
     if (isDev) {
         delete require.cache[require.resolve(apiPath)];
     }
@@ -385,7 +513,7 @@ async function runLegacyApiRoute(options) {
     if (typeof methodHandler === 'function') {
         const requestBody = await readRouteRequestBody(req);
         const request = createRouteRequest(req, requestBody);
-        const result = await methodHandler(request, { params: {} });
+        const result = await methodHandler(request, { params });
         if (result instanceof Response) {
             await sendFetchResponse(res, result);
             return;

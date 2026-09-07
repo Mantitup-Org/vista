@@ -1,24 +1,25 @@
 /**
  * Vista Middleware Runner
  *
- * Shared middleware execution logic used by both the standard SSR engine
- * and the RSC engine. Discovers `middleware.ts` / `.tsx` / `.js` at the
- * project root, constructs a NextRequest-like object from the Express
- * request, invokes the user middleware, and returns a disposition that
- * the caller can act on.
+ * Discovers and runs middleware for pages and API routes.
+ *
+ * Execution order (parent to child):
+ *   1. Project-root middleware.ts / middleware.js
+ *   2. app/middleware.ts
+ *   3. Nested segment middleware files along the request path
+ *
+ * Supported signatures:
+ *   export async function middleware(request) { return next() }
+ *   export async function middleware({ request, next }) { return next() }
  */
 import type { Request } from 'express';
 export interface MiddlewareResult {
-    /** 'redirect' — send Location header and status */
     kind: 'redirect' | 'rewrite' | 'next' | 'short-circuit' | 'skip';
-    /** HTTP status (e.g. 307 for redirect, 403 for short-circuit) */
     status?: number;
-    /** Redirect target URL or rewrite path */
     location?: string;
-    /** Extra response headers the middleware set (forwarded to client) */
+    body?: string;
     responseHeaders?: Map<string, string>;
 }
-/** The NextRequest-like object we hand to middleware. */
 export interface VistaMiddlewareRequest {
     url: string;
     method: string;
@@ -41,17 +42,15 @@ export interface VistaMiddlewareRequest {
         has: (name: string) => boolean;
     };
 }
-/**
- * Run user-defined middleware for the given request.
- *
- * @param req   Express request
- * @param cwd   Project root (where middleware.ts lives)
- * @param isDev Whether we're in dev mode (busts require cache)
- */
+export interface VistaMiddlewareContext {
+    request: VistaMiddlewareRequest & RequestLike;
+    next: () => Promise<Response>;
+}
+type RequestLike = VistaMiddlewareRequest & {
+    request?: VistaMiddlewareRequest;
+    next?: () => Promise<Response>;
+};
 export declare function runMiddleware(req: Request, cwd: string, isDev: boolean): Promise<MiddlewareResult>;
-/**
- * Apply a MiddlewareResult to the Express request/response.
- * Returns `true` if the response was finalized (caller should `return`),
- * `false` if the request should continue to the next handler.
- */
 export declare function applyMiddlewareResult(result: MiddlewareResult, req: Request, res: import('express').Response): boolean;
+export declare function listMiddlewareFiles(cwd: string, pathname: string): string[];
+export {};

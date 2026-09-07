@@ -100,6 +100,7 @@ function resolveSourceCandidates(packageRoot: string, subpath: string): string[]
     server: [path.join(packageRoot, 'server', 'index')],
     'server/runtime-actions': [path.join(packageRoot, 'server', 'runtime-actions')],
     cache: [path.join(packageRoot, 'server', 'cache')],
+    ai: [path.join(packageRoot, 'ai', 'index')],
   };
 
   if (sourceMap[subpath]) {

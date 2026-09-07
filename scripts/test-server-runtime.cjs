@@ -385,6 +385,16 @@ async function main() {
         inlineAction,
         'Inline action should be registered through the compile hook'
       );
+      assert.equal(
+        String(inlineAction.$$typeof),
+        String(Symbol.for('react.server.reference')),
+        'Inline action should be stamped as a React server reference'
+      );
+      assert.equal(
+        inlineAction.$$id,
+        inlineActionId,
+        'Inline action $$id should match the stable action id'
+      );
 
       const exportedModulePath = path.join(tempProject, 'exported-actions.js');
       fs.writeFileSync(

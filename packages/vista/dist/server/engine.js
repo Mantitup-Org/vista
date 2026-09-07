@@ -27,6 +27,7 @@ const ppr_1 = require("./ppr");
 const registry_1 = require("../font/registry");
 const not_found_page_1 = require("./not-found-page");
 const typed_api_runtime_1 = require("./typed-api-runtime");
+const runtime_1 = require("../ai/runtime");
 const logger_1 = require("./logger");
 const structure_log_1 = require("./structure-log");
 const module_compile_hook_1 = require("./module-compile-hook");
@@ -457,14 +458,15 @@ function startServer(port = 3003, compiler) {
             const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
             if (finalized)
                 return;
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(cwd, req.path);
-            if (routeHandlerPath) {
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveLegacyRouteHandlerMatch)(cwd, req.path);
+            if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: routeHandlerMatch.filePath,
                         isDev,
+                        params: routeHandlerMatch.params,
                     });
                     return;
                 }
@@ -475,21 +477,9 @@ function startServer(port = 3003, compiler) {
             }
             // API ROUTES SUPPORT - Next.js App Router Style
             if (req.path.startsWith('/api/')) {
-                const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
-                if (legacyApiPath) {
-                    try {
-                        await (0, typed_api_runtime_1.runLegacyApiRoute)({
-                            req,
-                            res,
-                            apiPath: legacyApiPath,
-                            isDev,
-                        });
-                        return;
-                    }
-                    catch (error) {
-                        console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
-                        return res.status(500).json({ error: 'Internal Server Error in API' });
-                    }
+                const agentHandled = await (0, runtime_1.tryHandleAgentRequest)(req, res, cwd, isDev);
+                if (agentHandled) {
+                    return;
                 }
                 const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
                     req,

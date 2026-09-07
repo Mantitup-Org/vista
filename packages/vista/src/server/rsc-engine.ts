@@ -130,11 +130,11 @@ import {
 import { RouteErrorBoundary } from '../components/error-boundary';
 import { RouteSuspense } from '../components/route-suspense';
 import {
-  resolveLegacyRouteHandlerPath,
-  resolveLegacyApiRoutePath,
+  resolveLegacyRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
+import { tryHandleAgentRequest } from '../ai/runtime';
 import { installModuleCompileHook } from './module-compile-hook';
 import { runWithRequestContext, setCurrentSegmentConfig } from './request-context';
 import {
@@ -889,14 +889,8 @@ async function handleApiRoute(
   typedApiConfig: ReturnType<typeof resolveTypedApiConfig>
 ): Promise<void> {
   try {
-    const legacyApiPath = resolveLegacyApiRoutePath(runtimeRoot, req.path);
-    if (legacyApiPath) {
-      await runLegacyApiRoute({
-        req,
-        res,
-        apiPath: legacyApiPath,
-        isDev,
-      });
+    const agentHandled = await tryHandleAgentRequest(req, res, runtimeRoot, isDev);
+    if (agentHandled) {
       return;
     }
 
@@ -1776,14 +1770,15 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
     }
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(runtimeRoot, req.path);
-    if (routeHandlerPath) {
+    const routeHandlerMatch = resolveLegacyRouteHandlerMatch(runtimeRoot, req.path);
+    if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: routeHandlerMatch.filePath,
           isDev,
+          params: routeHandlerMatch.params,
         });
         return;
       } catch (error) {
