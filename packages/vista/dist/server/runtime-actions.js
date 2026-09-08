@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.setRegisterServerReference = setRegisterServerReference;
 exports.createExportServerReferenceId = createExportServerReferenceId;
 exports.createInlineServerActionId = createInlineServerActionId;
 exports.registerInlineServerReference = registerInlineServerReference;
@@ -12,6 +13,9 @@ const url_1 = require("url");
 const path_1 = __importDefault(require("path"));
 const registeredReferences = new Map();
 let cachedRegisterServerReference;
+function setRegisterServerReference(fn) {
+    cachedRegisterServerReference = fn;
+}
 function getRegisterServerReference() {
     if (cachedRegisterServerReference !== undefined) {
         return cachedRegisterServerReference;
@@ -33,10 +37,10 @@ function normalizeExportName(exportName) {
     return value || 'default';
 }
 function normalizeHint(value) {
-    return String(value || 'action')
+    return (String(value || 'action')
         .trim()
         .replace(/[^a-zA-Z0-9_$]+/g, '_')
-        .replace(/^_+|_+$/g, '') || 'action';
+        .replace(/^_+|_+$/g, '') || 'action');
 }
 function createStableFileUrl(filePath) {
     const href = (0, url_1.pathToFileURL)(path_1.default.resolve(filePath)).href;
@@ -57,7 +61,8 @@ function registerInlineServerReference(reference, id, exportName = 'default') {
     const normalizedExportName = normalizeExportName(exportName);
     const registerServerReference = getRegisterServerReference();
     if (registerServerReference) {
-        registerServerReference(reference, id, normalizedExportName);
+        const effectiveExportName = id.includes('#') ? null : normalizedExportName;
+        registerServerReference(reference, id, effectiveExportName);
     }
     registeredReferences.set(id, reference);
     return reference;

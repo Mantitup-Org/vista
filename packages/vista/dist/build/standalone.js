@@ -184,18 +184,48 @@ function readRuntimeManifest(projectRoot) {
   }
 }
 
-function installDependencyRoots(projectRoot, manifest) {
-  const candidates = [];
-  let current = projectRoot;
+function findRepoBoundary(startDir) {
+  let current = startDir;
   while (true) {
-    candidates.push(path.join(current, 'node_modules'));
+    if (
+      fs.existsSync(path.join(current, '.git')) ||
+      fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))
+    ) {
+      return current;
+    }
     const parent = path.dirname(current);
     if (parent === current) break;
     current = parent;
   }
+  return null;
+}
+
+function installDependencyRoots(projectRoot, manifest) {
+  const repoBoundary = findRepoBoundary(projectRoot);
+  if (repoBoundary) {
+    const originalNodeModulePaths = Module._nodeModulePaths;
+    Module._nodeModulePaths = function (from) {
+      const paths = originalNodeModulePaths.call(this, from);
+      return paths.filter((p) => p.startsWith(repoBoundary));
+    };
+    if (Array.isArray(module.paths)) {
+      module.paths = Module._nodeModulePaths(projectRoot);
+    }
+  }
+
+  const candidates = [];
 
   for (const relativePath of manifest?.dependencyRootsRelative || []) {
     candidates.push(path.resolve(projectRoot, relativePath));
+  }
+
+  let current = projectRoot;
+  while (true) {
+    candidates.push(path.join(current, 'node_modules'));
+    if (repoBoundary && current === repoBoundary) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
 
   const existing = candidates.filter((entry) => fs.existsSync(entry));
@@ -296,7 +326,9 @@ function generateStandaloneOutput(options) {
         generatedAt: new Date().toISOString(),
         runtimeRootRelative: path_1.default.relative(cwd, runtimeProjectRoot).replace(/\\/g, '/'),
         frameworkRuntimeRelative: path_1.default.relative(cwd, frameworkRuntimeRoot).replace(/\\/g, '/'),
-        standaloneServerRelative: path_1.default.relative(cwd, path_1.default.join(standaloneDir, 'server.js')).replace(/\\/g, '/'),
+        standaloneServerRelative: path_1.default
+            .relative(cwd, path_1.default.join(standaloneDir, 'server.js'))
+            .replace(/\\/g, '/'),
         fileTraceRelative: path_1.default.relative(cwd, fileTracePath).replace(/\\/g, '/'),
         dependencyRootsRelative: [],
     };

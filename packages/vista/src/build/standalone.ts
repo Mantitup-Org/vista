@@ -1,10 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import {
-  generateRequiredServerFilesManifest,
-  writeArtifactManifest,
-} from './manifest';
+import { generateRequiredServerFilesManifest, writeArtifactManifest } from './manifest';
 import type { ServerManifest } from './rsc/server-manifest';
 
 export interface RuntimeArtifactsManifest {
@@ -261,18 +258,48 @@ function readRuntimeManifest(projectRoot) {
   }
 }
 
-function installDependencyRoots(projectRoot, manifest) {
-  const candidates = [];
-  let current = projectRoot;
+function findRepoBoundary(startDir) {
+  let current = startDir;
   while (true) {
-    candidates.push(path.join(current, 'node_modules'));
+    if (
+      fs.existsSync(path.join(current, '.git')) ||
+      fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))
+    ) {
+      return current;
+    }
     const parent = path.dirname(current);
     if (parent === current) break;
     current = parent;
   }
+  return null;
+}
+
+function installDependencyRoots(projectRoot, manifest) {
+  const repoBoundary = findRepoBoundary(projectRoot);
+  if (repoBoundary) {
+    const originalNodeModulePaths = Module._nodeModulePaths;
+    Module._nodeModulePaths = function (from) {
+      const paths = originalNodeModulePaths.call(this, from);
+      return paths.filter((p) => p.startsWith(repoBoundary));
+    };
+    if (Array.isArray(module.paths)) {
+      module.paths = Module._nodeModulePaths(projectRoot);
+    }
+  }
+
+  const candidates = [];
 
   for (const relativePath of manifest?.dependencyRootsRelative || []) {
     candidates.push(path.resolve(projectRoot, relativePath));
+  }
+
+  let current = projectRoot;
+  while (true) {
+    candidates.push(path.join(current, 'node_modules'));
+    if (repoBoundary && current === repoBoundary) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
   }
 
   const existing = candidates.filter((entry) => fs.existsSync(entry));
@@ -353,7 +380,10 @@ export function generateStandaloneOutput(options: StandaloneOutputOptions): void
     frameworkRuntimeRoot,
   };
 
-  const rebasedServerManifest = rewriteManifestValue(serverManifest, rewriteContext) as ServerManifest;
+  const rebasedServerManifest = rewriteManifestValue(
+    serverManifest,
+    rewriteContext
+  ) as ServerManifest;
   writeJsonFile(path.join(vistaDir, 'server', 'server-manifest.json'), rebasedServerManifest);
 
   const manifestFiles = [
@@ -383,7 +413,9 @@ export function generateStandaloneOutput(options: StandaloneOutputOptions): void
     generatedAt: new Date().toISOString(),
     runtimeRootRelative: path.relative(cwd, runtimeProjectRoot).replace(/\\/g, '/'),
     frameworkRuntimeRelative: path.relative(cwd, frameworkRuntimeRoot).replace(/\\/g, '/'),
-    standaloneServerRelative: path.relative(cwd, path.join(standaloneDir, 'server.js')).replace(/\\/g, '/'),
+    standaloneServerRelative: path
+      .relative(cwd, path.join(standaloneDir, 'server.js'))
+      .replace(/\\/g, '/'),
     fileTraceRelative: path.relative(cwd, fileTracePath).replace(/\\/g, '/'),
     dependencyRootsRelative: [],
   };
