@@ -457,14 +457,15 @@ function startServer(port = 3003, compiler) {
             const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
             if (finalized)
                 return;
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(cwd, req.path);
-            if (routeHandlerPath) {
+            const resolvedRoute = (0, typed_api_runtime_1.resolveRouteHandler)(cwd, req.path, { isDev });
+            if (resolvedRoute) {
                 try {
-                    await (0, typed_api_runtime_1.runLegacyApiRoute)({
+                    await (0, typed_api_runtime_1.runRouteHandler)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: resolvedRoute.filePath,
                         isDev,
+                        params: resolvedRoute.params,
                     });
                     return;
                 }
@@ -475,22 +476,6 @@ function startServer(port = 3003, compiler) {
             }
             // API ROUTES SUPPORT - Next.js App Router Style
             if (req.path.startsWith('/api/')) {
-                const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
-                if (legacyApiPath) {
-                    try {
-                        await (0, typed_api_runtime_1.runLegacyApiRoute)({
-                            req,
-                            res,
-                            apiPath: legacyApiPath,
-                            isDev,
-                        });
-                        return;
-                    }
-                    catch (error) {
-                        console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
-                        return res.status(500).json({ error: 'Internal Server Error in API' });
-                    }
-                }
                 const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
                     req,
                     res,

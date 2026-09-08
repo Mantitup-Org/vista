@@ -428,7 +428,7 @@ async function buildRSC(watch = false) {
         pattern: route.pattern,
         pagePath: route.pagePath,
         type: route.type,
-    })));
+    })), serverManifest.routeHandlers);
     (0, manifest_1.writeReservedVistaArtifacts)(vistaDirs.root, {
         buildId,
         engineVariant,

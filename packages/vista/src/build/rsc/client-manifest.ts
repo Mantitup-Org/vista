@@ -134,12 +134,14 @@ function scanForClientComponents(
     const fullPath = path.join(dir, item.name);
 
     if (item.isDirectory()) {
-      if (!item.name.startsWith('.') && item.name !== 'node_modules') {
+      if (!item.name.startsWith('.') && item.name !== 'node_modules' && item.name !== 'api') {
         scanForClientComponents(fullPath, scanRoot, components, pathPrefix);
       }
     } else if (item.isFile()) {
       const ext = path.extname(item.name);
       if (!['.tsx', '.ts', '.jsx', '.js'].includes(ext)) continue;
+      const base = path.basename(item.name, ext);
+      if (base === 'route') continue;
 
       try {
         const source = fs.readFileSync(fullPath, 'utf-8');

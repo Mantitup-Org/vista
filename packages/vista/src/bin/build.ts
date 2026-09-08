@@ -419,9 +419,11 @@ export async function buildClient(
   // Write canonical artifact manifests for legacy mode.
   try {
     const { getRouteTree } = require('./file-scanner');
+    const { discoverRouteHandlers } = require('../server/route-handler-registry');
     const routeTree = getRouteTree(appDir);
     const routes = collectRouteArtifactEntries(routeTree);
-    writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, routes);
+    const routeHandlers = discoverRouteHandlers(appDir);
+    writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, routes, routeHandlers);
   } catch (error) {
     // Keep build behavior resilient in environments where route scan fails.
     writeCanonicalVistaArtifacts(cwd, vistaDir, buildId, []);

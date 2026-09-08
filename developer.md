@@ -140,6 +140,37 @@ A few files matter a lot because regressions there tend to fan out:
 - `packages/vista/src/theme/theme-provider.tsx`: package-level theme provider export
 - `packages/vista/src/theme/theme-script.tsx`: early theme bootstrap script
 
+### 5.4 File-based API routes
+
+Route handlers (`app/**/route.{ts,tsx,js,jsx}`) are owned by four files:
+
+- `src/server/route-patterns.ts` - pure parsing/matching of `[id]`, `[...slug]`,
+  `[[...slug]]`, and `(group)` segments into the same `:name` / `:name*` patterns the
+  page router emits. No filesystem, no express; this is the piece to unit test.
+- `src/server/route-handler-registry.ts` - the single filesystem scan. Both the build
+  scanner and the request-time resolver call it, which is what keeps the manifest and
+  the runtime from disagreeing about which files are routes. Results are cached, with
+  a short TTL in dev so new files appear without a restart.
+- `src/server/typed-api-runtime.ts` - `resolveRouteHandler()` / `resolveRouteHandlerMatch()`
+  (static probe first, then the discovered table) and `runRouteHandler()` / `runLegacyApiRoute()`
+  (method dispatch, params, HEAD/OPTIONS/405).
+- `src/build/rsc/server-manifest.ts` - emits `routeHandlers` into the server manifest,
+  which `src/build/manifest.ts` turns into the `routeHandlers` array in
+  `routes-manifest.json` and entries in `app-path-routes-manifest.json`.
+
+Both engines share this path: `engine.ts` and `rsc-engine.ts` each call
+`resolveRouteHandler()` before falling through to pages or the typed API, so a
+change here lands on `default` and `flashpack` at once.
+
+Two things are easy to get wrong:
+
+- `scanForServerComponents()` in `server-manifest.ts` skips directories named `api`
+  and treats every file it does find as a React component. Route handlers are
+  therefore discovered separately, not by extending that walk.
+- A page and a route handler cannot both own a URL. `structure-validator.ts` flags this
+  as `ROUTE_PAGE_CONFLICT` and `generateAppPathRoutesManifest()` resolves that collision in
+  favour of the page.
+
 ## 6. Engine Model
 
 Vista currently has two main engine paths.
@@ -286,6 +317,7 @@ These are the most important scripts to know:
 - `scripts/test-rust-bridge.cjs`
 - `scripts/test-create-vista-app-scaffold.cjs`
 - `scripts/test-server-runtime.cjs`
+- `scripts/test-api-routes.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`
@@ -398,7 +430,7 @@ pnpm bench:quick
 ## 15. If You Touch These Areas, Also Check These
 
 - `packages/vista/src/server/*`
-  - run `pnpm test:server-runtime`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
+  - run `pnpm test:server-runtime`, `pnpm test:api-routes`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
 - `packages/vista/src/flashpack/*`
   - run `pnpm test:flashpack-dev`, `pnpm test:flashpack-state`
 - `packages/vista/src/theme/*`
