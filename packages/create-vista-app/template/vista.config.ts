@@ -12,6 +12,10 @@ const config = {
   // server: {
   //   port: 3003
   // }
+  deploy: {
+    // Platform target: 'auto' | 'render' | 'vercel' | 'cloudflare' | 'netlify' | 'docker'
+    target: 'auto',
+  },
 };
 
 export default config;
