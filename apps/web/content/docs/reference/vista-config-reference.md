@@ -68,7 +68,25 @@ const config = {
 export default config;
 ```
 
+## Deploy Config
+
+```ts
+const config = {
+  deploy: {
+    target: 'auto', // 'auto' | 'render' | 'vercel' | 'cloudflare' | 'netlify' | 'docker'
+    output: 'standalone', // 'standalone' | 'static' | 'hybrid'
+    prod: true,
+    preferBuildOutputApi: true,
+  },
+};
+
+export default config;
+```
+
+Use with `npm run deploy` or `vista deploy`. See [Vista Deploy Command](/docs/deployment/vista-deploy-command).
+
 ## Related
+- [Vista Deploy Command](/docs/deployment/vista-deploy-command)
 - [Typed API Runtime Flow](/docs/core-concepts/typed-api-runtime-flow)
 - [Rust Crates and NAPI Bridge](/docs/reference/rust-crates-and-napi-bridge)
 - [Project File Structure](/docs/reference/project-file-structure)
