@@ -414,6 +414,7 @@ packages:
 
   /@emnapi/wasi-threads@1.1.0:
     resolution: {integrity: sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ==}
+    requiresBuild: true
     dependencies:
       tslib: 2.8.1
 
@@ -9337,7 +9338,7 @@ packages:
       neo-async: 2.6.2
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
-      webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
+      webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.24.2)
       webpack-sources: 3.3.4
     dev: false
 
