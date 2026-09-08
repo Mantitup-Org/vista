@@ -52,6 +52,7 @@ vista.config.ts     # Framework configuration
 | `vista dev`   | Start dev server with the engine selected in `vista.config.ts` |
 | `vista build` | Create production build with the engine selected in `vista.config.ts` |
 | `vista start` | Start production server with the engine selected in `vista.config.ts` |
+| `npm run deploy` | Build and deploy to a hosting platform (Render, Vercel, Cloudflare, Netlify, Docker) |
 | `vista g api-init` | Generate typed API starter files |
 | `vista g router <name>` | Generate a typed router file |
 | `vista g procedure <name> [get\|post]` | Generate a typed procedure file |
@@ -80,6 +81,18 @@ engine: {
 ```
 
 Flashpack engine runtime/cache artifacts are stored in `.flash/`.
+
+## Deploy
+
+Deploy to a supported platform:
+
+```bash
+npm run deploy
+npm run deploy -- --target render --prod
+npm run deploy -- --target vercel --dry-run
+```
+
+Supported targets: `render`, `vercel`, `cloudflare`, `netlify`, `docker`.
 
 ## Typed API Rollback
 
