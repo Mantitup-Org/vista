@@ -41,12 +41,12 @@ export interface VistaMiddlewareRequest {
         has: (name: string) => boolean;
     };
 }
+export interface MiddlewareDef {
+    filePath: string;
+    prefix: string;
+}
 /**
- * Run user-defined middleware for the given request.
- *
- * @param req   Express request
- * @param cwd   Project root (where middleware.ts lives)
- * @param isDev Whether we're in dev mode (busts require cache)
+ * Run a chain of user-defined middlewares for the given request.
  */
 export declare function runMiddleware(req: Request, cwd: string, isDev: boolean): Promise<MiddlewareResult>;
 /**

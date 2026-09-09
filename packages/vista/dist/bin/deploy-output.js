@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateDeploymentOutputs = generateDeploymentOutputs;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const cloudflare_1 = require("./adapters/cloudflare");
 function isVercelBuildEnvironment() {
     return process.env.VERCEL === '1' || process.env.NOW_REGION !== undefined;
 }
@@ -47,8 +48,11 @@ function writeVercelBuildOutput(options) {
     }
     const vercelOutputDir = path_1.default.join(cwd, '.vercel', 'output');
     const vercelStaticDir = path_1.default.join(vercelOutputDir, 'static');
+    const vercelFunctionsDir = path_1.default.join(vercelOutputDir, 'functions');
+    const vercelIndexFuncDir = path_1.default.join(vercelFunctionsDir, 'index.func');
     fs_1.default.rmSync(vercelOutputDir, { recursive: true, force: true });
     fs_1.default.mkdirSync(vercelStaticDir, { recursive: true });
+    fs_1.default.mkdirSync(vercelIndexFuncDir, { recursive: true });
     // Public assets: /favicon.ico, /vista.svg, etc.
     copyDirectoryRecursive(path_1.default.join(cwd, 'public'), vercelStaticDir);
     // Vista static artifacts: /static/pages, /static/chunks, etc.
@@ -57,6 +61,17 @@ function writeVercelBuildOutput(options) {
     const clientCssPath = path_1.default.join(vistaDir, 'client.css');
     copyFileIfPresent(clientCssPath, path_1.default.join(vercelStaticDir, 'client.css'));
     copyFileIfPresent(clientCssPath, path_1.default.join(vercelStaticDir, 'styles.css'));
+    // Standalone server into function
+    const standaloneDir = path_1.default.join(vistaDir, 'standalone');
+    if (fs_1.default.existsSync(standaloneDir)) {
+        copyDirectoryRecursive(standaloneDir, vercelIndexFuncDir);
+        // .vc-config.json
+        fs_1.default.writeFileSync(path_1.default.join(vercelIndexFuncDir, '.vc-config.json'), JSON.stringify({
+            runtime: 'nodejs20.x',
+            handler: 'server.js',
+            launcherType: 'Nodejs',
+        }, null, 2));
+    }
     const config = {
         version: 3,
         routes: [
@@ -66,6 +81,8 @@ function writeVercelBuildOutput(options) {
             { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
             { src: '^/$', dest: '/static/pages/index.html' },
             { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+            { handle: 'miss' },
+            { src: '^/.*$', dest: '/index' }
         ],
     };
     fs_1.default.writeFileSync(path_1.default.join(vercelOutputDir, 'config.json'), JSON.stringify(config, null, 2));
@@ -73,6 +90,33 @@ function writeVercelBuildOutput(options) {
         console.log('[vista:deploy] Generated internal Vercel Build Output at .vercel/output/');
     }
 }
+function writeRenderBuildOutput(options) {
+    const { cwd, debug } = options;
+    if (process.env.RENDER !== '1') {
+        return;
+    }
+    const renderYamlPath = path_1.default.join(cwd, 'render.yaml');
+    if (fs_1.default.existsSync(renderYamlPath)) {
+        if (debug) {
+            console.log('[vista:deploy] Found custom render.yaml, skipping internal Render configuration.');
+        }
+        return;
+    }
+    // Create a default render.yaml
+    const renderYamlContent = `services:
+  - type: web
+    name: vista-app
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node .vista/standalone/server.js
+`;
+    fs_1.default.writeFileSync(renderYamlPath, renderYamlContent);
+    if (debug) {
+        console.log('[vista:deploy] Generated default render.yaml for Render deployment.');
+    }
+}
 function generateDeploymentOutputs(options) {
     writeVercelBuildOutput(options);
+    writeRenderBuildOutput(options);
+    (0, cloudflare_1.writeCloudflareBuildOutput)(options.cwd, options.vistaDir, options.debug);
 }

@@ -115,7 +115,7 @@ function isStringDirectiveStatement(statement: any, directive: string): boolean 
 
 function hasServerDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    (node?.body?.type === 'BlockStatement' || node?.body?.type === 'FunctionBody') &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use server')
@@ -124,7 +124,7 @@ function hasServerDirectiveInFunctionLike(node: any): boolean {
 
 function hasCacheDirectiveInFunctionLike(node: any): boolean {
   return (
-    node?.body?.type === 'BlockStatement' &&
+    (node?.body?.type === 'BlockStatement' || node?.body?.type === 'FunctionBody') &&
     Array.isArray(node.body.stmts) &&
     node.body.stmts.length > 0 &&
     isStringDirectiveStatement(node.body.stmts[0], 'use cache')
@@ -266,7 +266,7 @@ function processFunctionLikeDeclaration(
   state: InlineTransformState,
   nextStatements: any[]
 ): boolean {
-  if (statement?.body?.type !== 'BlockStatement') {
+  if (statement?.body?.type !== 'BlockStatement' && statement?.body?.type !== 'FunctionBody') {
     return false;
   }
 
@@ -303,11 +303,11 @@ function processStatementList(statements: any[], filename: string, state: Inline
     }
 
     if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-      if (statement.decl.body?.type === 'BlockStatement') {
+      if (statement.decl.body?.type === 'BlockStatement' || statement.decl.body?.type === 'FunctionBody') {
         statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
       } else if (
         (statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
-        statement.decl.body?.type === 'BlockStatement'
+        (statement.decl.body?.type === 'BlockStatement' || statement.decl.body?.type === 'FunctionBody')
       ) {
         statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
       }
@@ -470,7 +470,7 @@ function processExpression(
   }
 
   if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-    if (expression.body?.type === 'BlockStatement') {
+    if (expression.body?.type === 'BlockStatement' || expression.body?.type === 'FunctionBody') {
       expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
     }
 

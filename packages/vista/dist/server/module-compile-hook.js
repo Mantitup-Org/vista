@@ -87,13 +87,13 @@ function isStringDirectiveStatement(statement, directive) {
                 statement.expression?.value === directive)));
 }
 function hasServerDirectiveInFunctionLike(node) {
-    return (node?.body?.type === 'BlockStatement' &&
+    return ((node?.body?.type === 'BlockStatement' || node?.body?.type === 'FunctionBody') &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use server'));
 }
 function hasCacheDirectiveInFunctionLike(node) {
-    return (node?.body?.type === 'BlockStatement' &&
+    return ((node?.body?.type === 'BlockStatement' || node?.body?.type === 'FunctionBody') &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use cache'));
@@ -212,7 +212,7 @@ function createRuntimeRequireDeclaration(runtimeIdentifier, runtimeSpecifier) {
     };
 }
 function processFunctionLikeDeclaration(statement, filename, state, nextStatements) {
-    if (statement?.body?.type !== 'BlockStatement') {
+    if (statement?.body?.type !== 'BlockStatement' && statement?.body?.type !== 'FunctionBody') {
         return false;
     }
     statement.body.stmts = processStatementList(statement.body.stmts || [], filename, state);
@@ -241,11 +241,11 @@ function processStatementList(statements, filename, state) {
             continue;
         }
         if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-            if (statement.decl.body?.type === 'BlockStatement') {
+            if (statement.decl.body?.type === 'BlockStatement' || statement.decl.body?.type === 'FunctionBody') {
                 statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
             }
             else if ((statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
-                statement.decl.body?.type === 'BlockStatement') {
+                (statement.decl.body?.type === 'BlockStatement' || statement.decl.body?.type === 'FunctionBody')) {
                 statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
             }
             if ((statement.decl.type === 'FunctionDeclaration' ||
@@ -366,7 +366,7 @@ function processExpression(expression, filename, state, hint = 'action') {
         return expression;
     }
     if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-        if (expression.body?.type === 'BlockStatement') {
+        if (expression.body?.type === 'BlockStatement' || expression.body?.type === 'FunctionBody') {
             expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
         }
         if (hasServerDirectiveInFunctionLike(expression)) {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { writeCloudflareBuildOutput } from './adapters/cloudflare';
 
 interface DeployOutputOptions {
   cwd: string;
@@ -54,9 +55,12 @@ function writeVercelBuildOutput(options: DeployOutputOptions): void {
 
   const vercelOutputDir = path.join(cwd, '.vercel', 'output');
   const vercelStaticDir = path.join(vercelOutputDir, 'static');
+  const vercelFunctionsDir = path.join(vercelOutputDir, 'functions');
+  const vercelIndexFuncDir = path.join(vercelFunctionsDir, 'index.func');
 
   fs.rmSync(vercelOutputDir, { recursive: true, force: true });
   fs.mkdirSync(vercelStaticDir, { recursive: true });
+  fs.mkdirSync(vercelIndexFuncDir, { recursive: true });
 
   // Public assets: /favicon.ico, /vista.svg, etc.
   copyDirectoryRecursive(path.join(cwd, 'public'), vercelStaticDir);
@@ -69,6 +73,26 @@ function writeVercelBuildOutput(options: DeployOutputOptions): void {
   copyFileIfPresent(clientCssPath, path.join(vercelStaticDir, 'client.css'));
   copyFileIfPresent(clientCssPath, path.join(vercelStaticDir, 'styles.css'));
 
+  // Standalone server into function
+  const standaloneDir = path.join(vistaDir, 'standalone');
+  if (fs.existsSync(standaloneDir)) {
+    copyDirectoryRecursive(standaloneDir, vercelIndexFuncDir);
+    
+    // .vc-config.json
+    fs.writeFileSync(
+      path.join(vercelIndexFuncDir, '.vc-config.json'),
+      JSON.stringify(
+        {
+          runtime: 'nodejs20.x',
+          handler: 'server.js',
+          launcherType: 'Nodejs',
+        },
+        null,
+        2
+      )
+    );
+  }
+
   const config = {
     version: 3,
     routes: [
@@ -78,6 +102,8 @@ function writeVercelBuildOutput(options: DeployOutputOptions): void {
       { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
       { src: '^/$', dest: '/static/pages/index.html' },
       { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+      { handle: 'miss' },
+      { src: '^/.*$', dest: '/index' }
     ],
   };
 
@@ -88,6 +114,40 @@ function writeVercelBuildOutput(options: DeployOutputOptions): void {
   }
 }
 
+function writeRenderBuildOutput(options: DeployOutputOptions): void {
+  const { cwd, debug } = options;
+
+  if (process.env.RENDER !== '1') {
+    return;
+  }
+
+  const renderYamlPath = path.join(cwd, 'render.yaml');
+  if (fs.existsSync(renderYamlPath)) {
+    if (debug) {
+      console.log('[vista:deploy] Found custom render.yaml, skipping internal Render configuration.');
+    }
+    return;
+  }
+
+  // Create a default render.yaml
+  const renderYamlContent = `services:
+  - type: web
+    name: vista-app
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: node .vista/standalone/server.js
+`;
+
+  fs.writeFileSync(renderYamlPath, renderYamlContent);
+
+  if (debug) {
+    console.log('[vista:deploy] Generated default render.yaml for Render deployment.');
+  }
+}
+
 export function generateDeploymentOutputs(options: DeployOutputOptions): void {
   writeVercelBuildOutput(options);
+  writeRenderBuildOutput(options);
+  writeCloudflareBuildOutput(options.cwd, options.vistaDir, options.debug);
 }
+
