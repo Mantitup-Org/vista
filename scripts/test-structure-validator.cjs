@@ -90,6 +90,23 @@ function makeRouteConflictFixture() {
   return root;
 }
 
+function makeRoutePageConflictFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-sv-rpconflict-'));
+  writeFile(
+    path.join(root, 'app', 'root.tsx'),
+    "export default function Root({ children }: any) { return children; }\n"
+  );
+  writeFile(
+    path.join(root, 'app', 'api', 'items', 'page.tsx'),
+    "export default function Page() { return 'page'; }\n"
+  );
+  writeFile(
+    path.join(root, 'app', 'api', 'items', 'route.ts'),
+    "export async function GET() { return Response.json({ ok: true }); }\n"
+  );
+  return root;
+}
+
 function makeInvalidNotFoundRouteFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-sv-badnf-'));
   writeFile(
@@ -199,6 +216,13 @@ function run() {
     const fixture = makeRouteConflictFixture();
     const result = validateAppStructure({ cwd: fixture });
     assert(result.issues.some(i => i.code === 'ROUTE_PATTERN_CONFLICT'), 'Expected ROUTE_PATTERN_CONFLICT');
+    return fixture;
+  });
+
+  test('route and page at same level → ROUTE_PAGE_CONFLICT error', () => {
+    const fixture = makeRoutePageConflictFixture();
+    const result = validateAppStructure({ cwd: fixture });
+    assert(result.issues.some(i => i.code === 'ROUTE_PAGE_CONFLICT'), 'Expected ROUTE_PAGE_CONFLICT');
     return fixture;
   });
 

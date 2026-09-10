@@ -30,6 +30,7 @@ vista-debug.log
 **/*.vista-cache
 apps/web/.tmp-web-start.err
 apps/web/.tmp-web-start.out
+.tmp/
 
 # OS
 .DS_Store

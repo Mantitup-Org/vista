@@ -696,13 +696,14 @@ function appendVaryHeader(existing, nextValue) {
 }
 async function handleApiRoute(req, res, runtimeRoot, isDev, typedApiConfig) {
     try {
-        const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(runtimeRoot, req.path);
-        if (legacyApiPath) {
-            await (0, typed_api_runtime_1.runLegacyApiRoute)({
+        const resolvedRoute = (0, typed_api_runtime_1.resolveRouteHandler)(runtimeRoot, req.path);
+        if (resolvedRoute) {
+            await (0, typed_api_runtime_1.runRouteHandler)({
                 req,
                 res,
-                apiPath: legacyApiPath,
+                apiPath: resolvedRoute.filePath,
                 isDev,
+                params: resolvedRoute.params,
             });
             return;
         }
@@ -1369,10 +1370,10 @@ function startRSCServer(options = {}) {
             res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
         }
     };
-    app.get('/rsc*', proxyRSCRequest);
-    app.get('/_rsc*', proxyRSCRequest);
-    app.post('/rsc*', proxyRSCRequest);
-    app.post('/_rsc*', proxyRSCRequest);
+    app.get(/^\/rsc/, proxyRSCRequest);
+    app.get(/^\/_rsc/, proxyRSCRequest);
+    app.post(/^\/rsc/, proxyRSCRequest);
+    app.post(/^\/_rsc/, proxyRSCRequest);
     // -------------------------------------------------------------------
     // User middleware (middleware.ts at project root)
     // -------------------------------------------------------------------
@@ -1439,14 +1440,15 @@ function startRSCServer(options = {}) {
                     return;
                 }
             }
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(runtimeRoot, req.path);
-            if (routeHandlerPath) {
+            const resolvedRoute = (0, typed_api_runtime_1.resolveRouteHandler)(runtimeRoot, req.path);
+            if (resolvedRoute) {
                 try {
-                    await (0, typed_api_runtime_1.runLegacyApiRoute)({
+                    await (0, typed_api_runtime_1.runRouteHandler)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: resolvedRoute.filePath,
                         isDev,
+                        params: resolvedRoute.params,
                     });
                     return;
                 }

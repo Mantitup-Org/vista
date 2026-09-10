@@ -130,6 +130,8 @@ import {
 import { RouteErrorBoundary } from '../components/error-boundary';
 import { RouteSuspense } from '../components/route-suspense';
 import {
+  resolveRouteHandler,
+  runRouteHandler,
   resolveLegacyRouteHandlerPath,
   resolveLegacyApiRoutePath,
   runLegacyApiRoute,
@@ -889,13 +891,14 @@ async function handleApiRoute(
   typedApiConfig: ReturnType<typeof resolveTypedApiConfig>
 ): Promise<void> {
   try {
-    const legacyApiPath = resolveLegacyApiRoutePath(runtimeRoot, req.path);
-    if (legacyApiPath) {
-      await runLegacyApiRoute({
+    const resolvedRoute = resolveRouteHandler(runtimeRoot, req.path);
+    if (resolvedRoute) {
+      await runRouteHandler({
         req,
         res,
-        apiPath: legacyApiPath,
+        apiPath: resolvedRoute.filePath,
         isDev,
+        params: resolvedRoute.params,
       });
       return;
     }
@@ -1688,10 +1691,10 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     }
   };
 
-  app.get('/rsc*', proxyRSCRequest);
-  app.get('/_rsc*', proxyRSCRequest);
-  app.post('/rsc*', proxyRSCRequest);
-  app.post('/_rsc*', proxyRSCRequest);
+  app.get(/^\/rsc/, proxyRSCRequest);
+  app.get(/^\/_rsc/, proxyRSCRequest);
+  app.post(/^\/rsc/, proxyRSCRequest);
+  app.post(/^\/_rsc/, proxyRSCRequest);
 
   // -------------------------------------------------------------------
   // User middleware (middleware.ts at project root)
@@ -1776,14 +1779,15 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
     }
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(runtimeRoot, req.path);
-    if (routeHandlerPath) {
+    const resolvedRoute = resolveRouteHandler(runtimeRoot, req.path);
+    if (resolvedRoute) {
       try {
-        await runLegacyApiRoute({
+        await runRouteHandler({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: resolvedRoute.filePath,
           isDev,
+          params: resolvedRoute.params,
         });
         return;
       } catch (error) {
