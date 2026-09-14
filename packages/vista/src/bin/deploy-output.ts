@@ -1,93 +1,61 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  loadConfig,
+  resolveDeploymentConfig,
+  type VistaConfig,
+  type DeploymentTarget,
+} from '../config';
+import {
+  detectDeploymentTarget,
+  getDeploymentAdapter,
+  type DeploymentContext,
+  type DeploymentResult,
+} from '../deployment';
 
-interface DeployOutputOptions {
+export interface DeployOutputOptions {
   cwd: string;
   vistaDir: string;
   debug?: boolean;
+  target?: string;
+  config?: VistaConfig;
 }
 
-function isVercelBuildEnvironment(): boolean {
-  return process.env.VERCEL === '1' || process.env.NOW_REGION !== undefined;
-}
-
-function hasUserVercelConfig(cwd: string): boolean {
-  return fs.existsSync(path.join(cwd, 'vercel.json'));
-}
-
-function copyDirectoryRecursive(sourceDir: string, targetDir: string): void {
-  if (!fs.existsSync(sourceDir)) return;
-
-  fs.mkdirSync(targetDir, { recursive: true });
-  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const from = path.join(sourceDir, entry.name);
-    const to = path.join(targetDir, entry.name);
-    if (entry.isDirectory()) {
-      copyDirectoryRecursive(from, to);
-    } else if (entry.isFile()) {
-      fs.copyFileSync(from, to);
-    }
-  }
-}
-
-function copyFileIfPresent(sourceFile: string, targetFile: string): void {
-  if (!fs.existsSync(sourceFile)) return;
-  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-  fs.copyFileSync(sourceFile, targetFile);
-}
-
-function writeVercelBuildOutput(options: DeployOutputOptions): void {
+export function generateDeploymentOutputs(options: DeployOutputOptions): DeploymentResult | null {
   const { cwd, vistaDir, debug } = options;
+  const config = options.config || loadConfig(cwd);
+  const deploymentConfig = resolveDeploymentConfig(config.deployment);
 
-  if (!isVercelBuildEnvironment()) {
-    return;
-  }
+  const target: DeploymentTarget = detectDeploymentTarget(cwd, deploymentConfig, options.target);
+  const adapter = getDeploymentAdapter(target);
 
-  if (hasUserVercelConfig(cwd)) {
+  if (!adapter) {
     if (debug) {
-      console.log('[vista:deploy] Found custom vercel.json, skipping internal Vercel output.');
+      console.log(`[vista:deploy] No deployment adapter found for target: "${target}". Skipping.`);
     }
-    return;
+    return null;
   }
 
-  const vercelOutputDir = path.join(cwd, '.vercel', 'output');
-  const vercelStaticDir = path.join(vercelOutputDir, 'static');
-
-  fs.rmSync(vercelOutputDir, { recursive: true, force: true });
-  fs.mkdirSync(vercelStaticDir, { recursive: true });
-
-  // Public assets: /favicon.ico, /vista.svg, etc.
-  copyDirectoryRecursive(path.join(cwd, 'public'), vercelStaticDir);
-
-  // Vista static artifacts: /static/pages, /static/chunks, etc.
-  copyDirectoryRecursive(path.join(vistaDir, 'static'), path.join(vercelStaticDir, 'static'));
-
-  // Global CSS alias support (/styles.css and /client.css)
-  const clientCssPath = path.join(vistaDir, 'client.css');
-  copyFileIfPresent(clientCssPath, path.join(vercelStaticDir, 'client.css'));
-  copyFileIfPresent(clientCssPath, path.join(vercelStaticDir, 'styles.css'));
-
-  const config = {
-    version: 3,
-    routes: [
-      { handle: 'filesystem' },
-      { src: '^/_vista/(.*)$', dest: '/$1' },
-      { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
-      { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
-      { src: '^/$', dest: '/static/pages/index.html' },
-      { src: '^/(.+)$', dest: '/static/pages/$1.html' },
-    ],
+  const context: DeploymentContext = {
+    cwd,
+    vistaDir,
+    config,
+    deploymentConfig,
+    target,
+    debug,
   };
 
-  fs.writeFileSync(path.join(vercelOutputDir, 'config.json'), JSON.stringify(config, null, 2));
+  const result = adapter.generate(context);
 
-  if (debug) {
-    console.log('[vista:deploy] Generated internal Vercel Build Output at .vercel/output/');
+  if (debug || process.env.VISTA_DEBUG) {
+    console.log(`[vista:deploy] Applied deployment adapter "${adapter.name}" (target: ${target})`);
+    if (result.generatedFiles.length > 0) {
+      console.log(`[vista:deploy] Generated files:`);
+      for (const file of result.generatedFiles) {
+        console.log(`  - ${path.relative(cwd, file) || file}`);
+      }
+    }
   }
-}
 
-export function generateDeploymentOutputs(options: DeployOutputOptions): void {
-  writeVercelBuildOutput(options);
+  return result;
 }

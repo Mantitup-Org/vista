@@ -3,8 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.defaultConfig = exports.defaultCacheComponentsConfig = exports.defaultTypedApiConfig = exports.defaultStructureValidationConfig = void 0;
+exports.defaultConfig = exports.defaultDeploymentConfig = exports.defaultCacheComponentsConfig = exports.defaultTypedApiConfig = exports.defaultStructureValidationConfig = void 0;
 exports.resolveStructureValidationConfig = resolveStructureValidationConfig;
+exports.resolveDeploymentConfig = resolveDeploymentConfig;
 exports.resolveEngineVariant = resolveEngineVariant;
 exports.applyEngineVariantToEnv = applyEngineVariantToEnv;
 exports.resolveAndApplyEngineVariant = resolveAndApplyEngineVariant;
@@ -29,11 +30,18 @@ exports.defaultTypedApiConfig = {
 exports.defaultCacheComponentsConfig = {
     enabled: false,
 };
+exports.defaultDeploymentConfig = {
+    target: 'auto',
+    outDir: '',
+    generateBlueprints: true,
+    port: 3003,
+};
 exports.defaultConfig = {
     images: {},
     engine: {
         variant: 'default',
     },
+    deployment: { ...exports.defaultDeploymentConfig },
     validation: {
         structure: { ...exports.defaultStructureValidationConfig },
     },
@@ -49,6 +57,15 @@ function resolveStructureValidationConfig(config) {
     return {
         ...exports.defaultStructureValidationConfig,
         ...(config.validation?.structure ?? {}),
+    };
+}
+function resolveDeploymentConfig(config) {
+    const deployment = config && typeof config === 'object' && 'deployment' in config
+        ? config.deployment
+        : config;
+    return {
+        ...exports.defaultDeploymentConfig,
+        ...(deployment ?? {}),
     };
 }
 function normalizeEngineVariant(raw) {
@@ -142,6 +159,10 @@ function mergeConfig(userConfig) {
         server: {
             ...(exports.defaultConfig.server ?? {}),
             ...(userConfig.server ?? {}),
+        },
+        deployment: {
+            ...exports.defaultDeploymentConfig,
+            ...(userConfig.deployment ?? {}),
         },
         validation: {
             ...(exports.defaultConfig.validation ?? {}),

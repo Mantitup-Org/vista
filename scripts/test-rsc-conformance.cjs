@@ -155,6 +155,12 @@ async function startServer(engineVariant, port) {
       RSC_UPSTREAM_PORT: String(upstreamPort),
       NODE_ENV: 'production',
       VISTA_DEBUG: '1',
+      NODE_PATH: [
+        path.join(repoRoot, 'packages', 'vista', 'node_modules'),
+        process.env.NODE_PATH,
+      ]
+        .filter(Boolean)
+        .join(path.delimiter),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,

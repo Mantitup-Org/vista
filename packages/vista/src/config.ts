@@ -51,6 +51,19 @@ export interface ExperimentalConfig {
   cacheComponents?: CacheComponentsExperimentalConfig;
 }
 
+export type DeploymentTarget = 'auto' | 'vercel' | 'cloudflare' | 'render' | 'docker' | 'node';
+
+export interface DeploymentConfig {
+  /** Target hosting platform: 'auto' | 'vercel' | 'cloudflare' | 'render' | 'docker' | 'node'. Default: 'auto' */
+  target?: DeploymentTarget;
+  /** Custom directory for platform output artifacts (defaults to platform standard, e.g. .vercel/output, .vista/cloudflare) */
+  outDir?: string;
+  /** Automatically generate platform blueprint / config files (render.yaml, Dockerfile, etc.) if missing. Default: true */
+  generateBlueprints?: boolean;
+  /** Override port for container/server deployments. Default: 3003 (or PORT env) */
+  port?: number;
+}
+
 export interface VistaConfig {
   images?: ImageConfig;
   // Add other future config options here suitable for user requests
@@ -59,6 +72,7 @@ export interface VistaConfig {
   server?: {
     port?: number;
   };
+  deployment?: DeploymentConfig;
   validation?: {
     structure?: StructureValidationConfig;
   };
@@ -83,11 +97,19 @@ export const defaultCacheComponentsConfig: Required<CacheComponentsExperimentalC
   enabled: false,
 };
 
+export const defaultDeploymentConfig: Required<DeploymentConfig> = {
+  target: 'auto',
+  outDir: '',
+  generateBlueprints: true,
+  port: 3003,
+};
+
 export const defaultConfig: VistaConfig = {
   images: {},
   engine: {
     variant: 'default',
   },
+  deployment: { ...defaultDeploymentConfig },
   validation: {
     structure: { ...defaultStructureValidationConfig },
   },
@@ -106,6 +128,20 @@ export function resolveStructureValidationConfig(
   return {
     ...defaultStructureValidationConfig,
     ...(config.validation?.structure ?? {}),
+  };
+}
+
+export function resolveDeploymentConfig(
+  config?: VistaConfig | DeploymentConfig
+): Required<DeploymentConfig> {
+  const deployment =
+    config && typeof config === 'object' && 'deployment' in config
+      ? (config as VistaConfig).deployment
+      : (config as DeploymentConfig | undefined);
+
+  return {
+    ...defaultDeploymentConfig,
+    ...(deployment ?? {}),
   };
 }
 
@@ -192,9 +228,7 @@ export function resolveTypedApiConfig(config: VistaConfig): ResolvedTypedApiConf
   };
 }
 
-export function resolveCacheComponentsConfig(
-  config: VistaConfig
-): ResolvedCacheComponentsConfig {
+export function resolveCacheComponentsConfig(config: VistaConfig): ResolvedCacheComponentsConfig {
   const merged = {
     ...defaultCacheComponentsConfig,
     ...(config.experimental?.cacheComponents ?? {}),
@@ -228,6 +262,10 @@ function mergeConfig(userConfig: VistaConfig): VistaConfig {
     server: {
       ...(defaultConfig.server ?? {}),
       ...(userConfig.server ?? {}),
+    },
+    deployment: {
+      ...defaultDeploymentConfig,
+      ...(userConfig.deployment ?? {}),
     },
     validation: {
       ...(defaultConfig.validation ?? {}),

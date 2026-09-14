@@ -1,0 +1,11 @@
+import type { DeploymentTarget } from '../config';
+import type { DeploymentAdapter } from './types';
+export * from './types';
+export * from './detector';
+export { vercelAdapter } from './adapters/vercel';
+export { cloudflareAdapter } from './adapters/cloudflare';
+export { renderAdapter } from './adapters/render';
+export { dockerAdapter } from './adapters/docker';
+export declare const nodeAdapter: DeploymentAdapter;
+export declare function getDeploymentAdapter(target: DeploymentTarget): DeploymentAdapter | null;
+export declare function getAllDeploymentAdapters(): DeploymentAdapter[];
