@@ -109,6 +109,14 @@
       "types": "./dist/server/cache.d.ts",
       "default": "./dist/server/cache.js"
     },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "default": "./dist/ai/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "default": "./dist/adapters/index.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

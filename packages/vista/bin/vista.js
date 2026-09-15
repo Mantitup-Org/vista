@@ -228,6 +228,17 @@ if (command === 'dev') {
     const { startServer } = require('../dist/server/engine');
     startServer(process.env.PORT || 3003);
   }
+} else if (command === 'deploy') {
+  forceRuntimeEnv('production');
+  const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
+  const targetAdapter = getFlagValue('--adapter');
+  generateDeploymentOutputs({
+    cwd: process.cwd(),
+    vistaDir: path.join(process.cwd(), '.vista'),
+    adapter: targetAdapter,
+    debug: flags.includes('--debug'),
+  });
+  console.log('[vista:deploy] Generated deployment outputs.');
 } else {
   console.log('');
   console.log('Vista JS Framework CLI');
@@ -238,6 +249,7 @@ if (command === 'dev') {
   console.log('  dev     Start development server with HMR');
   console.log('  build   Create production build');
   console.log('  start   Start production server');
+  console.log('  deploy  Generate zero-config deployment adapters (vercel, cloudflare, render, docker, node)');
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
   console.log('');
   console.log('Options:');

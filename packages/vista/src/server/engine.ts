@@ -41,8 +41,9 @@ import { revalidatePath } from './static-generator';
 import { getAllFontHTML as getFontHeadHTML } from '../font/registry';
 import { getStyledNotFoundHTML } from './not-found-page';
 import {
-  resolveLegacyRouteHandlerPath,
   resolveLegacyApiRoutePath,
+  resolveLegacyRouteHandlerPath,
+  resolveRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
@@ -560,13 +561,14 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     const finalized = applyMiddlewareResult(middlewareResult, req, res);
     if (finalized) return;
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(cwd, req.path);
-    if (routeHandlerPath) {
+    const routeHandlerMatch = resolveRouteHandlerMatch(cwd, req.path);
+    if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: routeHandlerMatch.filePath,
+          params: routeHandlerMatch.params,
           isDev,
         });
         return;
@@ -580,14 +582,15 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
 
     // API ROUTES SUPPORT - Next.js App Router Style
     if (req.path.startsWith('/api/')) {
-      const legacyApiPath = resolveLegacyApiRoutePath(cwd, req.path);
+      const legacyApiMatch = resolveRouteHandlerMatch(cwd, req.path);
 
-      if (legacyApiPath) {
+      if (legacyApiMatch) {
         try {
           await runLegacyApiRoute({
             req,
             res,
-            apiPath: legacyApiPath,
+            apiPath: legacyApiMatch.filePath,
+            params: legacyApiMatch.params,
             isDev,
           });
           return;

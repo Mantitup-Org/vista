@@ -31,8 +31,16 @@ app/
 ├── root.tsx        # Root layout (<html>, <body>, fonts)
 ├── index.tsx       # Home page
 ├── globals.css     # Global styles (Tailwind CSS v4)
+├── api/
+│   ├── users/
+│   │   ├── route.ts         # GET /api/users, POST /api/users
+│   │   └── [id]/
+│   │       └── route.ts     # GET /api/users/:id, PUT, DELETE
+│   └── chat/
+│       └── route.ts         # AI streaming agent endpoint (POST /api/chat)
 └── about/
     └── page.tsx    # Example nested route → /about
+middleware.ts       # Global & route-specific middleware
 public/
 ├── vista.svg       # Static assets
 vista.config.ts     # Framework configuration
@@ -42,6 +50,9 @@ vista.config.ts     # Framework configuration
 
 - **`app/root.tsx`** — Root layout that wraps every page. Defines `<html>`, fonts, and metadata.
 - **`app/index.tsx`** or **`app/page.tsx`** — Page components. Each folder = a route.
+- **`app/api/**/route.ts`** — Full-stack API endpoints. Export `GET`, `POST`, `PUT`, `PATCH`, `DELETE` handlers with zero config.
+- **`middleware.ts`** — Intercept and mutate requests before they reach pages or API routes.
+- **`vista/ai`** — Built-in AI application framework with agents, tools, memory, and streaming responses.
 - **`'use client'`** — Add this directive to make a component interactive (client-side).
 - **Server Components** — All components are server components by default (zero JS sent to browser).
 

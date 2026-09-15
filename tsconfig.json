@@ -8,7 +8,18 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "vista": ["./packages/vista/src/index.ts"],
+      "vista/ai": ["./packages/vista/src/ai/index.ts"],
+      "vista/adapters": ["./packages/vista/src/adapters/index.ts"],
+      "vista/*": ["./packages/vista/src/*"],
+      "@vistagenic/vista": ["./packages/vista/src/index.ts"],
+      "@vistagenic/vista/ai": ["./packages/vista/src/ai/index.ts"],
+      "@vistagenic/vista/adapters": ["./packages/vista/src/adapters/index.ts"],
+      "@vistagenic/vista/*": ["./packages/vista/src/*"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]

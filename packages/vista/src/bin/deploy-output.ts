@@ -1,10 +1,19 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  nodeAdapter,
+  vercelAdapter,
+  cloudflareAdapter,
+  renderAdapter,
+  dockerAdapter,
+  getAdapter,
+} from '../adapters';
 
 interface DeployOutputOptions {
   cwd: string;
   vistaDir: string;
   debug?: boolean;
+  adapter?: string;
 }
 
 function isVercelBuildEnvironment(): boolean {
@@ -89,5 +98,34 @@ function writeVercelBuildOutput(options: DeployOutputOptions): void {
 }
 
 export function generateDeploymentOutputs(options: DeployOutputOptions): void {
-  writeVercelBuildOutput(options);
+  const { cwd, vistaDir, debug } = options;
+  const targetAdapter = options.adapter || process.env.VISTA_ADAPTER;
+
+  // Always generate node standalone build helper
+  nodeAdapter.build({ cwd, vistaDir, debug });
+
+  if (targetAdapter) {
+    const custom = getAdapter(targetAdapter);
+    if (custom) {
+      custom.build({ cwd, vistaDir, debug });
+      return;
+    }
+  }
+
+  // Automatic platform detection
+  if (isVercelBuildEnvironment() || targetAdapter === 'vercel') {
+    writeVercelBuildOutput(options);
+  }
+
+  if (process.env.CF_PAGES === '1' || process.env.CLOUDFLARE_WORKERS === '1' || targetAdapter === 'cloudflare') {
+    cloudflareAdapter.build({ cwd, vistaDir, debug });
+  }
+
+  if (process.env.RENDER === 'true' || targetAdapter === 'render') {
+    renderAdapter.build({ cwd, vistaDir, debug });
+  }
+
+  if (targetAdapter === 'docker') {
+    dockerAdapter.build({ cwd, vistaDir, debug });
+  }
 }

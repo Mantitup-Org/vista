@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateDeploymentOutputs = generateDeploymentOutputs;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const adapters_1 = require("../adapters");
 function isVercelBuildEnvironment() {
     return process.env.VERCEL === '1' || process.env.NOW_REGION !== undefined;
 }
@@ -74,5 +75,28 @@ function writeVercelBuildOutput(options) {
     }
 }
 function generateDeploymentOutputs(options) {
-    writeVercelBuildOutput(options);
+    const { cwd, vistaDir, debug } = options;
+    const targetAdapter = options.adapter || process.env.VISTA_ADAPTER;
+    // Always generate node standalone build helper
+    adapters_1.nodeAdapter.build({ cwd, vistaDir, debug });
+    if (targetAdapter) {
+        const custom = (0, adapters_1.getAdapter)(targetAdapter);
+        if (custom) {
+            custom.build({ cwd, vistaDir, debug });
+            return;
+        }
+    }
+    // Automatic platform detection
+    if (isVercelBuildEnvironment() || targetAdapter === 'vercel') {
+        writeVercelBuildOutput(options);
+    }
+    if (process.env.CF_PAGES === '1' || process.env.CLOUDFLARE_WORKERS === '1' || targetAdapter === 'cloudflare') {
+        adapters_1.cloudflareAdapter.build({ cwd, vistaDir, debug });
+    }
+    if (process.env.RENDER === 'true' || targetAdapter === 'render') {
+        adapters_1.renderAdapter.build({ cwd, vistaDir, debug });
+    }
+    if (targetAdapter === 'docker') {
+        adapters_1.dockerAdapter.build({ cwd, vistaDir, debug });
+    }
 }

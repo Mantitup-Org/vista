@@ -1439,13 +1439,14 @@ function startRSCServer(options = {}) {
                     return;
                 }
             }
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(runtimeRoot, req.path);
-            if (routeHandlerPath) {
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(runtimeRoot, req.path);
+            if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: routeHandlerMatch.filePath,
+                        params: routeHandlerMatch.params,
                         isDev,
                     });
                     return;

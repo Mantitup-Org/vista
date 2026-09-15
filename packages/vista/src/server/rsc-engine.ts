@@ -132,6 +132,7 @@ import { RouteSuspense } from '../components/route-suspense';
 import {
   resolveLegacyRouteHandlerPath,
   resolveLegacyApiRoutePath,
+  resolveRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
@@ -1776,13 +1777,14 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
     }
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(runtimeRoot, req.path);
-    if (routeHandlerPath) {
+    const routeHandlerMatch = resolveRouteHandlerMatch(runtimeRoot, req.path);
+    if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: routeHandlerMatch.filePath,
+          params: routeHandlerMatch.params,
           isDev,
         });
         return;

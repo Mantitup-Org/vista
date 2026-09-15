@@ -457,13 +457,14 @@ function startServer(port = 3003, compiler) {
             const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
             if (finalized)
                 return;
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(cwd, req.path);
-            if (routeHandlerPath) {
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path);
+            if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: routeHandlerMatch.filePath,
+                        params: routeHandlerMatch.params,
                         isDev,
                     });
                     return;
@@ -475,13 +476,14 @@ function startServer(port = 3003, compiler) {
             }
             // API ROUTES SUPPORT - Next.js App Router Style
             if (req.path.startsWith('/api/')) {
-                const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
-                if (legacyApiPath) {
+                const legacyApiMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path);
+                if (legacyApiMatch) {
                     try {
                         await (0, typed_api_runtime_1.runLegacyApiRoute)({
                             req,
                             res,
-                            apiPath: legacyApiPath,
+                            apiPath: legacyApiMatch.filePath,
+                            params: legacyApiMatch.params,
                             isDev,
                         });
                         return;

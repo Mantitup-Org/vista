@@ -7,7 +7,7 @@
  * request, invokes the user middleware, and returns a disposition that
  * the caller can act on.
  */
-import type { Request } from 'express';
+import type { Request as ExpressRequest } from 'express';
 export interface MiddlewareResult {
     /** 'redirect' — send Location header and status */
     kind: 'redirect' | 'rewrite' | 'next' | 'short-circuit' | 'skip';
@@ -17,12 +17,14 @@ export interface MiddlewareResult {
     location?: string;
     /** Extra response headers the middleware set (forwarded to client) */
     responseHeaders?: Map<string, string>;
+    /** Optional response body when short-circuiting */
+    body?: Buffer | string;
 }
 /** The NextRequest-like object we hand to middleware. */
-export interface VistaMiddlewareRequest {
+export interface VistaMiddlewareRequest extends Request {
     url: string;
     method: string;
-    headers: Map<string, string | string[] | undefined>;
+    headers: any;
     nextUrl: {
         pathname: string;
         searchParams: URLSearchParams;
@@ -41,17 +43,11 @@ export interface VistaMiddlewareRequest {
         has: (name: string) => boolean;
     };
 }
-/**
- * Run user-defined middleware for the given request.
- *
- * @param req   Express request
- * @param cwd   Project root (where middleware.ts lives)
- * @param isDev Whether we're in dev mode (busts require cache)
- */
-export declare function runMiddleware(req: Request, cwd: string, isDev: boolean): Promise<MiddlewareResult>;
-/**
- * Apply a MiddlewareResult to the Express request/response.
- * Returns `true` if the response was finalized (caller should `return`),
- * `false` if the request should continue to the next handler.
- */
-export declare function applyMiddlewareResult(result: MiddlewareResult, req: Request, res: import('express').Response): boolean;
+export interface MiddlewareContext {
+    request: VistaMiddlewareRequest;
+    next: (options?: {
+        headers?: HeadersInit;
+    }) => Response;
+}
+export declare function runMiddleware(req: ExpressRequest, cwd: string, isDev: boolean): Promise<MiddlewareResult>;
+export declare function applyMiddlewareResult(result: MiddlewareResult, req: ExpressRequest, res: import('express').Response): boolean;

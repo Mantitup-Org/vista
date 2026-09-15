@@ -28,6 +28,9 @@ function discoverMiddleware(cwd, bustCache) {
         path_1.default.resolve(cwd, 'middleware.ts'),
         path_1.default.resolve(cwd, 'middleware.tsx'),
         path_1.default.resolve(cwd, 'middleware.js'),
+        path_1.default.resolve(cwd, 'src', 'middleware.ts'),
+        path_1.default.resolve(cwd, 'src', 'middleware.tsx'),
+        path_1.default.resolve(cwd, 'src', 'middleware.js'),
     ];
     for (const p of candidates) {
         if (fs_1.default.existsSync(p)) {
@@ -39,104 +42,163 @@ function discoverMiddleware(cwd, bustCache) {
     return null;
 }
 // ---------------------------------------------------------------------------
-// Build NextRequest-like object
+// Build NextRequest-like and Web API Request object
 // ---------------------------------------------------------------------------
-function buildNextRequest(req) {
-    const protocol = req.protocol;
-    const host = req.get('host') || 'localhost';
-    const fullUrl = `${protocol}://${host}${req.originalUrl}`;
-    return {
-        url: fullUrl,
-        method: req.method,
-        headers: new Map(Object.entries(req.headers)),
-        nextUrl: {
-            pathname: req.path,
-            searchParams: new URLSearchParams(req.query),
-            href: fullUrl,
-            origin: `${protocol}://${host}`,
-        },
-        cookies: {
-            get: (name) => req.cookies?.[name] ? { name, value: req.cookies[name] } : undefined,
-            getAll: () => Object.entries(req.cookies || {}).map(([n, v]) => ({
-                name: n,
-                value: v,
-            })),
-            has: (name) => !!req.cookies?.[name],
-        },
+function buildMiddlewareRequest(req) {
+    const protocol = req.protocol || 'http';
+    const host = (typeof req.get === 'function' ? req.get('host') : req.headers?.host) || 'localhost';
+    const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+    const requestUrl = new URL(fullUrl);
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers || {})) {
+        if (Array.isArray(v)) {
+            for (const item of v)
+                headers.append(k, item);
+        }
+        else if (v !== undefined) {
+            headers.set(k, String(v));
+        }
+    }
+    const cookieMap = new Map();
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+        for (const cookie of cookieHeader.split(';')) {
+            const [name, ...val] = cookie.trim().split('=');
+            if (name)
+                cookieMap.set(name, decodeURIComponent(val.join('=')));
+        }
+    }
+    const cookies = {
+        get: (name) => cookieMap.has(name) ? { name, value: cookieMap.get(name) } : undefined,
+        getAll: () => Array.from(cookieMap.entries()).map(([name, value]) => ({ name, value })),
+        has: (name) => cookieMap.has(name),
     };
+    const nextUrl = {
+        pathname: req.path || requestUrl.pathname,
+        searchParams: requestUrl.searchParams,
+        href: fullUrl,
+        origin: requestUrl.origin,
+    };
+    let webRequest;
+    try {
+        webRequest = new Request(fullUrl, {
+            method: req.method,
+            headers,
+        });
+    }
+    catch {
+        webRequest = {
+            url: fullUrl,
+            method: req.method,
+            headers,
+        };
+    }
+    webRequest.nextUrl = nextUrl;
+    webRequest.cookies = cookies;
+    return webRequest;
 }
 // ---------------------------------------------------------------------------
-// Matcher support
+// Matcher support (supports string patterns, RegExp, and array)
 // ---------------------------------------------------------------------------
-/**
- * Evaluate the optional `config.matcher` exported alongside the middleware.
- * Returns `true` if the request matches (or if no matcher is defined).
- */
 function shouldRunMiddleware(middlewareModule, pathname) {
     const config = middlewareModule.config;
     if (!config?.matcher)
         return true;
     const matchers = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
     return matchers.some((pattern) => {
-        // Simple path-prefix matching with basic wildcard support
-        // e.g. '/dashboard/:path*' → matches /dashboard, /dashboard/settings …
-        const re = patternToRegExp(pattern);
-        return re.test(pathname);
+        if (pattern instanceof RegExp) {
+            return pattern.test(pathname);
+        }
+        if (typeof pattern === 'string') {
+            if (pattern.startsWith('^') || pattern.endsWith('$')) {
+                try {
+                    return new RegExp(pattern).test(pathname);
+                }
+                catch {
+                    // fall through
+                }
+            }
+            const re = patternToRegExp(pattern);
+            return re.test(pathname);
+        }
+        if (pattern && typeof pattern === 'object' && typeof pattern.source === 'string') {
+            try {
+                return new RegExp(pattern.source, pattern.flags).test(pathname);
+            }
+            catch {
+                return false;
+            }
+        }
+        return true;
     });
 }
+const patternRegexCache = new Map();
+const MAX_PATTERN_CACHE_SIZE = 512;
 function patternToRegExp(pattern) {
-    // Convert Next.js-style matcher patterns to RegExp:
-    //   /foo/:path*  → /foo(/.*)?
-    //   /foo/:bar    → /foo/[^/]+
-    //   /foo/*       → /foo(/.*)?
+    const cached = patternRegexCache.get(pattern);
+    if (cached) {
+        return cached;
+    }
     let re = pattern
-        .replace(/:[^/]+\*/g, '(.*)') // :path*
-        .replace(/:[^/]+/g, '[^/]+') // :param
-        .replace(/\*/g, '(.*)'); // bare *
-    return new RegExp(`^${re}(/)?$`);
+        .replace(/:[^/]+\*/g, '(.*)')
+        .replace(/:[^/]+/g, '[^/]+')
+        .replace(/\*/g, '(.*)');
+    const compiled = new RegExp(`^${re}(/)?$`);
+    if (patternRegexCache.size >= MAX_PATTERN_CACHE_SIZE) {
+        const firstKey = patternRegexCache.keys().next().value;
+        if (firstKey !== undefined) {
+            patternRegexCache.delete(firstKey);
+        }
+    }
+    patternRegexCache.set(pattern, compiled);
+    return compiled;
 }
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-/**
- * Run user-defined middleware for the given request.
- *
- * @param req   Express request
- * @param cwd   Project root (where middleware.ts lives)
- * @param isDev Whether we're in dev mode (busts require cache)
- */
 async function runMiddleware(req, cwd, isDev) {
     const middlewareFile = discoverMiddleware(cwd, isDev);
     if (!middlewareFile) {
         return { kind: 'skip' };
     }
     try {
-        // Hot-reload: bust require cache in dev
         if (isDev) {
             try {
                 delete require.cache[require.resolve(middlewareFile)];
             }
             catch {
-                // resolve may throw if file was just deleted — treat as skip
                 discoveryCache.delete(cwd);
                 return { kind: 'skip' };
             }
         }
         const middlewareModule = require(middlewareFile);
-        const middleware = middlewareModule.default || middlewareModule.middleware;
+        const middleware = middlewareModule.middleware || middlewareModule.default;
         if (typeof middleware !== 'function') {
             return { kind: 'skip' };
         }
-        // Matcher check
         if (!shouldRunMiddleware(middlewareModule, req.path)) {
             return { kind: 'skip' };
         }
-        const nextRequest = buildNextRequest(req);
-        const response = await middleware(nextRequest);
+        const requestObj = buildMiddlewareRequest(req);
+        const nextFn = (options) => {
+            const resHeaders = new Headers();
+            resHeaders.set('x-middleware-next', '1');
+            if (options?.headers) {
+                new Headers(options.headers).forEach((v, k) => resHeaders.set(k, v));
+            }
+            return new Response(null, {
+                status: 200,
+                headers: resHeaders,
+            });
+        };
+        // Attach request and next to requestObj so both destructuring ({ request, next })
+        // and direct parameter (request) access work seamlessly
+        requestObj.request = requestObj;
+        requestObj.next = nextFn;
+        const response = await middleware(requestObj, { request: requestObj, next: nextFn });
         if (!response) {
             return { kind: 'next' };
         }
-        // Collect response headers the middleware may have set
         const responseHeaders = new Map();
         if (response.headers && typeof response.headers.forEach === 'function') {
             response.headers.forEach((value, key) => {
@@ -162,38 +224,40 @@ async function runMiddleware(req, cwd, isDev) {
                 responseHeaders,
             };
         }
-        // 3. Continue
+        // 3. Continue via next()
         const shouldContinue = response.headers?.get?.('x-middleware-next');
         if (shouldContinue) {
             return { kind: 'next', responseHeaders };
         }
-        // 4. Short-circuit (non-200 status with no continue/redirect/rewrite)
-        if (response.status && response.status !== 200) {
+        // 4. Short-circuit with response body
+        if (!shouldContinue) {
+            let body;
+            try {
+                const ab = await response.arrayBuffer();
+                if (ab.byteLength > 0) {
+                    body = Buffer.from(ab);
+                }
+            }
+            catch {
+                // ignore body read error
+            }
             return {
                 kind: 'short-circuit',
-                status: response.status,
+                status: response.status || 200,
                 responseHeaders,
+                body,
             };
         }
-        // Default — continue
         return { kind: 'next', responseHeaders };
     }
     catch (err) {
         console.error(`[vista] Middleware error: ${err?.message ?? String(err)}`);
-        // On error, let the request continue rather than crashing
         return { kind: 'next' };
     }
 }
-/**
- * Apply a MiddlewareResult to the Express request/response.
- * Returns `true` if the response was finalized (caller should `return`),
- * `false` if the request should continue to the next handler.
- */
 function applyMiddlewareResult(result, req, res) {
-    // Forward any response headers the middleware set
     if (result.responseHeaders) {
         result.responseHeaders.forEach((value, key) => {
-            // Skip internal headers
             if (key === 'x-middleware-next' || key === 'x-middleware-rewrite' || key === 'Location') {
                 return;
             }
@@ -206,13 +270,18 @@ function applyMiddlewareResult(result, req, res) {
             return true;
         case 'rewrite':
             req.url = result.location;
-            return false; // continue with rewritten URL
+            return false;
         case 'short-circuit':
-            res.status(result.status || 403).end();
+            if (result.body) {
+                res.status(result.status || 403).send(result.body);
+            }
+            else {
+                res.status(result.status || 403).end();
+            }
             return true;
         case 'next':
         case 'skip':
         default:
-            return false; // continue
+            return false;
     }
 }

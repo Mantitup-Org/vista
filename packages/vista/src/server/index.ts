@@ -369,3 +369,4 @@ export interface NextRequest extends Request {
 }
 
 export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';
+export type { MiddlewareContext } from './middleware-runner';

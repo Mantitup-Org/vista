@@ -1,0 +1,102 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createReadableTextStream = createReadableTextStream;
+exports.toTextStreamResponse = toTextStreamResponse;
+exports.toDataStreamResponse = toDataStreamResponse;
+function createReadableTextStream(chunks) {
+    if (Array.isArray(chunks)) {
+        let index = 0;
+        return new ReadableStream({
+            pull(controller) {
+                if (index < chunks.length) {
+                    controller.enqueue(chunks[index++]);
+                }
+                else {
+                    controller.close();
+                }
+            },
+        });
+    }
+    const iterator = chunks[Symbol.asyncIterator]();
+    return new ReadableStream({
+        async pull(controller) {
+            try {
+                const { value, done } = await iterator.next();
+                if (done) {
+                    controller.close();
+                }
+                else {
+                    controller.enqueue(value);
+                }
+            }
+            catch (err) {
+                controller.error(err);
+            }
+        },
+    });
+}
+function toTextStreamResponse(stream, init) {
+    const encoder = new TextEncoder();
+    const byteStream = new ReadableStream({
+        async start(controller) {
+            const reader = stream.getReader();
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        controller.close();
+                        break;
+                    }
+                    if (value) {
+                        controller.enqueue(encoder.encode(value));
+                    }
+                }
+            }
+            catch (err) {
+                controller.error(err);
+            }
+        },
+    });
+    const headers = new Headers(init?.headers);
+    if (!headers.has('Content-Type')) {
+        headers.set('Content-Type', 'text/plain; charset=utf-8');
+    }
+    return new Response(byteStream, {
+        ...init,
+        headers,
+    });
+}
+function toDataStreamResponse(stream, init) {
+    const encoder = new TextEncoder();
+    const byteStream = new ReadableStream({
+        async start(controller) {
+            const reader = stream.getReader();
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                        controller.close();
+                        break;
+                    }
+                    if (value) {
+                        controller.enqueue(encoder.encode(`0:${JSON.stringify(value)}\n`));
+                    }
+                }
+            }
+            catch (err) {
+                controller.error(err);
+            }
+        },
+    });
+    const headers = new Headers(init?.headers);
+    if (!headers.has('Content-Type')) {
+        headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+    }
+    headers.set('Cache-Control', 'no-cache');
+    headers.set('Connection', 'keep-alive');
+    return new Response(byteStream, {
+        ...init,
+        headers,
+    });
+}
