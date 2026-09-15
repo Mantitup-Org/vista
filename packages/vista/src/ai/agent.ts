@@ -220,7 +220,7 @@ export function agent(config: AgentConfig): Agent {
     const runOpts: AgentRunOptions = typeof options === 'string' ? { prompt: options } : options;
     const { messages, sessionId } = await buildMessages(runOpts);
 
-    const textStream = await provider.stream({
+    const rawStream = await provider.stream({
       model: resolvedModelName,
       messages,
       tools,
@@ -228,37 +228,35 @@ export function agent(config: AgentConfig): Agent {
       maxTokens: runOpts.maxTokens ?? config.maxTokens,
     });
 
-    // Tee into 3 independent branches:
+    // Wrap the stream in a passthrough that collects text for memory recording.
+    // This avoids tee() race conditions where fire-and-forget memory writes
+    // happen after clearMemory() is called by the consumer.
+    let collectedText = '';
+    const memoryCapturingStream = new TransformStream<string, string>({
+      transform(chunk, controller) {
+        collectedText += chunk;
+        controller.enqueue(chunk);
+      },
+      async flush(_controller) {
+        if (memory && collectedText) {
+          try {
+            await memory.addMessage(
+              { role: 'assistant', content: collectedText },
+              sessionId
+            );
+          } catch {
+            // Memory recording is best-effort
+          }
+        }
+      },
+    });
+
+    const textStream = rawStream.pipeThrough(memoryCapturingStream);
+
+    // Tee into two independent branches:
     //   stream1 — returned as textStream for direct consumer reading
     //   stream2 — used by toTextStreamResponse / toDataStreamResponse helpers
-    //   stream3 — used internally to record assistant message in memory
-    const [stream1, streamForHelpers] = textStream.tee();
-    const [stream2, stream3] = streamForHelpers.tee();
-
-    // After streaming completes, persist assistant message in memory (fire & forget).
-    if (memory) {
-      (async () => {
-        let fullText = '';
-        const reader = stream3.getReader();
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            fullText += value ?? '';
-          }
-        } finally {
-          reader.releaseLock();
-        }
-        if (fullText) {
-          await memory.addMessage(
-            { role: 'assistant', content: fullText },
-            sessionId
-          );
-        }
-      })().catch(() => {
-        // Memory recording is best-effort — do not crash the stream.
-      });
-    }
+    const [stream1, stream2] = textStream.tee();
 
     return {
       textStream: stream1,
