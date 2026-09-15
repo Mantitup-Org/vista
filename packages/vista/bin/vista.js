@@ -98,6 +98,30 @@ process.env.VISTA_FLASHPACK = engineVariant === 'flashpack' ? 'true' : 'false';
 const { markStartTime } = require('../dist/server/logger');
 markStartTime();
 
+/**
+ * If --adapter <target> was passed to vista build, run deployment output generation
+ * after the build completes. This ensures `vista build --adapter vercel` selects
+ * the adapter explicitly instead of relying on environment auto-detection.
+ */
+function runDeployOutputsIfRequested() {
+  const targetAdapter = getFlagValue('--adapter');
+  if (!targetAdapter) return;
+
+  try {
+    const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
+    generateDeploymentOutputs({
+      cwd: process.cwd(),
+      vistaDir: path.join(process.cwd(), '.vista'),
+      adapter: targetAdapter,
+      debug: flags.includes('--debug'),
+    });
+    console.log(`[vista:deploy] Generated deployment outputs for adapter: ${targetAdapter}`);
+  } catch (err) {
+    console.error('[vista:build] Failed to generate deployment outputs:', err.message);
+  }
+}
+
+
 if (command === 'dev') {
   forceRuntimeEnv('development');
   if (useRSC) {
@@ -159,6 +183,7 @@ if (command === 'dev') {
         .then(() => {
           console.log('');
           console.log('Production build complete!');
+          runDeployOutputsIfRequested();
         })
         .catch((err) => {
           console.error('Flashpack build failed:', err);
@@ -174,6 +199,7 @@ if (command === 'dev') {
       .then(() => {
         console.log('');
         console.log('Production build complete!');
+        runDeployOutputsIfRequested();
       })
       .catch((err) => {
         console.error('RSC Build failed:', err);
@@ -186,6 +212,7 @@ if (command === 'dev') {
     buildClient(false)
       .then(() => {
         console.log('Production build complete!');
+        runDeployOutputsIfRequested();
       })
       .catch((err) => {
         console.error('Build failed:', err);
@@ -258,12 +285,17 @@ if (command === 'dev') {
   console.log('  --flashpack   Use Rust-first Flashpack engine path');
   console.log('  --default-engine   Force default engine path');
   console.log('  --webpack   Alias of --default-engine');
+  console.log('  --adapter <target>   Select deployment adapter (vercel, cloudflare, render, docker, node)');
+  console.log('                       Works with both `vista build` and `vista deploy`');
   console.log('');
   console.log('Examples:');
-  console.log('  vista dev            # Start dev server (RSC mode)');
-  console.log('  vista dev --legacy   # Start dev server with legacy SSR');
-  console.log('  vista dev --flashpack   # Start dev server with Flashpack mode');
-  console.log('  vista build          # Production build with RSC');
-  console.log('  vista g api-init     # Generate typed API starter files');
+  console.log('  vista dev                         # Start dev server (RSC mode)');
+  console.log('  vista dev --legacy                # Start dev server with legacy SSR');
+  console.log('  vista dev --flashpack             # Start dev server with Flashpack mode');
+  console.log('  vista build                       # Production build with RSC');
+  console.log('  vista build --adapter vercel      # Build + generate Vercel output');
+  console.log('  vista build --adapter cloudflare  # Build + generate Cloudflare Workers output');
+  console.log('  vista deploy --adapter docker     # Generate Docker deployment output');
+  console.log('  vista g api-init                  # Generate typed API starter files');
   console.log('');
 }

@@ -12,6 +12,39 @@ import { resolveProvider } from './providers';
 import { InMemoryHistory } from './memory';
 import { toDataStreamResponse, toTextStreamResponse } from './stream';
 
+/** Strip provider prefix from model spec (e.g. "openai:gpt-4o" -> "gpt-4o") */
+function stripProviderPrefix(model: string): string {
+  const idx = model.indexOf(':');
+  if (idx === -1) return model;
+  return model.slice(idx + 1) || model;
+}
+
+/** Validate tool arguments against a JSON Schema (required fields + basic types). */
+function validateToolArgs(args: Record<string, unknown>, schema: any, toolName: string): string | null {
+  if (!schema || typeof schema !== 'object') return null;
+
+  const required: string[] = schema.required ?? [];
+  for (const field of required) {
+    if (!(field in args)) {
+      return `Tool "${toolName}" missing required parameter: "${field}"`;
+    }
+  }
+
+  const props: Record<string, { type?: string }> = schema.properties ?? {};
+  for (const [key, def] of Object.entries(props)) {
+    if (key in args && def.type) {
+      const actualType = Array.isArray(args[key]) ? 'array' : typeof args[key];
+      if (actualType !== def.type) {
+        return `Tool "${toolName}" parameter "${key}" expected type "${def.type}" but got "${actualType}"`;
+      }
+    }
+  }
+
+  return null;
+}
+
+const MAX_TOOL_ITERATIONS = 5;
+
 export function agent(config: AgentConfig): Agent {
   if (!config.model) {
     throw new Error('[vista/ai] Agent must specify a "model"');
@@ -29,6 +62,9 @@ export function agent(config: AgentConfig): Agent {
         : undefined;
 
   const provider = resolveProvider(model);
+  // The model name passed to the provider must not include the provider prefix.
+  const resolvedModelName =
+    typeof model === 'string' ? stripProviderPrefix(model) : provider.name;
 
   async function buildMessages(runOpts: AgentRunOptions): Promise<{
     messages: Message[];
@@ -80,6 +116,19 @@ export function agent(config: AgentConfig): Agent {
       try {
         const rawArgs = call.function.arguments;
         const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+
+        // Validate args against the tool's JSON Schema before execution
+        const validationError = validateToolArgs(args, toolDef.parameters, toolDef.name);
+        if (validationError) {
+          results.push({
+            toolCallId: call.id,
+            toolName: toolDef.name,
+            result: null,
+            error: validationError,
+          });
+          continue;
+        }
+
         const result = await toolDef.execute(args);
         results.push({
           toolCallId: call.id,
@@ -102,69 +151,114 @@ export function agent(config: AgentConfig): Agent {
     const runOpts: AgentRunOptions = typeof options === 'string' ? { prompt: options } : options;
     const { messages, sessionId } = await buildMessages(runOpts);
 
-    const modelName = typeof model === 'string' ? model : provider.name;
-    const result = await provider.generate({
-      model: modelName,
-      messages,
-      tools,
-      temperature: runOpts.temperature ?? config.temperature,
-      maxTokens: runOpts.maxTokens ?? config.maxTokens,
-    });
+    // Conversation loop: keep running until the model stops requesting tools.
+    const conversationMessages = [...messages];
+    let finalResult: GenerateResult | null = null;
 
-    if (result.toolCalls && result.toolCalls.length > 0) {
-      const toolResults = await executeToolCalls(result.toolCalls);
-      result.toolResults = toolResults;
+    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+      const result = await provider.generate({
+        model: resolvedModelName,
+        messages: conversationMessages,
+        tools,
+        temperature: runOpts.temperature ?? config.temperature,
+        maxTokens: runOpts.maxTokens ?? config.maxTokens,
+      });
 
-      // Feed tool results back to memory if active
-      if (memory) {
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        const toolResults = await executeToolCalls(result.toolCalls);
+        result.toolResults = toolResults;
+
+        // Record assistant turn with tool calls
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: result.text,
+          toolCalls: result.toolCalls,
+        };
+        conversationMessages.push(assistantMessage);
+        if (memory) {
+          await memory.addMessage(assistantMessage, sessionId);
+        }
+
+        // Record tool result messages and add to conversation
+        for (const tr of toolResults) {
+          const toolMessage: Message = {
+            role: 'tool',
+            name: tr.toolName,
+            toolCallId: tr.toolCallId,
+            content: JSON.stringify(tr.result ?? { error: tr.error }),
+          };
+          conversationMessages.push(toolMessage);
+          if (memory) {
+            await memory.addMessage(toolMessage, sessionId);
+          }
+        }
+
+        // Loop back to let the model produce its final answer
+        finalResult = result;
+        continue;
+      }
+
+      // No more tool calls — record assistant response and return
+      if (memory && result.text) {
         await memory.addMessage(
           {
             role: 'assistant',
             content: result.text,
-            toolCalls: result.toolCalls,
           },
           sessionId
         );
-
-        for (const tr of toolResults) {
-          await memory.addMessage(
-            {
-              role: 'tool',
-              name: tr.toolName,
-              toolCallId: tr.toolCallId,
-              content: JSON.stringify(tr.result ?? { error: tr.error }),
-            },
-            sessionId
-          );
-        }
       }
-    } else if (memory && result.text) {
-      await memory.addMessage(
-        {
-          role: 'assistant',
-          content: result.text,
-        },
-        sessionId
-      );
+
+      return result;
     }
 
-    return result;
+    // Exceeded max iterations — return last result
+    return finalResult!;
   }
 
   async function stream(options: AgentRunOptions | string): Promise<AgentStreamResult> {
     const runOpts: AgentRunOptions = typeof options === 'string' ? { prompt: options } : options;
-    const { messages } = await buildMessages(runOpts);
+    const { messages, sessionId } = await buildMessages(runOpts);
 
-    const modelName = typeof model === 'string' ? model : provider.name;
     const textStream = await provider.stream({
-      model: modelName,
+      model: resolvedModelName,
       messages,
       tools,
       temperature: runOpts.temperature ?? config.temperature,
       maxTokens: runOpts.maxTokens ?? config.maxTokens,
     });
 
-    const [stream1, stream2] = textStream.tee();
+    // Tee into 3 independent branches:
+    //   stream1 — returned as textStream for direct consumer reading
+    //   stream2 — used by toTextStreamResponse / toDataStreamResponse helpers
+    //   stream3 — used internally to record assistant message in memory
+    const [stream1, streamForHelpers] = textStream.tee();
+    const [stream2, stream3] = streamForHelpers.tee();
+
+    // After streaming completes, persist assistant message in memory (fire & forget).
+    if (memory) {
+      (async () => {
+        let fullText = '';
+        const reader = stream3.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            fullText += value ?? '';
+          }
+        } finally {
+          reader.releaseLock();
+        }
+        if (fullText) {
+          await memory.addMessage(
+            { role: 'assistant', content: fullText },
+            sessionId
+          );
+        }
+      })().catch(() => {
+        // Memory recording is best-effort — do not crash the stream.
+      });
+    }
 
     return {
       textStream: stream1,
@@ -176,6 +270,7 @@ export function agent(config: AgentConfig): Agent {
       },
     };
   }
+
 
   return {
     name,

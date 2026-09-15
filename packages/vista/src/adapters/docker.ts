@@ -42,10 +42,10 @@ CMD ["node", ".vista/standalone/server.js"]
 
     if (!fs.existsSync(dockerignorePath)) {
       const dockerignoreContent = `node_modules
-.vista
 .git
 .env*.local
 `;
+
       fs.writeFileSync(dockerignorePath, dockerignoreContent);
     }
 

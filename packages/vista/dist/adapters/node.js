@@ -25,17 +25,13 @@ exports.nodeAdapter = {
 const path = require('path');
 const process = require('process');
 
-const port = process.env.PORT || 3000;
-const host = process.env.HOST || '0.0.0.0';
+const port = Number(process.env.PORT) || 3000;
 
 try {
-  const { startServer } = require('@vistagenic/vista/server');
-  startServer({
-    cwd: __dirname,
-    port: Number(port),
-    host,
-  });
-  console.log(\`[vista:standalone] Server listening on \${host}:\${port}\`);
+  // startServer is exported from dist/server/engine and accepts (port: number)
+  const { startServer } = require('../server/engine');
+  startServer(port);
+  console.log(\`[vista:standalone] Server listening on port \${port}\`);
 } catch (err) {
   console.error('[vista:standalone] Failed to start server:', err);
   process.exit(1);

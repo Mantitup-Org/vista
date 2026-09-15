@@ -20,4 +20,3 @@ export { callServer } from './client/server-actions';
 export type { ClientManifest, ClientComponentEntry } from './build/rsc/client-manifest';
 export type { ServerManifest, ServerComponentEntry, RouteEntry } from './build/rsc/server-manifest';
 export * as ai from './ai';
-export * as adapters from './adapters';

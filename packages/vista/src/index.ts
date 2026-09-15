@@ -36,7 +36,8 @@ export { callServer } from './client/server-actions';
 export type { ClientManifest, ClientComponentEntry } from './build/rsc/client-manifest';
 export type { ServerManifest, ServerComponentEntry, RouteEntry } from './build/rsc/server-manifest';
 
-// AI-Native framework exports
+// AI-Native framework exports (server-side only — import from 'vista/ai')
 export * as ai from './ai';
-export * as adapters from './adapters';
+// NOTE: Deployment adapters use Node.js fs/path and must NOT be exported here.
+// They are available exclusively via the 'vista/adapters' server subpath.
 

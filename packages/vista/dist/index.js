@@ -39,7 +39,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adapters = exports.ai = exports.callServer = exports.useRSCRouter = exports.RSCRouterContext = exports.RSCRouter = exports.Client = exports.initializeHydration = exports.hydrateClientComponents = exports.generateMetadataHead = exports.Head = exports.Script = exports.dynamic = exports.useSelectedLayoutSegments = exports.useSelectedLayoutSegment = exports.useParams = exports.useSearchParams = exports.usePathname = exports.useRouter = void 0;
+exports.ai = exports.callServer = exports.useRSCRouter = exports.RSCRouterContext = exports.RSCRouter = exports.Client = exports.initializeHydration = exports.hydrateClientComponents = exports.generateMetadataHead = exports.Head = exports.Script = exports.dynamic = exports.useSelectedLayoutSegments = exports.useSelectedLayoutSegment = exports.useParams = exports.useSearchParams = exports.usePathname = exports.useRouter = void 0;
 __exportStar(require("./router"), exports);
 __exportStar(require("./components"), exports);
 __exportStar(require("./auth"), exports);
@@ -77,6 +77,7 @@ Object.defineProperty(exports, "RSCRouterContext", { enumerable: true, get: func
 Object.defineProperty(exports, "useRSCRouter", { enumerable: true, get: function () { return rsc_router_1.useRSCRouter; } });
 var server_actions_1 = require("./client/server-actions");
 Object.defineProperty(exports, "callServer", { enumerable: true, get: function () { return server_actions_1.callServer; } });
-// AI-Native framework exports
+// AI-Native framework exports (server-side only — import from 'vista/ai')
 exports.ai = __importStar(require("./ai"));
-exports.adapters = __importStar(require("./adapters"));
+// NOTE: Deployment adapters use Node.js fs/path and must NOT be exported here.
+// They are available exclusively via the 'vista/adapters' server subpath.

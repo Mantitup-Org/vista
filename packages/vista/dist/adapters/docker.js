@@ -44,7 +44,6 @@ CMD ["node", ".vista/standalone/server.js"]
         }
         if (!fs_1.default.existsSync(dockerignorePath)) {
             const dockerignoreContent = `node_modules
-.vista
 .git
 .env*.local
 `;

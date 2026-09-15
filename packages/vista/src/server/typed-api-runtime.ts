@@ -123,6 +123,37 @@ function isRouteGroupDirectory(name: string): boolean {
   return /^\([\w-]+\)$/.test(name);
 }
 
+/** Strip route-group directory segments (e.g. "(v1)") from pattern parts. */
+function stripRouteGroups(parts: string[]): string[] {
+  return parts.filter((p) => !isRouteGroupDirectory(p));
+}
+
+/**
+ * Returns a sort weight for a pattern segment, used to enforce
+ * static > single-dynamic ([id]) > catch-all ([...slug]) priority.
+ */
+function segmentSortWeight(seg: string): number {
+  if (seg.startsWith('[[...') && seg.endsWith(']]')) return 3; // optional catch-all
+  if (seg.startsWith('[...') && seg.endsWith(']')) return 2;  // required catch-all
+  if (seg.startsWith('[') && seg.endsWith(']')) return 1;      // single dynamic
+  return 0;                                                      // static
+}
+
+/** Sort route files so more-specific routes are matched first. */
+function sortRouteFilesBySpecificity(routeFiles: string[], root: string): string[] {
+  return [...routeFiles].sort((a, b) => {
+    const partsA = stripRouteGroups(
+      path.relative(root, a).replace(/\\/g, '/').split('/').slice(0, -1)
+    );
+    const partsB = stripRouteGroups(
+      path.relative(root, b).replace(/\\/g, '/').split('/').slice(0, -1)
+    );
+    const weightA = partsA.reduce((sum, p) => sum + segmentSortWeight(p), 0);
+    const weightB = partsB.reduce((sum, p) => sum + segmentSortWeight(p), 0);
+    return weightA - weightB; // lower weight = more specific = match first
+  });
+}
+
 function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
   const appDir = path.resolve(cwd, 'app');
 
@@ -250,6 +281,17 @@ async function sendFetchResponse(res: express.Response, response: Response): Pro
   const arrayBuffer = await response.arrayBuffer();
   const body = Buffer.from(arrayBuffer);
   res.status(response.status).send(body);
+}
+
+/**
+ * Same as sendFetchResponse but suppresses the body, preserving only
+ * status and headers. Used for HTTP HEAD responses per RFC 9110.
+ */
+async function sendFetchResponseHead(res: express.Response, response: Response): Promise<void> {
+  response.headers.forEach((value, key) => {
+    res.setHeader(key, value);
+  });
+  res.status(response.status).end();
 }
 
 function applyRuntimeTraceHeaders(
@@ -641,13 +683,17 @@ export function resolveRouteHandlerMatch(cwd: string, requestPath: string): Rout
 
   for (const root of appRoots) {
     const routeFiles = getCachedRouteFiles(root);
-    for (const routeFile of routeFiles) {
-      const relative = path.relative(root, routeFile).replace(/\\/g, '/');
-      const patternParts = relative.split('/');
-      // Remove trailing "route.ext"
-      patternParts.pop();
+    // Sort by specificity: static > [id] > [...slug] > [[...slug]]
+    const sortedRouteFiles = sortRouteFilesBySpecificity(routeFiles, root);
 
-      // Normalize pattern if it lives under api/
+    for (const routeFile of sortedRouteFiles) {
+      const relative = path.relative(root, routeFile).replace(/\\/g, '/');
+      const rawParts = relative.split('/');
+      // Remove trailing "route.ext"
+      rawParts.pop();
+      // Strip route-group segments like (v1) before matching
+      const patternParts = stripRouteGroups(rawParts);
+
       const matchedParams = matchRouteSegments(patternParts, reqSegments);
       if (matchedParams !== null) {
         return {
@@ -716,7 +762,12 @@ export async function runLegacyApiRoute(options: {
 
     const result = await methodHandler(request, context);
     if (result instanceof Response) {
-      await sendFetchResponse(res, result);
+      // For explicit HEAD handlers, suppress response body per HTTP semantics
+      if (method === 'HEAD') {
+        await sendFetchResponseHead(res, result);
+      } else {
+        await sendFetchResponse(res, result);
+      }
       return;
     }
 

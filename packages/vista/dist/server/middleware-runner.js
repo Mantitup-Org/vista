@@ -64,8 +64,15 @@ function buildMiddlewareRequest(req) {
     if (cookieHeader) {
         for (const cookie of cookieHeader.split(';')) {
             const [name, ...val] = cookie.trim().split('=');
-            if (name)
-                cookieMap.set(name, decodeURIComponent(val.join('=')));
+            if (name) {
+                try {
+                    cookieMap.set(name, decodeURIComponent(val.join('=')));
+                }
+                catch {
+                    // Ignore malformed percent-encoded cookie values; do not abort middleware.
+                    cookieMap.set(name, val.join('='));
+                }
+            }
         }
     }
     const cookies = {
@@ -107,7 +114,11 @@ function shouldRunMiddleware(middlewareModule, pathname) {
     const matchers = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
     return matchers.some((pattern) => {
         if (pattern instanceof RegExp) {
-            return pattern.test(pathname);
+            // Reset lastIndex before and after to prevent stateful global/sticky regex bugs
+            pattern.lastIndex = 0;
+            const matched = pattern.test(pathname);
+            pattern.lastIndex = 0;
+            return matched;
         }
         if (typeof pattern === 'string') {
             if (pattern.startsWith('^') || pattern.endsWith('$')) {
@@ -119,11 +130,16 @@ function shouldRunMiddleware(middlewareModule, pathname) {
                 }
             }
             const re = patternToRegExp(pattern);
-            return re.test(pathname);
+            re.lastIndex = 0;
+            const matched = re.test(pathname);
+            re.lastIndex = 0;
+            return matched;
         }
         if (pattern && typeof pattern === 'object' && typeof pattern.source === 'string') {
             try {
-                return new RegExp(pattern.source, pattern.flags).test(pathname);
+                const re = new RegExp(pattern.source, pattern.flags);
+                re.lastIndex = 0;
+                return re.test(pathname);
             }
             catch {
                 return false;
@@ -137,6 +153,9 @@ const MAX_PATTERN_CACHE_SIZE = 512;
 function patternToRegExp(pattern) {
     const cached = patternRegexCache.get(pattern);
     if (cached) {
+        // Refresh key recency for true LRU behaviour
+        patternRegexCache.delete(pattern);
+        patternRegexCache.set(pattern, cached);
         return cached;
     }
     let re = pattern
@@ -145,6 +164,7 @@ function patternToRegExp(pattern) {
         .replace(/\*/g, '(.*)');
     const compiled = new RegExp(`^${re}(/)?$`);
     if (patternRegexCache.size >= MAX_PATTERN_CACHE_SIZE) {
+        // Evict oldest (LRU) entry
         const firstKey = patternRegexCache.keys().next().value;
         if (firstKey !== undefined) {
             patternRegexCache.delete(firstKey);
@@ -180,15 +200,22 @@ async function runMiddleware(req, cwd, isDev) {
             return { kind: 'skip' };
         }
         const requestObj = buildMiddlewareRequest(req);
+        // Tracks headers injected by next({ headers }) so they appear in MiddlewareResult.responseHeaders
+        // for downstream inspection, without being sent as client response headers.
+        const injectedRequestHeaders = new Map();
         const nextFn = (options) => {
-            const resHeaders = new Headers();
-            resHeaders.set('x-middleware-next', '1');
             if (options?.headers) {
-                new Headers(options.headers).forEach((v, k) => resHeaders.set(k, v));
+                // Apply injected headers to the Express request so downstream route
+                // handlers receive them. Do NOT attach them to the client response.
+                new Headers(options.headers).forEach((value, key) => {
+                    req.headers[key.toLowerCase()] = value;
+                    // Also track so callers can inspect what was forwarded
+                    injectedRequestHeaders.set(key.toLowerCase(), value);
+                });
             }
             return new Response(null, {
                 status: 200,
-                headers: resHeaders,
+                headers: { 'x-middleware-next': '1' },
             });
         };
         // Attach request and next to requestObj so both destructuring ({ request, next })
@@ -227,6 +254,9 @@ async function runMiddleware(req, cwd, isDev) {
         // 3. Continue via next()
         const shouldContinue = response.headers?.get?.('x-middleware-next');
         if (shouldContinue) {
+            // Merge headers injected via next({ headers }) into responseHeaders so
+            // callers can inspect what request-side headers middleware forwarded.
+            injectedRequestHeaders.forEach((value, key) => responseHeaders.set(key, value));
             return { kind: 'next', responseHeaders };
         }
         // 4. Short-circuit with response body
