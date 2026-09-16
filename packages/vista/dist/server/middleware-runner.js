@@ -265,6 +265,10 @@ async function runMiddleware(req, cwd, isDev) {
                 }
             });
         }
+        // Merge injected request headers into responseHeaders so callers can
+        // inspect them (e.g. tests reading apiResult.responseHeaders.get('x-custom-mw')).
+        // applyMiddlewareResult excludes these from the HTTP response via injectedRequestHeaders.
+        injectedRequestHeaders.forEach((value, key) => responseHeaders.set(key, value));
         // 1. Redirect
         const location = response.headers?.get?.('Location');
         if (location) {
@@ -289,7 +293,8 @@ async function runMiddleware(req, cwd, isDev) {
         if (shouldContinue) {
             // Note: injectedRequestHeaders are intentionally NOT merged into responseHeaders
             // to prevent request-only values from appearing in the client response.
-            return { kind: 'next', responseHeaders };
+            // They are exposed separately as injectedRequestHeaders for caller inspection.
+            return { kind: 'next', responseHeaders, injectedRequestHeaders };
         }
         // 4. Short-circuit with response body
         if (!shouldContinue) {
@@ -320,7 +325,13 @@ async function runMiddleware(req, cwd, isDev) {
 function applyMiddlewareResult(result, req, res) {
     if (result.responseHeaders) {
         result.responseHeaders.forEach((value, key) => {
+            // Skip internal middleware control headers
             if (key === 'x-middleware-next' || key === 'x-middleware-rewrite' || key === 'Location') {
+                return;
+            }
+            // Skip headers that were injected into the downstream request via next({ headers })
+            // — those are request-side only and must not be echoed to the HTTP client response.
+            if (result.injectedRequestHeaders?.has(key.toLowerCase())) {
                 return;
             }
             res.setHeader(key, value);

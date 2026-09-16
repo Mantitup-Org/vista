@@ -17,6 +17,9 @@ export interface MiddlewareResult {
     location?: string;
     /** Extra response headers the middleware set (forwarded to client) */
     responseHeaders?: Map<string, string>;
+    /** Headers injected via next({ headers }) — forwarded to the downstream request
+     * but NOT sent as client response headers. Available for caller inspection. */
+    injectedRequestHeaders?: Map<string, string>;
     /** Optional response body when short-circuiting */
     body?: Buffer | string;
 }
