@@ -94,6 +94,14 @@ const staticCache = require(path.join(
   'server',
   'static-cache.ts'
 ));
+const { runMiddleware, applyMiddlewareResult } = require(path.join(
+  repoRoot,
+  'packages',
+  'vista',
+  'src',
+  'server',
+  'middleware-runner.ts'
+));
 
 function createMockReq(overrides = {}) {
   const headers = { ...(overrides.headers || {}) };
@@ -140,6 +148,10 @@ function createMockRes() {
       this.body = value;
       return this;
     },
+    end(value) {
+      if (value !== undefined) this.body = value;
+      return this;
+    },
   };
 }
 
@@ -147,6 +159,54 @@ async function main() {
   const tempDir = fs.mkdtempSync(path.join(repoRoot, '.tmp-server-runtime-'));
 
   try {
+    const middlewareProject = fs.mkdtempSync(path.join(repoRoot, '.tmp-middleware-runtime-'));
+    try {
+      fs.writeFileSync(
+        path.join(middlewareProject, 'middleware.js'),
+        [
+          'exports.middleware = async function middleware({ request, next }) {',
+          "  if (request.nextUrl.pathname === '/blocked') return new Response('Forbidden', { status: 403 });",
+          '  return next();',
+          '};',
+          "exports.config = { matcher: ['/docs/:path*'] };",
+          '',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const middlewareRequest = createMockReq({ path: '/docs/guide' });
+      const nextResult = await runMiddleware(middlewareRequest, middlewareProject, true);
+      assert.equal(nextResult.kind, 'next');
+
+      const blockedRequest = createMockReq({ path: '/blocked' });
+      const skippedResult = await runMiddleware(blockedRequest, middlewareProject, true);
+      assert.equal(skippedResult.kind, 'skip');
+
+      fs.writeFileSync(
+        path.join(middlewareProject, 'middleware.js'),
+        [
+          'exports.middleware = async function middleware({ request, next }) {',
+          "  if (request.nextUrl.pathname === '/docs/blocked') return new Response('Forbidden', { status: 403 });",
+          '  return next();',
+          '};',
+          '',
+        ].join('\n'),
+        'utf8'
+      );
+
+      const response = createMockRes();
+      const blockedResult = await runMiddleware(
+        createMockReq({ path: '/docs/blocked' }),
+        middlewareProject,
+        true
+      );
+      assert.equal(blockedResult.kind, 'short-circuit');
+      assert.equal(applyMiddlewareResult(blockedResult, blockedRequest, response), true);
+      assert.equal(response.statusCode, 403);
+    } finally {
+      fs.rmSync(middlewareProject, { recursive: true, force: true });
+    }
+
     const req = createMockReq({
       path: '/docs',
       headers: {

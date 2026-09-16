@@ -45,6 +45,17 @@ export interface VistaMiddlewareRequest {
   };
 }
 
+export interface VistaMiddlewareContext extends VistaMiddlewareRequest {
+  request: VistaMiddlewareRequest;
+  next: () => Promise<MiddlewareNextResult>;
+}
+
+interface MiddlewareNextResult {
+  headers: Map<string, string>;
+}
+
+const middlewareNextHeader = 'x-middleware-next';
+
 // ---------------------------------------------------------------------------
 // Middleware discovery cache (per-cwd)
 // ---------------------------------------------------------------------------
@@ -105,6 +116,16 @@ function buildNextRequest(req: Request): VistaMiddlewareRequest {
   };
 }
 
+function buildMiddlewareContext(request: VistaMiddlewareRequest): VistaMiddlewareContext {
+  return {
+    ...request,
+    request,
+    next: async () => ({
+      headers: new Map([[middlewareNextHeader, '1']]),
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Matcher support
 // ---------------------------------------------------------------------------
@@ -132,7 +153,7 @@ function patternToRegExp(pattern: string): RegExp {
   //   /foo/:path*  → /foo(/.*)?
   //   /foo/:bar    → /foo/[^/]+
   //   /foo/*       → /foo(/.*)?
-  let re = pattern
+  const re = pattern
     .replace(/:[^/]+\*/g, '(.*)') // :path*
     .replace(/:[^/]+/g, '[^/]+') // :param
     .replace(/\*/g, '(.*)'); // bare *
@@ -186,7 +207,7 @@ export async function runMiddleware(
     }
 
     const nextRequest = buildNextRequest(req);
-    const response = await middleware(nextRequest);
+    const response = await middleware(buildMiddlewareContext(nextRequest));
 
     if (!response) {
       return { kind: 'next' };
@@ -222,7 +243,7 @@ export async function runMiddleware(
     }
 
     // 3. Continue
-    const shouldContinue = response.headers?.get?.('x-middleware-next');
+    const shouldContinue = response.headers?.get?.(middlewareNextHeader);
     if (shouldContinue) {
       return { kind: 'next', responseHeaders };
     }
