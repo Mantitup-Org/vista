@@ -87,7 +87,14 @@ function normalizeRouteRequestPath(requestPath) {
     if (normalized === '/' || normalized === '') {
         return '';
     }
-    return normalized.replace(/^\/+/, '').replace(/\/+$/, '');
+    const stripped = normalized.replace(/^\/+/, '').replace(/\/+$/, '');
+    // Reject any path that tries directory traversal via '..' segments.
+    // This prevents /api/../../outside from escaping the app root.
+    const segments = stripped.split('/');
+    if (segments.some((seg) => seg === '..' || seg === '.')) {
+        return '__invalid__';
+    }
+    return stripped;
 }
 function isRouteGroupDirectory(name) {
     return /^\([\w-]+\)$/.test(name);
@@ -283,6 +290,12 @@ async function readRouteRequestBody(req) {
     if (req.method === 'GET' || req.method === 'HEAD') {
         return undefined;
     }
+    // Reuse the body already buffered by runMiddleware so we don't try to read
+    // an already-exhausted Readable stream.
+    if (req._vistaRawBody !== undefined) {
+        const buf = req._vistaRawBody;
+        return buf.length > 0 ? buf : undefined;
+    }
     const chunks = [];
     for await (const chunk of req) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -424,17 +437,33 @@ function matchRouteSegments(patternSegments, requestSegments) {
         const rSeg = requestSegments[rIdx];
         if (pSeg.startsWith('[[...') && pSeg.endsWith(']]')) {
             const paramName = pSeg.slice(5, -2);
-            params[paramName] = requestSegments.slice(rIdx).map(decodeURIComponent);
+            try {
+                params[paramName] = requestSegments.slice(rIdx).map(decodeURIComponent);
+            }
+            catch {
+                return null;
+            }
             return params;
         }
         if (pSeg.startsWith('[...') && pSeg.endsWith(']')) {
             const paramName = pSeg.slice(4, -1);
-            params[paramName] = requestSegments.slice(rIdx).map(decodeURIComponent);
+            try {
+                params[paramName] = requestSegments.slice(rIdx).map(decodeURIComponent);
+            }
+            catch {
+                return null;
+            }
             return params;
         }
         if (pSeg.startsWith('[') && pSeg.endsWith(']')) {
             const paramName = pSeg.slice(1, -1);
-            params[paramName] = decodeURIComponent(rSeg);
+            try {
+                params[paramName] = decodeURIComponent(rSeg);
+            }
+            catch {
+                // Malformed percent-encoding in path segment — treat as non-match
+                return null;
+            }
             pIdx++;
             rIdx++;
             continue;
@@ -607,8 +636,15 @@ async function runLegacyApiRoute(options) {
     // Automatic OPTIONS handling if not explicitly exported
     if (method === 'OPTIONS') {
         const exportedMethods = SUPPORTED_HTTP_METHODS.filter((m) => typeof apiModule[m] === 'function');
-        if (exportedMethods.length > 0) {
-            res.setHeader('Allow', exportedMethods.join(', '));
+        // HEAD is auto-handled whenever GET is exported; include it in the Allow list
+        // so OPTIONS accurately reflects the effective methods the runtime supports.
+        const effectiveMethods = [...exportedMethods];
+        if (!effectiveMethods.includes('HEAD') &&
+            effectiveMethods.includes('GET')) {
+            effectiveMethods.push('HEAD');
+        }
+        if (effectiveMethods.length > 0) {
+            res.setHeader('Allow', effectiveMethods.join(', '));
             res.status(204).end();
             return;
         }

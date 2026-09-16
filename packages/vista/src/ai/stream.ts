@@ -36,23 +36,25 @@ export function toTextStreamResponse(
   init?: ResponseInit
 ): Response {
   const encoder = new TextEncoder();
+  const reader = stream.getReader();
+
+  // Pull-based adapter: reads one chunk per pull so slow clients experience
+  // bounded memory usage instead of having the entire output queued eagerly.
   const byteStream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = stream.getReader();
+    async pull(controller) {
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.close();
-            break;
-          }
-          if (value) {
-            controller.enqueue(encoder.encode(value));
-          }
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+        } else if (value) {
+          controller.enqueue(encoder.encode(value));
         }
       } catch (err) {
         controller.error(err);
       }
+    },
+    cancel() {
+      reader.cancel().catch(() => { /* ignore */ });
     },
   });
 
@@ -72,24 +74,26 @@ export function toDataStreamResponse(
   init?: ResponseInit
 ): Response {
   const encoder = new TextEncoder();
+  const reader = stream.getReader();
+
+  // Pull-based adapter with proper cancellation so a disconnected client
+  // doesn't keep the model output accumulating in memory.
   const byteStream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const reader = stream.getReader();
+    async pull(controller) {
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-            controller.close();
-            break;
-          }
-          if (value) {
-            controller.enqueue(encoder.encode(`0:${JSON.stringify(value)}\n`));
-          }
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+        } else if (value) {
+          controller.enqueue(encoder.encode(`0:${JSON.stringify(value)}\n`));
         }
       } catch (err) {
         controller.error(err);
       }
+    },
+    cancel() {
+      reader.cancel().catch(() => { /* ignore */ });
     },
   });
 
@@ -108,3 +112,4 @@ export function toDataStreamResponse(
     headers,
   });
 }
+

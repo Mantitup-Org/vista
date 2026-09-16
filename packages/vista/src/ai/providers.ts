@@ -327,14 +327,48 @@ export function createGeminiProvider(defaultModel = 'gemini-1.5-pro'): ModelProv
       }
 
       const systemMsg2 = options.messages.find((m) => m.role === 'system');
-      const nonSystemMsgs2 = options.messages.filter(
-        (m) => m.role !== 'system' && m.role !== 'tool'
-      );
+      const nonSystemMsgs2 = options.messages.filter((m) => m.role !== 'system');
 
-      const contents = nonSystemMsgs2.map((m) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }],
-      }));
+      // Map messages to Gemini 'contents' format, correctly handling tool turns.
+      const contents = nonSystemMsgs2.map((m) => {
+        // Tool result messages become user-role functionResponse parts
+        if (m.role === 'tool') {
+          let responseObj: any;
+          try { responseObj = typeof m.content === 'string' ? JSON.parse(m.content) : m.content; }
+          catch { responseObj = { result: m.content }; }
+          return {
+            role: 'user',
+            parts: [{
+              functionResponse: {
+                name: (m as any).name ?? 'unknown',
+                response: responseObj,
+              },
+            }],
+          };
+        }
+
+        // Assistant messages with tool calls become model-role functionCall parts
+        if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+          const parts: any[] = [];
+          if (m.content) parts.push({ text: m.content });
+          for (const tc of m.toolCalls) {
+            parts.push({
+              functionCall: {
+                name: tc.function.name,
+                args: typeof tc.function.arguments === 'string'
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments,
+              },
+            });
+          }
+          return { role: 'model', parts };
+        }
+
+        return {
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        };
+      });
 
       const body: any = { contents };
 

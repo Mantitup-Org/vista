@@ -88,28 +88,16 @@ function buildMiddlewareRequest(req) {
     };
     let webRequest;
     try {
-        // Include a body stream for methods that carry a body (POST, PUT, PATCH, DELETE).
-        // Omitting body: null for GET/HEAD is required per the Fetch spec.
+        // Build a Request with the already-buffered body (if any) so middleware
+        // can call req.json() / req.text() without racing with the route handler.
+        // The raw body is stored on req._vistaRawBody by the caller (runMiddleware).
         const methodAllowsBody = !['GET', 'HEAD'].includes((req.method || '').toUpperCase());
-        let bodyInit = null;
-        if (methodAllowsBody) {
-            // Convert the Express Readable stream to a Web ReadableStream
-            bodyInit = new ReadableStream({
-                start(controller) {
-                    req.on('data', (chunk) => {
-                        controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-                    });
-                    req.once('end', () => controller.close());
-                    req.once('error', (err) => controller.error(err));
-                },
-            });
-        }
+        const rawBody = req._vistaRawBody;
+        const bodyInit = methodAllowsBody && rawBody && rawBody.length > 0 ? new Uint8Array(rawBody) : null;
         webRequest = new Request(fullUrl, {
             method: req.method,
             headers,
-            body: bodyInit,
-            // Required to pipe a stream body through the Web Fetch Request constructor
-            ...(bodyInit ? { duplex: 'half' } : {}),
+            ...(bodyInit ? { body: bodyInit } : {}),
         });
     }
     catch {
@@ -178,10 +166,11 @@ function patternToRegExp(pattern) {
         return cached;
     }
     let re = pattern
-        .replace(/:[^/]+\*/g, '(.*)')
+        .replace(/:[^/]+\*/g, '(?:[^/]*(?:/[^/]*)*)')
         .replace(/:[^/]+/g, '[^/]+')
         .replace(/\*/g, '(.*)');
-    const compiled = new RegExp(`^${re}(/)?$`);
+    // Use (?:/)? so that /:path* matches both /api and /api/foo (no forced trailing slash).
+    const compiled = new RegExp(`^${re}(?:/)?$`);
     if (patternRegexCache.size >= MAX_PATTERN_CACHE_SIZE) {
         // Evict oldest (LRU) entry
         const firstKey = patternRegexCache.keys().next().value;
@@ -199,6 +188,22 @@ async function runMiddleware(req, cwd, isDev) {
     const middlewareFile = discoverMiddleware(cwd, isDev);
     if (!middlewareFile) {
         return { kind: 'skip' };
+    }
+    // Buffer the request body once so both middleware and the downstream route
+    // handler can read it without racing over the underlying Readable stream.
+    // Store on req._vistaRawBody so readRouteRequestBody can reuse the buffer.
+    if (!['GET', 'HEAD'].includes((req.method || '').toUpperCase())) {
+        if (!req._vistaRawBody) {
+            const chunks = [];
+            await new Promise((resolve, reject) => {
+                req.on('data', (chunk) => {
+                    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                });
+                req.once('end', resolve);
+                req.once('error', reject);
+            }).catch(() => { });
+            req._vistaRawBody = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
+        }
     }
     try {
         if (isDev) {
@@ -219,8 +224,8 @@ async function runMiddleware(req, cwd, isDev) {
             return { kind: 'skip' };
         }
         const requestObj = buildMiddlewareRequest(req);
-        // Tracks headers injected by next({ headers }) so they appear in MiddlewareResult.responseHeaders
-        // for downstream inspection, without being sent as client response headers.
+        // Track headers injected by next({ headers }) separately so they are NOT
+        // written to the client response (they are request-side only).
         const injectedRequestHeaders = new Map();
         const nextFn = (options) => {
             if (options?.headers) {
@@ -228,7 +233,6 @@ async function runMiddleware(req, cwd, isDev) {
                 // handlers receive them. Do NOT attach them to the client response.
                 new Headers(options.headers).forEach((value, key) => {
                     req.headers[key.toLowerCase()] = value;
-                    // Also track so callers can inspect what was forwarded
                     injectedRequestHeaders.set(key.toLowerCase(), value);
                 });
             }
@@ -245,10 +249,14 @@ async function runMiddleware(req, cwd, isDev) {
         if (!response) {
             return { kind: 'next' };
         }
+        // Only collect headers that should reach the client response —
+        // explicitly exclude injected request headers so they are not echoed.
         const responseHeaders = new Map();
         if (response.headers && typeof response.headers.forEach === 'function') {
             response.headers.forEach((value, key) => {
-                responseHeaders.set(key, value);
+                if (!injectedRequestHeaders.has(key.toLowerCase())) {
+                    responseHeaders.set(key, value);
+                }
             });
         }
         // 1. Redirect
@@ -273,9 +281,8 @@ async function runMiddleware(req, cwd, isDev) {
         // 3. Continue via next()
         const shouldContinue = response.headers?.get?.('x-middleware-next');
         if (shouldContinue) {
-            // Merge headers injected via next({ headers }) into responseHeaders so
-            // callers can inspect what request-side headers middleware forwarded.
-            injectedRequestHeaders.forEach((value, key) => responseHeaders.set(key, value));
+            // Note: injectedRequestHeaders are intentionally NOT merged into responseHeaders
+            // to prevent request-only values from appearing in the client response.
             return { kind: 'next', responseHeaders };
         }
         // 4. Short-circuit with response body

@@ -11,19 +11,33 @@ export const dockerAdapter: DeploymentAdapter = {
     const dockerignorePath = path.join(cwd, '.dockerignore');
 
     if (!fs.existsSync(dockerfilePath)) {
+      // Auto-detect the project's package manager so the Dockerfile works for
+      // npm, yarn, and pnpm projects without assuming a specific lockfile.
+      const hasPnpm = fs.existsSync(path.join(cwd, 'pnpm-lock.yaml'));
+      const hasYarn = fs.existsSync(path.join(cwd, 'yarn.lock'));
+      const pkgManager = hasPnpm ? 'pnpm' : hasYarn ? 'yarn' : 'npm';
+
+      const installCmd = pkgManager === 'pnpm'
+        ? 'RUN corepack enable && corepack prepare pnpm@latest --activate\nRUN pnpm install --frozen-lockfile'
+        : pkgManager === 'yarn'
+        ? 'RUN yarn install --frozen-lockfile'
+        : 'RUN npm ci';
+
+      const buildCmd = pkgManager === 'pnpm' ? 'pnpm run build' : pkgManager === 'yarn' ? 'yarn build' : 'npm run build';
+      const copyLock = hasPnpm ? 'pnpm-lock.yaml' : hasYarn ? 'yarn.lock' : 'package-lock.json*';
+
       const dockerfileContent = `# Multi-stage production Dockerfile for Vista.js
 FROM node:20-alpine AS base
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@latest --activate
 
 FROM base AS dependencies
-COPY package.json pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile
+COPY package.json ${copyLock} ./
+${installCmd}
 
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN pnpm run build
+RUN ${buildCmd}
 
 FROM base AS runner
 ENV NODE_ENV=production
@@ -43,6 +57,7 @@ USER vista
 
 CMD ["node", ".vista/standalone/server.js"]
 `;
+
       fs.writeFileSync(dockerfilePath, dockerfileContent);
     }
 

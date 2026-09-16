@@ -61,21 +61,25 @@ function getHandler() {
   if (!_handler) {
     // The engine entry is at <projectRoot>/.vista/server/engine.js
     // From .vercel/output/functions/api.func/ we go up 4 directories to project root
-    const enginePath = require('path').resolve(__dirname, '../../../../.vista/server/engine');
-    const engine = require(enginePath);
+    try {
+      const enginePath = require('path').resolve(__dirname, '../../../../.vista/server/engine');
+      const engine = require(enginePath);
 
-    if (typeof engine.createRequestHandler === 'function') {
-      _handler = engine.createRequestHandler({ cwd: process.cwd() });
-    } else if (typeof engine.startServer === 'function') {
-      // Fallback: return an error since startServer doesn't return a handler
+      if (typeof engine.createRequestHandler === 'function') {
+        _handler = engine.createRequestHandler({ cwd: process.cwd() });
+      } else {
+        console.error('[vista:vercel] Engine does not export createRequestHandler');
+        _handler = (_req, res) => {
+          res.statusCode = 503;
+          res.end(JSON.stringify({ error: 'Vista engine not compatible with serverless mode' }));
+        };
+      }
+    } catch (loadErr) {
+      // Log the diagnostic server-side; do not expose internal paths to the client
+      console.error('[vista:vercel] Failed to load engine:', loadErr && loadErr.message);
       _handler = (_req, res) => {
         res.statusCode = 503;
-        res.end(JSON.stringify({ error: 'Vista engine not compatible with serverless mode' }));
-      };
-    } else {
-      _handler = (_req, res) => {
-        res.statusCode = 503;
-        res.end(JSON.stringify({ error: 'Vista engine not found. Run vista build first.' }));
+        res.end(JSON.stringify({ error: 'Vista server not available. Run vista build first.' }));
       };
     }
   }
@@ -86,11 +90,16 @@ module.exports = async (req, res) => {
   try {
     await getHandler()(req, res);
   } catch (err) {
-    res.statusCode = 500;
-    res.end(JSON.stringify({ error: 'Internal server error', message: err && err.message }));
+    // Log internally; return a generic error payload to avoid leaking stack traces
+    console.error('[vista:vercel] Unhandled error:', err && err.message);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
   }
 };
 `;
+
 
     fs.writeFileSync(path.join(apiFuncDir, 'index.js'), apiFuncHandler);
 

@@ -193,6 +193,31 @@ function agent(config) {
     async function stream(options) {
         const runOpts = typeof options === 'string' ? { prompt: options } : options;
         const { messages, sessionId } = await buildMessages(runOpts);
+        // If this agent has tools, we must run the tool loop synchronously first
+        // (since streaming providers emit text-only and ignore delta.tool_calls).
+        // Execute tool calls via generate() then stream the final text response.
+        if (tools.length > 0) {
+            const result = await generate(runOpts);
+            const finalText = result.text || '';
+            // Stream the final text as a single-chunk ReadableStream
+            const rawStream = new ReadableStream({
+                start(controller) {
+                    if (finalText)
+                        controller.enqueue(finalText);
+                    controller.close();
+                },
+            });
+            const [stream1, stream2] = rawStream.tee();
+            return {
+                textStream: stream1,
+                toTextStreamResponse(init) {
+                    return (0, stream_1.toTextStreamResponse)(stream2, init);
+                },
+                toDataStreamResponse(init) {
+                    return (0, stream_1.toDataStreamResponse)(stream2, init);
+                },
+            };
+        }
         const rawStream = await provider.stream({
             model: resolvedModelName,
             messages,
