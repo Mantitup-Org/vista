@@ -153,7 +153,9 @@ export function agent(config: AgentConfig): Agent {
 
     // Conversation loop: keep running until the model stops requesting tools.
     const conversationMessages = [...messages];
-    let finalResult: GenerateResult | null = null;
+    // Accumulate all tool calls and results across iterations so callers can inspect them.
+    const allToolCalls: NonNullable<GenerateResult['toolCalls']> = [];
+    const allToolResults: ToolResult[] = [];
 
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
       const result = await provider.generate({
@@ -167,6 +169,10 @@ export function agent(config: AgentConfig): Agent {
       if (result.toolCalls && result.toolCalls.length > 0) {
         const toolResults = await executeToolCalls(result.toolCalls);
         result.toolResults = toolResults;
+
+        // Accumulate across iterations
+        allToolCalls.push(...result.toolCalls);
+        allToolResults.push(...toolResults);
 
         // Record assistant turn with tool calls
         const assistantMessage: Message = {
@@ -194,7 +200,6 @@ export function agent(config: AgentConfig): Agent {
         }
 
         // Loop back to let the model produce its final answer
-        finalResult = result;
         continue;
       }
 
@@ -209,11 +214,25 @@ export function agent(config: AgentConfig): Agent {
         );
       }
 
+      // Merge accumulated tool call info into the final result
+      if (allToolCalls.length > 0) {
+        result.toolCalls = allToolCalls;
+        result.toolResults = allToolResults;
+      }
+
       return result;
     }
 
-    // Exceeded max iterations — return last result
-    return finalResult!;
+    // Exceeded max iterations — build merged final result
+    const lastResult: GenerateResult = {
+      text: allToolResults.length > 0
+        ? JSON.stringify(allToolResults[allToolResults.length - 1].result ?? '')
+        : '',
+      toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+      toolResults: allToolResults.length > 0 ? allToolResults : undefined,
+      finishReason: 'length',
+    };
+    return lastResult;
   }
 
   async function stream(options: AgentRunOptions | string): Promise<AgentStreamResult> {

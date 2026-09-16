@@ -17,7 +17,7 @@ exports.renderAdapter = {
   - type: web
     name: vista-app
     runtime: node
-    buildCommand: pnpm install && pnpm run build
+    buildCommand: npm install && npx vista build
     startCommand: node .vista/standalone/server.js
     envVars:
       - key: NODE_ENV

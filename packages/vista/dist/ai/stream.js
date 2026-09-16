@@ -91,7 +91,10 @@ function toDataStreamResponse(stream, init) {
     });
     const headers = new Headers(init?.headers);
     if (!headers.has('Content-Type')) {
-        headers.set('Content-Type', 'text/event-stream; charset=utf-8');
+        // The data stream protocol uses line-delimited JSON (0:"chunk"\n), not SSE.
+        // text/plain is correct here; text/event-stream would imply EventSource format.
+        headers.set('Content-Type', 'text/plain; charset=utf-8');
+        headers.set('x-vercel-ai-data-stream', 'v1');
     }
     headers.set('Cache-Control', 'no-cache');
     headers.set('Connection', 'keep-alive');

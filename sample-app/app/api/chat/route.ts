@@ -6,8 +6,22 @@ import { agent, tool } from 'vista/ai';
  * Throws on invalid input.
  */
 function safeEval(expr: string): number {
-  const tokens: string[] = expr.replace(/\s+/g, '').match(/(\d+\.?\d*|\.\d+|[+\-*/()])/g) ?? [];
+  const normalized = expr.replace(/\s+/g, '');
+
+  // Reject any characters that are not digits, decimal points, or arithmetic operators/parens.
+  // This catches tokens like '2foo', 'alert', identifiers, etc. before tokenisation.
+  if (/[^0-9+\-*/.()]/.test(normalized)) {
+    throw new Error(`Invalid characters in expression: ${expr}`);
+  }
+
+  const tokens: string[] = normalized.match(/(\d+\.?\d*|\.\d+|[+\-*/()])/g) ?? [];
   if (tokens.length === 0) throw new Error('Empty expression');
+
+  // Verify the entire expression is fully covered by the tokens (no gaps caused by invalid chars)
+  if (tokens.join('') !== normalized) {
+    throw new Error(`Invalid expression: ${expr}`);
+  }
+
 
   let pos = 0;
 

@@ -88,9 +88,28 @@ function buildMiddlewareRequest(req) {
     };
     let webRequest;
     try {
+        // Include a body stream for methods that carry a body (POST, PUT, PATCH, DELETE).
+        // Omitting body: null for GET/HEAD is required per the Fetch spec.
+        const methodAllowsBody = !['GET', 'HEAD'].includes((req.method || '').toUpperCase());
+        let bodyInit = null;
+        if (methodAllowsBody) {
+            // Convert the Express Readable stream to a Web ReadableStream
+            bodyInit = new ReadableStream({
+                start(controller) {
+                    req.on('data', (chunk) => {
+                        controller.enqueue(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                    });
+                    req.once('end', () => controller.close());
+                    req.once('error', (err) => controller.error(err));
+                },
+            });
+        }
         webRequest = new Request(fullUrl, {
             method: req.method,
             headers,
+            body: bodyInit,
+            // Required to pipe a stream body through the Web Fetch Request constructor
+            ...(bodyInit ? { duplex: 'half' } : {}),
         });
     }
     catch {

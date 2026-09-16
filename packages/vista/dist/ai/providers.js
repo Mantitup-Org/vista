@@ -71,6 +71,9 @@ function createOpenAIProvider(defaultModel = 'gpt-4o') {
                 messages: toOpenAIMessages(options.messages),
                 temperature: options.temperature ?? 0.7,
             };
+            if (options.maxTokens) {
+                body.max_tokens = options.maxTokens;
+            }
             if (options.tools && options.tools.length > 0) {
                 body.tools = options.tools.map((t) => ({
                     type: 'function',
@@ -118,6 +121,9 @@ function createOpenAIProvider(defaultModel = 'gpt-4o') {
                 temperature: options.temperature ?? 0.7,
                 stream: true,
             };
+            if (options.maxTokens) {
+                body.max_tokens = options.maxTokens;
+            }
             if (options.tools && options.tools.length > 0) {
                 body.tools = options.tools.map((t) => ({
                     type: 'function',
@@ -198,12 +204,32 @@ function createAnthropicProvider(defaultModel = 'claude-3-5-sonnet-20241022') {
             const nonSystemMsgs = options.messages.filter((m) => m.role !== 'system');
             const body = {
                 model,
-                messages: nonSystemMsgs.map((m) => ({
-                    role: m.role === 'tool' ? 'user' : m.role,
-                    content: m.role === 'tool'
-                        ? [{ type: 'tool_result', tool_use_id: m.toolCallId ?? '', content: m.content }]
-                        : m.content,
-                })),
+                messages: nonSystemMsgs.map((m) => {
+                    if (m.role === 'tool') {
+                        return {
+                            role: 'user',
+                            content: [{ type: 'tool_result', tool_use_id: m.toolCallId ?? '', content: m.content }],
+                        };
+                    }
+                    if (m.role === 'assistant' && m.toolCalls && m.toolCalls.length > 0) {
+                        // Anthropic expects tool_use blocks in the assistant turn, not just text
+                        const content = [];
+                        if (m.content)
+                            content.push({ type: 'text', text: m.content });
+                        for (const tc of m.toolCalls) {
+                            content.push({
+                                type: 'tool_use',
+                                id: tc.id,
+                                name: tc.function.name,
+                                input: typeof tc.function.arguments === 'string'
+                                    ? JSON.parse(tc.function.arguments)
+                                    : tc.function.arguments,
+                            });
+                        }
+                        return { role: 'assistant', content };
+                    }
+                    return { role: m.role, content: m.content };
+                }),
                 max_tokens: options.maxTokens ?? 1024,
             };
             if (systemMsg) {
@@ -273,13 +299,17 @@ function createGeminiProvider(defaultModel = 'gemini-1.5-pro') {
             if (!apiKey) {
                 return createMockProvider(model).generate(options);
             }
-            const contents = options.messages
-                .filter((m) => m.role !== 'system')
-                .map((m) => ({
+            const systemMsg2 = options.messages.find((m) => m.role === 'system');
+            const nonSystemMsgs2 = options.messages.filter((m) => m.role !== 'system' && m.role !== 'tool');
+            const contents = nonSystemMsgs2.map((m) => ({
                 role: m.role === 'assistant' ? 'model' : 'user',
                 parts: [{ text: m.content }],
             }));
             const body = { contents };
+            // Pass system prompt via Gemini's systemInstruction field
+            if (systemMsg2) {
+                body.systemInstruction = { parts: [{ text: systemMsg2.content }] };
+            }
             if (options.tools && options.tools.length > 0) {
                 body.tools = [
                     {
@@ -301,9 +331,27 @@ function createGeminiProvider(defaultModel = 'gemini-1.5-pro') {
             }
             const data = (await resp.json());
             const candidate = data.candidates?.[0];
-            const text = candidate?.content?.parts?.[0]?.text || '';
+            const contentParts = candidate?.content?.parts ?? [];
+            // Extract text parts
+            const text = contentParts
+                .filter((p) => p.text)
+                .map((p) => p.text)
+                .join('') || '';
+            // Map Gemini functionCall parts to internal toolCalls format
+            const functionCallParts = contentParts.filter((p) => p.functionCall);
+            const toolCalls = functionCallParts.length > 0
+                ? functionCallParts.map((p, idx) => ({
+                    id: `call_gemini_${idx}`,
+                    type: 'function',
+                    function: {
+                        name: p.functionCall.name,
+                        arguments: p.functionCall.args ?? {},
+                    },
+                }))
+                : undefined;
             return {
                 text,
+                toolCalls,
                 finishReason: candidate?.finishReason || 'STOP',
             };
         },
@@ -324,19 +372,39 @@ function createOllamaProvider(defaultModel = 'llama3') {
             const host = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
             const model = options.model || defaultModel;
             try {
+                const ollamaBody = {
+                    model,
+                    messages: options.messages.map((m) => ({ role: m.role, content: m.content })),
+                    stream: false,
+                };
+                if (options.tools && options.tools.length > 0) {
+                    ollamaBody.tools = options.tools.map((t) => ({
+                        type: 'function',
+                        function: { name: t.name, description: t.description, parameters: t.parameters },
+                    }));
+                }
                 const resp = await fetch(`${host}/api/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        model,
-                        messages: options.messages.map((m) => ({ role: m.role, content: m.content })),
-                        stream: false,
-                    }),
+                    body: JSON.stringify(ollamaBody),
                 });
                 if (resp.ok) {
                     const data = (await resp.json());
+                    const message = data.message ?? {};
+                    // Parse Ollama tool_calls if present
+                    const toolCalls = message.tool_calls && message.tool_calls.length > 0
+                        ? message.tool_calls.map((tc, idx) => ({
+                            id: `call_ollama_${idx}`,
+                            type: 'function',
+                            function: {
+                                name: tc.function?.name ?? '',
+                                arguments: tc.function?.arguments ?? {},
+                            },
+                        }))
+                        : undefined;
                     return {
-                        text: data.message?.content || '',
+                        text: message.content || '',
+                        toolCalls,
                         finishReason: 'stop',
                     };
                 }
@@ -359,8 +427,10 @@ function createMockProvider(model = 'mock-model') {
         async generate(options) {
             const lastUserMsg = [...options.messages].reverse().find((m) => m.role === 'user');
             const prompt = lastUserMsg?.content || '';
-            // Check if user prompt matches any tool calling intent
-            if (options.tools && options.tools.length > 0) {
+            // Don't re-trigger tool calls for tool-result messages — only trigger on user prompts
+            const hasToolResults = options.messages.some((m) => m.role === 'tool');
+            // Check if user prompt matches any tool calling intent (only on fresh user messages)
+            if (!hasToolResults && options.tools && options.tools.length > 0) {
                 for (const tool of options.tools) {
                     if (prompt.toLowerCase().includes(tool.name.toLowerCase()) || prompt.toLowerCase().includes('search')) {
                         return {

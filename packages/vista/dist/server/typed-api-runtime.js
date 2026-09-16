@@ -109,14 +109,28 @@ function segmentSortWeight(seg) {
         return 1; // single dynamic
     return 0; // static
 }
-/** Sort route files so more-specific routes are matched first. */
+/** Sort route files so more-specific routes are matched first.
+ * Compares segment-by-segment at each depth so that e.g.
+ * /api/users/[slug] (static at depth 2) beats /api/[id]/settings (dynamic at depth 2).
+ */
 function sortRouteFilesBySpecificity(routeFiles, root) {
     return [...routeFiles].sort((a, b) => {
         const partsA = stripRouteGroups(path_1.default.relative(root, a).replace(/\\/g, '/').split('/').slice(0, -1));
         const partsB = stripRouteGroups(path_1.default.relative(root, b).replace(/\\/g, '/').split('/').slice(0, -1));
+        // Compare segment-by-segment at matching depths first
+        const minLen = Math.min(partsA.length, partsB.length);
+        for (let i = 0; i < minLen; i++) {
+            const diff = segmentSortWeight(partsA[i]) - segmentSortWeight(partsB[i]);
+            if (diff !== 0)
+                return diff; // more static wins at this depth
+        }
+        // Same weight up to minLen — shorter (more specific) route wins
+        if (partsA.length !== partsB.length)
+            return partsA.length - partsB.length;
+        // Truly tied — compare total weight as tiebreaker
         const weightA = partsA.reduce((sum, p) => sum + segmentSortWeight(p), 0);
         const weightB = partsB.reduce((sum, p) => sum + segmentSortWeight(p), 0);
-        return weightA - weightB; // lower weight = more specific = match first
+        return weightA - weightB;
     });
 }
 function resolveMetadataRoutePath(cwd, stem) {

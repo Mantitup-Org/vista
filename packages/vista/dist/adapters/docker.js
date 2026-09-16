@@ -38,6 +38,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=dependencies /app/node_modules ./node_modules
 
+# Run as non-root for security best practice
+RUN addgroup --system --gid 1001 nodejs && \\
+    adduser --system --uid 1001 vista && \\
+    chown -R vista:nodejs /app
+USER vista
+
 CMD ["node", ".vista/standalone/server.js"]
 `;
             fs_1.default.writeFileSync(dockerfilePath, dockerfileContent);
