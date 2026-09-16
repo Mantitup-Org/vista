@@ -219,14 +219,19 @@ function patternToRegExp(pattern: string): RegExp {
     return cached;
   }
 
-  let re = pattern
-    .replace(/:[^/]+\*/g, '(?:[^/]*(?:/[^/]*)*)')
-    .replace(/:[^/]+/g, '[^/]+')
-    .replace(/\*/g, '.*');
+  // Use a single-pass replacer to prevent chained replaces from corrupting
+  // each other's output (e.g. the second replace matching characters inside
+  // what the first replace already emitted).
+  const re = pattern.replace(
+    /:[^/]+\*|\*|:[^/]+/g,
+    (match) => {
+      if (match.endsWith('*') && match.startsWith(':')) return '(?:[^/]*(?:/[^/]*)*)'; // :param*
+      if (match === '*') return '.*';
+      return '[^/]+'; // :param
+    }
+  );
 
-  // Escape any literal dots in the pattern (e.g. /api/v1.0 → /api/v1\.0)
-  // but only outside the already-replaced segments (none contain dots now).
-  // Use (?:/)? so that /api matches /api and /api/foo for :path* patterns.
+  // (?:/)? makes the trailing slash optional so /api matches /api/:path* matchers.
   const compiled = new RegExp(`^${re}(?:/)?$`);
   if (patternRegexCache.size >= MAX_PATTERN_CACHE_SIZE) {
     // Evict oldest (LRU) entry
