@@ -47,3 +47,5 @@ export type {
   NextFunction,
 } from './server/index';
 
+// AI Framework
+export * from './ai';

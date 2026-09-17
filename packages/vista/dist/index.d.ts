@@ -21,3 +21,4 @@ export type { ClientManifest, ClientComponentEntry } from './build/rsc/client-ma
 export type { ServerManifest, ServerComponentEntry, RouteEntry } from './build/rsc/server-manifest';
 export { NextResponse } from './server/index';
 export type { VistaMiddlewareContext, VistaMiddlewareRequest, MiddlewareResult, MiddlewareConfig, MiddlewareFunction, NextFunction, } from './server/index';
+export * from './ai';

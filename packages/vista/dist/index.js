@@ -58,3 +58,5 @@ Object.defineProperty(exports, "callServer", { enumerable: true, get: function (
 // Server & Middleware exports
 var index_1 = require("./server/index");
 Object.defineProperty(exports, "NextResponse", { enumerable: true, get: function () { return index_1.NextResponse; } });
+// AI Framework
+__exportStar(require("./ai"), exports);
