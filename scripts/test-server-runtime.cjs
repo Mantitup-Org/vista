@@ -78,6 +78,10 @@ const actionRuntime = require(path.join(
   'server',
   'runtime-actions.ts'
 ));
+actionRuntime.configureServerReferenceRegistration((reference, id, exportName) => {
+  reference.$$typeof = Symbol.for('react.server.reference');
+  reference.$$id = `${id}#${exportName}`;
+});
 const { installModuleCompileHook } = require(path.join(
   repoRoot,
   'packages',
@@ -352,9 +356,32 @@ async function main() {
       'revalidatePath should remove static page artifacts'
     );
 
-    const tempProject = fs.mkdtempSync(path.join(repoRoot, '.tmp-inline-actions-'));
+    const tempProject = fs.mkdtempSync(
+      path.join(repoRoot, 'node_modules', '.tmp-inline-actions-')
+    );
     try {
-      installModuleCompileHook({ cwd: tempProject });
+      let clientProxyId;
+      installModuleCompileHook({
+        cwd: tempProject,
+        createClientModuleProxy: (id) => {
+          clientProxyId = id;
+          return { clientReference: true };
+        },
+      });
+
+      const clientModulePath = path.join(tempProject, 'client-boundary.js');
+      fs.writeFileSync(
+        clientModulePath,
+        ["'use client';", 'module.exports = { client: true };', ''].join('\n'),
+        'utf8'
+      );
+      delete require.cache[require.resolve(clientModulePath)];
+      assert.deepEqual(
+        require(clientModulePath),
+        { clientReference: true },
+        'Client boundaries under linked package node_modules paths should use a proxy'
+      );
+      assert.equal(clientProxyId, `file://${clientModulePath}`);
 
       const inlineModulePath = path.join(tempProject, 'inline-actions.js');
       fs.writeFileSync(
@@ -384,6 +411,17 @@ async function main() {
         registeredInlineAction,
         inlineAction,
         'Inline action should be registered through the compile hook'
+      );
+
+      assert.equal(
+        inlineAction.$$typeof,
+        Symbol.for('react.server.reference'),
+        'Inline action should be marked as a React server reference'
+      );
+      assert.equal(
+        inlineAction.$$id,
+        `${actionRuntime.createInlineServerActionId(inlineModulePath, 0, 'inlineEcho')}#inlineEcho`,
+        'Inline action should use its registered server reference id'
       );
 
       const exportedModulePath = path.join(tempProject, 'exported-actions.js');

@@ -3,6 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.configureServerReferenceRegistration = configureServerReferenceRegistration;
 exports.createExportServerReferenceId = createExportServerReferenceId;
 exports.createInlineServerActionId = createInlineServerActionId;
 exports.registerInlineServerReference = registerInlineServerReference;
@@ -12,6 +13,9 @@ const url_1 = require("url");
 const path_1 = __importDefault(require("path"));
 const registeredReferences = new Map();
 let cachedRegisterServerReference;
+function configureServerReferenceRegistration(registerServerReference) {
+    cachedRegisterServerReference = registerServerReference;
+}
 function getRegisterServerReference() {
     if (cachedRegisterServerReference !== undefined) {
         return cachedRegisterServerReference;

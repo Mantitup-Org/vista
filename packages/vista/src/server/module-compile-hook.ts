@@ -84,10 +84,11 @@ function createDirectiveError(filename: string, message: string): Error {
 
 function isProjectModule(filename: string, roots: string[]): boolean {
   const normalized = normalizeModulePath(filename);
-  const matchesRoot = roots.some((root) => {
+  const matchingRoot = roots.find((root) => {
     const rootPrefix = normalizeModulePath(`${root}${path.sep}`);
     return normalized.startsWith(rootPrefix);
   });
+  const matchesRoot = Boolean(matchingRoot);
   const isStandaloneProjectModule = roots.some((root) => {
     const normalizedRoot = normalizeModulePath(root);
     return (
@@ -97,7 +98,9 @@ function isProjectModule(filename: string, roots: string[]): boolean {
   });
 
   if (!matchesRoot) return false;
-  if (normalized.includes('/node_modules/')) return false;
+  if (normalized.includes('/node_modules/') && !normalizeModulePath(matchingRoot!).includes('/node_modules/')) {
+    return false;
+  }
   if (normalized.includes('/.vista/') && !isStandaloneProjectModule) return false;
   if (normalized.includes('/.flash/')) return false;
 

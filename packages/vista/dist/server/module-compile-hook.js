@@ -61,10 +61,11 @@ function createDirectiveError(filename, message) {
 }
 function isProjectModule(filename, roots) {
     const normalized = normalizeModulePath(filename);
-    const matchesRoot = roots.some((root) => {
+    const matchingRoot = roots.find((root) => {
         const rootPrefix = normalizeModulePath(`${root}${path_1.default.sep}`);
         return normalized.startsWith(rootPrefix);
     });
+    const matchesRoot = Boolean(matchingRoot);
     const isStandaloneProjectModule = roots.some((root) => {
         const normalizedRoot = normalizeModulePath(root);
         return (normalizedRoot.includes('/.vista/standalone/') &&
@@ -72,8 +73,9 @@ function isProjectModule(filename, roots) {
     });
     if (!matchesRoot)
         return false;
-    if (normalized.includes('/node_modules/'))
+    if (normalized.includes('/node_modules/') && !normalizeModulePath(matchingRoot).includes('/node_modules/')) {
         return false;
+    }
     if (normalized.includes('/.vista/') && !isStandaloneProjectModule)
         return false;
     if (normalized.includes('/.flash/'))
