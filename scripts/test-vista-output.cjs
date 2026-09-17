@@ -368,9 +368,26 @@ async function verifyVariant(variant, port) {
   }
 }
 
+function rmSyncWithRetry(target, options = {}, retries = 5, delayMs = 200) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      fs.rmSync(target, options);
+      return;
+    } catch (err) {
+      const isLast = attempt === retries;
+      if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'ENOTEMPTY') && !isLast) {
+        // Windows: child process may still hold a handle — wait and retry
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function main() {
   await buildVistaPackageDist();
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+  rmSyncWithRetry(tempRoot, { recursive: true, force: true });
   fs.mkdirSync(tempRoot, { recursive: true });
 
   await verifyVariant('default', 4310);
