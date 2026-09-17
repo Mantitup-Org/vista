@@ -7,7 +7,7 @@ export const siteConfig = {
     bootstrapCommand: CREATE_VISTA_APP_COMMAND,
   },
   links: {
-    github: 'https://github.com/vistakit/Vista-Js',
+    github: 'https://github.com/Mantitup-Org/vista',
     docs: '/docs',
   },
   nav: [{ title: 'Docs', href: '/docs' }],

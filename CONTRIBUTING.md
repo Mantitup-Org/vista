@@ -44,14 +44,14 @@ Listed issues will generally receive **higher priority during contribution evalu
 Fork the repository from GitHub:
 
 ```text
-https://github.com/vistakit/Vista-Js
+https://github.com/Mantitup-Org/vista
 ```
 
 Then clone your fork:
 
 ```bash
-git clone https://github.com/<your-username>/Vista-Js.git
-cd Vista-Js
+git clone https://github.com/<your-username>/vista.git
+cd vista
 pnpm install
 ```
 
@@ -174,9 +174,21 @@ Choose the narrowest relevant checks first, then run the larger suite before req
 ```bash
 npm --prefix packages/vista run build
 pnpm test:server-runtime
+pnpm test:inline-server-actions
+pnpm test:api-routes
 pnpm test:rsc-conformance
 pnpm test:vista-output
 ```
+
+If you touch the module compile hook (`packages/vista/src/server/module-compile-hook.ts`)
+or anything that rewrites source at require time, run `pnpm test:inline-server-actions`
+first: it is the fast guard for inline `'use server'` / `'use cache'` directives, and it
+fails with a pointed message instead of surfacing as an HTTP 500 in the conformance suite.
+See section 13.4 of `developer.md` for the background.
+
+If you change file-based API routes (`app/**/route.ts` discovery, matching, or method
+dispatch), `pnpm test:api-routes` is the fast guard - it needs no dev server and no
+Rust toolchain. See section 5.4 of `developer.md` for which file owns what.
 
 ### If you change Flashpack behavior
 
@@ -272,7 +284,7 @@ Before opening a Pull Request, make sure:
 - [ ] The branch follows the `branch-name-username` naming format.
 - [ ] The branch is focused on a single fix, feature, or contribution.
 - [ ] The relevant issue is referenced, if applicable.
-- [ ] Changed documentation mentions the correct repository URL: `https://github.com/vistakit/Vista-Js.git`
+- [ ] Changed documentation mentions the correct repository URL: `https://github.com/Mantitup-Org/vista.git`
 - [ ] Package versions are not bumped unless this is a release task.
 - [ ] Committed `dist` output matches changed source where required.
 - [ ] Relevant tests/builds have been run.

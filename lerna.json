@@ -1,6 +1,6 @@
 {
   "npmClient": "pnpm",
-  "repository": "https://github.com/vistakit/Vista-Js.git",
+  "repository": "https://github.com/Mantitup-Org/vista.git",
   "packages": ["packages/*"],
   "command": {
     "version": {

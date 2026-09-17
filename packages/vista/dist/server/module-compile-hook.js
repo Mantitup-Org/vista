@@ -88,17 +88,24 @@ function isStringDirectiveStatement(statement, directive) {
             (statement.expression?.type === 'StringLiteral' &&
                 statement.expression?.value === directive)));
 }
-function isFunctionBody(node) {
+/**
+ * SWC labels the body of a function/method/arrow as `FunctionBody`, while a bare
+ * block (`{ ... }`, loop/if/try bodies) stays `BlockStatement`. Older versions
+ * reported `BlockStatement` for both, so accept either shape here - otherwise
+ * every function-body walk silently no-ops and inline `'use server'` /
+ * `'use cache'` directives never get transformed.
+ */
+function isFunctionBodyBlock(node) {
     return node?.type === 'BlockStatement' || node?.type === 'FunctionBody';
 }
 function hasServerDirectiveInFunctionLike(node) {
-    return (isFunctionBody(node?.body) &&
+    return (isFunctionBodyBlock(node?.body) &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use server'));
 }
 function hasCacheDirectiveInFunctionLike(node) {
-    return (isFunctionBody(node?.body) &&
+    return (isFunctionBodyBlock(node?.body) &&
         Array.isArray(node.body.stmts) &&
         node.body.stmts.length > 0 &&
         isStringDirectiveStatement(node.body.stmts[0], 'use cache'));
@@ -217,7 +224,10 @@ function createRuntimeRequireDeclaration(runtimeIdentifier, runtimeSpecifier) {
     };
 }
 function processFunctionLikeDeclaration(statement, filename, state, nextStatements) {
-    if (!isFunctionBody(statement?.body)) {
+    if (!isFunctionBodyBlock(statement?.body)) {
+        // Bodyless declarations (TS overload signatures, `declare function`) still
+        // have to survive into the emitted module.
+        nextStatements.push(statement);
         return false;
     }
     statement.body.stmts = processStatementList(statement.body.stmts || [], filename, state);
@@ -246,7 +256,11 @@ function processStatementList(statements, filename, state) {
             continue;
         }
         if (statement.type === 'ExportDefaultDeclaration' && statement.decl) {
-            if (isFunctionBody(statement.decl.body)) {
+            if (isFunctionBodyBlock(statement.decl.body)) {
+                statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
+            }
+            else if ((statement.decl.type === 'FunctionExpression' || statement.decl.type === 'ArrowFunctionExpression') &&
+                isFunctionBodyBlock(statement.decl.body)) {
                 statement.decl.body.stmts = processStatementList(statement.decl.body.stmts || [], filename, state);
             }
             if ((statement.decl.type === 'FunctionDeclaration' ||
@@ -367,7 +381,7 @@ function processExpression(expression, filename, state, hint = 'action') {
         return expression;
     }
     if (expression.type === 'ArrowFunctionExpression' || expression.type === 'FunctionExpression') {
-        if (isFunctionBody(expression.body)) {
+        if (isFunctionBodyBlock(expression.body)) {
             expression.body.stmts = processStatementList(expression.body.stmts || [], filename, state);
         }
         if (hasServerDirectiveInFunctionLike(expression)) {

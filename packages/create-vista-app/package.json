@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/vistakit/Vista-Js.git",
+    "url": "https://github.com/Mantitup-Org/vista.git",
     "directory": "packages/create-vista-app"
   },
   "author": "Vista Team",

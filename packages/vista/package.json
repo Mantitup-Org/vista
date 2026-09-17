@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vistakit/Vista-Js.git",
+    "url": "git+https://github.com/Mantitup-Org/vista.git",
     "directory": "packages/vista"
   },
   "author": "Vista Team",
@@ -80,6 +80,14 @@
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
+    },
+    "./ai": {
+      "types": "./dist/ai/index.d.ts",
+      "default": "./dist/ai/index.js"
+    },
+    "./ai/react": {
+      "types": "./dist/ai/react/index.d.ts",
+      "default": "./dist/ai/react/index.js"
     },
     "./stack": {
       "types": "./dist/stack/index.d.ts",

@@ -36,6 +36,7 @@ function assertCommonScripts(packageJson) {
   assert.equal(packageJson.scripts.dev, 'vista dev');
   assert.equal(packageJson.scripts.build, 'vista build');
   assert.equal(packageJson.scripts.start, 'vista start');
+  assert.equal(packageJson.scripts.deploy, 'vista deploy');
   assert.equal(packageJson.dependencies.webpack, '^5.90.0');
 }
 
@@ -92,6 +93,8 @@ async function main() {
     assertReadme(defaultProject, 'default', 'disabled');
     assertNoTemplateTokens(defaultProject);
     assertThemeFiles(defaultProject);
+    assert.equal(fs.existsSync(path.join(defaultProject, 'render.yaml')), true);
+    assert.equal(fs.existsSync(path.join(defaultProject, 'Dockerfile')), true);
     const defaultGitignore = fs.readFileSync(path.join(defaultProject, '.gitignore'), 'utf8');
     assert(!defaultGitignore.includes('.next/'), 'generated .gitignore should not contain .next/');
     const defaultRoot = fs.readFileSync(path.join(defaultProject, 'app', 'root.tsx'), 'utf8');
