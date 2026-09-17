@@ -1,8 +1,33 @@
 import Image from 'vista/image';
-import { listNotes } from './api/notes/notes-store';
+import { headers } from 'vista/server';
 
-export default function Index() {
-  const notes = listNotes();
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
+type Note = { id: string; title: string; body: string };
+
+async function getNotes(): Promise<Note[]> {
+  const requestHeaders = headers();
+  const host = requestHeaders.get('x-vista-forwarded-host') || requestHeaders.get('host');
+  const protocol = requestHeaders.get('x-vista-forwarded-proto') || 'http';
+
+  if (!host) {
+    throw new Error('Unable to determine the sample app origin');
+  }
+
+  const response = await fetch(`${protocol}://${host}/api/notes`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`Notes API request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { notes: Note[] };
+  return payload.notes;
+}
+
+export default async function Index() {
+  const notes = await getNotes();
 
   return (
     <main className="min-h-screen bg-white px-6 py-16 text-zinc-950 dark:bg-black dark:text-zinc-50">
@@ -10,11 +35,11 @@ export default function Index() {
         <Image src="/vista.svg" alt="Vista Logo" width={180} height={180} unoptimized className="dark:invert" />
 
         <section>
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-orange-600">Full-stack Vista example</p>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-orange-700">Full-stack Vista example</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-tight">Notes from the app directory</h1>
           <p className="mt-4 max-w-2xl text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            This page reads the same server-only store used by the API routes below. The browser-facing page and
-            backend handlers live together without a separate server project.
+            This page fetches the notes API on each request. The browser-facing page and backend handlers live
+            together without a separate server project.
           </p>
 
           <div className="mt-10 grid gap-4 sm:grid-cols-2">
@@ -23,7 +48,7 @@ export default function Index() {
                 <h2 className="font-semibold">{note.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{note.body}</p>
                 <a
-                  className="mt-4 inline-block text-sm font-medium text-orange-600 underline underline-offset-4"
+                  className="mt-4 inline-block text-sm font-medium text-orange-700 underline underline-offset-4"
                   href={`/api/notes/${note.id}`}
                 >
                   View JSON endpoint

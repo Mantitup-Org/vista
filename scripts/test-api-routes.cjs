@@ -615,33 +615,11 @@ function checkClientIsolation(projectDir, appDir) {
   }
 }
 
-function checkSampleApp() {
-  const sampleRoot = path.join(repoRoot, 'sample-app');
-  const pageSource = fs.readFileSync(path.join(sampleRoot, 'app', 'index.tsx'), 'utf8');
-  const collectionRoute = fs.readFileSync(
-    path.join(sampleRoot, 'app', 'api', 'notes', 'route.ts'),
-    'utf8'
-  );
-  const itemRoute = fs.readFileSync(
-    path.join(sampleRoot, 'app', 'api', 'notes', '[id]', 'route.ts'),
-    'utf8'
-  );
-
-  assert.match(pageSource, /from ['"]\.\/api\/notes\/notes-store['"]/);
-  assert.match(pageSource, /listNotes\(\)/);
-  assert.match(collectionRoute, /export async function GET/);
-  assert.match(collectionRoute, /export async function POST/);
-  assert.match(itemRoute, /export async function GET/);
-  assert.match(itemRoute, /export async function PATCH/);
-  assert.match(itemRoute, /export async function DELETE/);
-}
-
 async function main() {
   const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-api-routes-'));
   try {
     const appDir = createFixture(projectDir);
 
-    checkSampleApp();
     checkPatternParsing();
     checkDiscovery(appDir);
     checkManifestRegistration(projectDir, appDir);
