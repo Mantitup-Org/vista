@@ -51,6 +51,20 @@ export interface ExperimentalConfig {
   cacheComponents?: CacheComponentsExperimentalConfig;
 }
 
+export type DeployTarget = 'auto' | 'render' | 'vercel' | 'cloudflare' | 'netlify' | 'docker';
+export type DeployOutput = 'standalone' | 'static' | 'hybrid';
+
+export interface DeployConfig {
+  /** Deployment platform target. Default: 'auto' */
+  target?: DeployTarget;
+  /** Build output mode. Default: inferred from target */
+  output?: DeployOutput;
+  /** Production deploy by default. Default: true */
+  prod?: boolean;
+  /** Prefer Vercel Build Output API (.vercel/output) over vercel.json. Default: true */
+  preferBuildOutputApi?: boolean;
+}
+
 export interface VistaConfig {
   images?: ImageConfig;
   // Add other future config options here suitable for user requests
@@ -59,6 +73,7 @@ export interface VistaConfig {
   server?: {
     port?: number;
   };
+  deploy?: DeployConfig;
   validation?: {
     structure?: StructureValidationConfig;
   };
@@ -83,6 +98,13 @@ export const defaultCacheComponentsConfig: Required<CacheComponentsExperimentalC
   enabled: false,
 };
 
+export const defaultDeployConfig: Required<DeployConfig> = {
+  target: 'auto',
+  output: 'standalone',
+  prod: true,
+  preferBuildOutputApi: true,
+};
+
 export const defaultConfig: VistaConfig = {
   images: {},
   engine: {
@@ -91,6 +113,7 @@ export const defaultConfig: VistaConfig = {
   validation: {
     structure: { ...defaultStructureValidationConfig },
   },
+  deploy: { ...defaultDeployConfig },
   experimental: {
     typedApi: { ...defaultTypedApiConfig },
     cacheComponents: { ...defaultCacheComponentsConfig },
@@ -205,6 +228,60 @@ export function resolveCacheComponentsConfig(
   };
 }
 
+export type ResolvedDeployConfig = Required<DeployConfig>;
+
+function normalizeDeployTarget(raw: unknown): DeployTarget | undefined {
+  const value = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  const allowed: DeployTarget[] = [
+    'auto',
+    'render',
+    'vercel',
+    'cloudflare',
+    'netlify',
+    'docker',
+  ];
+  return allowed.includes(value as DeployTarget) ? (value as DeployTarget) : undefined;
+}
+
+function normalizeDeployOutput(raw: unknown): DeployOutput | undefined {
+  const value = String(raw ?? '')
+    .trim()
+    .toLowerCase();
+  if (value === 'standalone' || value === 'static' || value === 'hybrid') {
+    return value;
+  }
+  return undefined;
+}
+
+export function resolveDeployConfig(config: VistaConfig): ResolvedDeployConfig {
+  const merged = {
+    ...defaultDeployConfig,
+    ...(config.deploy ?? {}),
+  };
+
+  const target = normalizeDeployTarget(merged.target) ?? defaultDeployConfig.target;
+  const output = normalizeDeployOutput(merged.output) ?? defaultDeployConfig.output;
+
+  return {
+    target,
+    output,
+    prod: merged.prod !== false,
+    preferBuildOutputApi: merged.preferBuildOutputApi !== false,
+  };
+}
+
+export function inferDeployOutputForTarget(target: Exclude<DeployTarget, 'auto'>): DeployOutput {
+  if (target === 'vercel' || target === 'cloudflare' || target === 'netlify') {
+    return 'static';
+  }
+  if (target === 'render' || target === 'docker') {
+    return 'standalone';
+  }
+  return 'standalone';
+}
+
 function mergeConfig(userConfig: VistaConfig): VistaConfig {
   const mergedBase = {
     ...defaultConfig,
@@ -228,6 +305,10 @@ function mergeConfig(userConfig: VistaConfig): VistaConfig {
     server: {
       ...(defaultConfig.server ?? {}),
       ...(userConfig.server ?? {}),
+    },
+    deploy: {
+      ...defaultDeployConfig,
+      ...(userConfig.deploy ?? {}),
     },
     validation: {
       ...(defaultConfig.validation ?? {}),

@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: my-vista-app
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: |
+      npm install --no-audit --no-fund
+      npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3003"
+    healthCheckPath: /

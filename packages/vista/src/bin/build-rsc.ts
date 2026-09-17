@@ -501,6 +501,13 @@ export async function buildRSC(watch: boolean = false): Promise<{
       pattern: route.pattern,
       pagePath: route.pagePath,
       type: route.type,
+    })),
+    serverManifest.routeHandlers.map((handler) => ({
+      pattern: handler.pattern,
+      filePath: handler.filePath,
+      type: handler.type,
+      methods: handler.methods,
+      runtime: handler.runtime,
     }))
   );
   writeReservedVistaArtifacts(vistaDirs.root, {

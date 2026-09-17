@@ -52,8 +52,11 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./reference/engine-variants-default-vs-flashpack.md'),
   loadMarkdownDoc('./reference/flashpack-architecture.md'),
   loadMarkdownDoc('./reference/rust-crates-and-napi-bridge.md'),
+  loadMarkdownDoc('./deployment/platform-matrix.md'),
+  loadMarkdownDoc('./deployment/vista-deploy-command.md'),
   loadMarkdownDoc('./deployment/render-deployment.md'),
   loadMarkdownDoc('./deployment/vercel-deployment.md'),
+  loadMarkdownDoc('./deployment/cloudflare-deployment.md'),
 ];
 
 export const allDocs: CollectedDoc[] = docsSource.map((doc) => ({

@@ -39,6 +39,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.worktrees/
 *.swp
 *.swo
 
@@ -48,3 +49,4 @@ Thumbs.db
 .env.development.local
 .env.test.local
 .env.production.local
+.tmp

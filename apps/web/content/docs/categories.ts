@@ -37,4 +37,10 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
     description: 'Release, publish, and production checks.',
     order: 6,
   },
+  {
+    id: 'ai',
+    title: 'AI Framework',
+    description: 'Native AI agents, multi-agent workflows, tools, memory, and streaming.',
+    order: 7,
+  },
 ];
