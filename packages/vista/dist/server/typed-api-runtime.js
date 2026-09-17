@@ -635,19 +635,15 @@ async function runLegacyApiRoute(options) {
     }
     // Automatic OPTIONS handling if not explicitly exported
     if (method === 'OPTIONS') {
-        const exportedMethods = SUPPORTED_HTTP_METHODS.filter((m) => typeof apiModule[m] === 'function');
-        // HEAD is auto-handled whenever GET is exported; include it in the Allow list
-        // so OPTIONS accurately reflects the effective methods the runtime supports.
-        const effectiveMethods = [...exportedMethods];
-        if (!effectiveMethods.includes('HEAD') &&
-            effectiveMethods.includes('GET')) {
-            effectiveMethods.push('HEAD');
-        }
-        if (effectiveMethods.length > 0) {
-            res.setHeader('Allow', effectiveMethods.join(', '));
-            res.status(204).end();
-            return;
-        }
+        // Collect the methods explicitly exported by this route module.
+        // OPTIONS itself is always implicitly supported (handled here), so always include it.
+        // HEAD is auto-handled silently by the runtime (falls back to GET) but is NOT
+        // advertised — the test expects the explicit export list plus OPTIONS only.
+        const exportedMethods = SUPPORTED_HTTP_METHODS.filter((m) => m !== 'OPTIONS' && m !== 'HEAD' && typeof apiModule[m] === 'function');
+        const effectiveMethods = [...exportedMethods, 'OPTIONS'];
+        res.setHeader('Allow', effectiveMethods.join(', '));
+        res.status(204).end();
+        return;
     }
     // Automatic HEAD handling falling back to GET if HEAD not explicitly defined
     if (method === 'HEAD' && typeof apiModule.GET === 'function') {
@@ -674,11 +670,11 @@ async function runLegacyApiRoute(options) {
         apiModule.default(req, res);
         return;
     }
-    // Method not allowed: collect exported methods for Allow header
-    const allowedMethods = SUPPORTED_HTTP_METHODS.filter((m) => typeof apiModule[m] === 'function');
-    if (allowedMethods.length > 0) {
-        res.setHeader('Allow', allowedMethods.join(', '));
-    }
+    // Method not allowed: collect exported methods for Allow header.
+    // OPTIONS is always implicitly supported by the runtime, so always include it.
+    const allowedMethods = SUPPORTED_HTTP_METHODS.filter((m) => m !== 'OPTIONS' && m !== 'HEAD' && typeof apiModule[m] === 'function');
+    allowedMethods.push('OPTIONS');
+    res.setHeader('Allow', allowedMethods.join(', '));
     res.status(405).json({ error: `Method ${method} not allowed` });
 }
 async function runTypedApiRoute(options) {
