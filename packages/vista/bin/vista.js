@@ -45,6 +45,19 @@ if (command === 'g' || command === 'generate') {
   return;
 }
 
+if (command === 'deploy') {
+  const { runDeployCommand } = require('../dist/bin/deploy');
+  runDeployCommand(flags)
+    .then((code) => {
+      if (code !== 0) process.exit(code);
+    })
+    .catch((err) => {
+      console.error('Deploy failed:', err);
+      process.exit(1);
+    });
+  return;
+}
+
 const useLegacy = flags.includes('--legacy') || process.env.VISTA_LEGACY === 'true';
 const useRSC = !useLegacy;
 const explicitFlashpack = flags.includes('--flashpack');
@@ -238,6 +251,7 @@ if (command === 'dev') {
   console.log('  dev     Start development server with HMR');
   console.log('  build   Create production build');
   console.log('  start   Start production server');
+  console.log('  deploy  Build and deploy to a hosting platform');
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
   console.log('');
   console.log('Options:');
@@ -246,6 +260,8 @@ if (command === 'dev') {
   console.log('  --flashpack   Use Rust-first Flashpack engine path');
   console.log('  --default-engine   Force default engine path');
   console.log('  --webpack   Alias of --default-engine');
+  console.log('  deploy --target <platform>   Deploy to render, vercel, cloudflare, netlify, or docker');
+  console.log('  deploy --dry-run             Validate and emit deploy artifacts only');
   console.log('');
   console.log('Examples:');
   console.log('  vista dev            # Start dev server (RSC mode)');

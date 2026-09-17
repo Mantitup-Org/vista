@@ -1,17 +1,35 @@
 ---
 category: "deployment"
 slug: "vercel-deployment"
-title: "Vercel Deployment (Experimental)"
-summary: "Vercel setup is available, but should be treated as experimental right now for Vista apps."
+title: "Vercel Deployment"
+summary: "Deploy pre-rendered Vista apps to Vercel with npm run deploy --target vercel."
 order: 3
-updatedAt: "2026-03-04"
+updatedAt: "2026-09-07"
 ---
 
-> Caution: Vercel support is not fully stable yet. Use Render for production-critical deployments.
+> Vercel deploys in Vista are static/pre-rendered. Use Render or Docker for full SSR and server actions.
 
-You can deploy Vista on Vercel, but treat it as beta. Keep fallback plan ready and validate every release with preview builds.
+## One-Command Deploy
 
-## vercel.json Setup
+```bash
+npm run deploy -- --target vercel --prod
+```
+
+Validate build output only:
+
+```bash
+npm run deploy -- --target vercel --dry-run --force
+```
+
+## How It Works
+
+`vista deploy --target vercel` emits Vercel Build Output at `.vercel/output/` with route rewrites to `.vista/static/pages/*.{html,rsc}`.
+
+If the Vercel CLI is installed and authenticated, Vista runs `vercel deploy` automatically. Otherwise it prints next steps.
+
+## Optional vercel.json
+
+You can keep a custom `vercel.json`. Vista skips auto-generation unless you pass `--force`.
 
 ```json title="vercel.json"
 {
@@ -24,16 +42,18 @@ You can deploy Vista on Vercel, but treat it as beta. Keep fallback plan ready a
 }
 ```
 
-## Known Risks
+## Static Host Notes
 
-- Dependency resolution can vary between builds.
-- React/RSC + custom runtime integration may behave differently than standard Next.js pipelines.
-- Large runtime changes in Vista may require deploy config updates.
+- Pre-render pages at build time for routes you need on Vercel
+- Set `images.unoptimized: true` when using `vista/image`
+- Typed API and server actions require a Node host
 
 ## Recommendation
 
-For client projects and production SLAs, deploy on Render first. Use Vercel for preview/testing until Vista Vercel support is marked stable.
+For production SLAs with dynamic behavior, deploy to Render first. Use Vercel for static sites and previews.
 
 ## Related
+
+- [Vista Deploy Command](/docs/deployment/vista-deploy-command)
+- [Platform Matrix](/docs/deployment/platform-matrix)
 - [Render Deployment (Recommended)](/docs/deployment/render-deployment)
-- [Vista Config Reference](/docs/reference/vista-config-reference)

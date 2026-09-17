@@ -41,6 +41,18 @@ export interface ExperimentalConfig {
     typedApi?: TypedApiExperimentalConfig;
     cacheComponents?: CacheComponentsExperimentalConfig;
 }
+export type DeployTarget = 'auto' | 'render' | 'vercel' | 'cloudflare' | 'netlify' | 'docker';
+export type DeployOutput = 'standalone' | 'static' | 'hybrid';
+export interface DeployConfig {
+    /** Deployment platform target. Default: 'auto' */
+    target?: DeployTarget;
+    /** Build output mode. Default: inferred from target */
+    output?: DeployOutput;
+    /** Production deploy by default. Default: true */
+    prod?: boolean;
+    /** Prefer Vercel Build Output API (.vercel/output) over vercel.json. Default: true */
+    preferBuildOutputApi?: boolean;
+}
 export interface VistaConfig {
     images?: ImageConfig;
     react?: any;
@@ -48,6 +60,7 @@ export interface VistaConfig {
     server?: {
         port?: number;
     };
+    deploy?: DeployConfig;
     validation?: {
         structure?: StructureValidationConfig;
     };
@@ -56,6 +69,7 @@ export interface VistaConfig {
 export declare const defaultStructureValidationConfig: Required<StructureValidationConfig>;
 export declare const defaultTypedApiConfig: Required<TypedApiExperimentalConfig>;
 export declare const defaultCacheComponentsConfig: Required<CacheComponentsExperimentalConfig>;
+export declare const defaultDeployConfig: Required<DeployConfig>;
 export declare const defaultConfig: VistaConfig;
 /**
  * Resolve the effective structure validation config merging user overrides.
@@ -71,4 +85,7 @@ export declare function resolveAndApplyEngineVariant(config: VistaConfig, env?: 
  */
 export declare function resolveTypedApiConfig(config: VistaConfig): ResolvedTypedApiConfig;
 export declare function resolveCacheComponentsConfig(config: VistaConfig): ResolvedCacheComponentsConfig;
+export type ResolvedDeployConfig = Required<DeployConfig>;
+export declare function resolveDeployConfig(config: VistaConfig): ResolvedDeployConfig;
+export declare function inferDeployOutputForTarget(target: Exclude<DeployTarget, 'auto'>): DeployOutput;
 export declare function loadConfig(cwd?: string): VistaConfig;

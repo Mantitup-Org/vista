@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": ".vista",
+  "framework": null,
+  "installCommand": "npm install --legacy-peer-deps --no-audit --no-fund",
+  "devCommand": "npm run dev",
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "^/_vista/(.*)$", "dest": "/$1" },
+    { "src": "^/(?:rsc|_rsc)/?$", "dest": "/static/pages/index.rsc" },
+    { "src": "^/(?:rsc|_rsc)/(.+)$", "dest": "/static/pages/$1.rsc" },
+    { "src": "^/$", "dest": "/static/pages/index.html" },
+    { "src": "^/(.+)$", "dest": "/static/pages/$1.html" }
+  ]
+}
