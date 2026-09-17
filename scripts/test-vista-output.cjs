@@ -368,7 +368,7 @@ async function verifyVariant(variant, port) {
   }
 }
 
-function rmSyncWithRetry(target, options = {}, retries = 5, delayMs = 200) {
+function rmSyncWithRetry(target, options = {}, retries = 5, delayMs = 300) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       fs.rmSync(target, options);
@@ -376,8 +376,13 @@ function rmSyncWithRetry(target, options = {}, retries = 5, delayMs = 200) {
     } catch (err) {
       const isLast = attempt === retries;
       if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'ENOTEMPTY') && !isLast) {
-        // Windows: child process may still hold a handle — wait and retry
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+        // Windows: child process may still hold a handle — synchronous sleep then retry.
+        // Atomics.wait is forbidden in the main thread; use spawnSync instead.
+        require('child_process').spawnSync(
+          process.execPath,
+          ['-e', `setTimeout(()=>{},${delayMs})`],
+          { timeout: delayMs + 1000 }
+        );
       } else {
         throw err;
       }
