@@ -1,39 +1,45 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.defaultMemoryStore = exports.InMemoryStore = void 0;
-class InMemoryStore {
-    sessions = new Map();
+exports.InMemoryHistory = void 0;
+exports.createMemory = createMemory;
+/** Default maximum number of messages retained per session.
+ * Prevents unbounded growth in long-lived processes.
+ * System messages are always preserved when trimming. */
+const DEFAULT_MAX_MESSAGES = 100;
+class InMemoryHistory {
+    defaultSession;
     maxMessages;
-    ttlMs;
-    constructor(options = {}) {
-        this.maxMessages = options.maxMessages || 100;
-        this.ttlMs = options.ttlMs;
+    sessions = new Map();
+    constructor(defaultSession = 'default', 
+    /** Maximum messages per session. Older messages are evicted when exceeded.
+     * Set to Infinity to disable the limit. */
+    maxMessages = DEFAULT_MAX_MESSAGES) {
+        this.defaultSession = defaultSession;
+        this.maxMessages = maxMessages;
     }
-    async get(sessionId) {
-        this.cleanExpired();
-        const session = this.sessions.get(sessionId);
-        if (!session)
-            return [];
-        return [...session.messages];
+    getMessages(sessionId = this.defaultSession) {
+        const list = this.sessions.get(sessionId) || [];
+        return [...list];
     }
-    async save(sessionId, messages) {
-        const trimmed = messages.slice(-this.maxMessages);
-        const expiresAt = this.ttlMs ? Date.now() + this.ttlMs : Infinity;
-        this.sessions.set(sessionId, { messages: trimmed, expiresAt });
-    }
-    async clear(sessionId) {
-        this.sessions.delete(sessionId);
-    }
-    cleanExpired() {
-        if (!this.ttlMs)
-            return;
-        const now = Date.now();
-        for (const [id, session] of this.sessions.entries()) {
-            if (session.expiresAt <= now) {
-                this.sessions.delete(id);
-            }
+    addMessage(message, sessionId = this.defaultSession) {
+        if (!this.sessions.has(sessionId)) {
+            this.sessions.set(sessionId, []);
+        }
+        const msgs = this.sessions.get(sessionId);
+        msgs.push({ ...message });
+        // Trim to maxMessages — preserve system messages at index 0 if present
+        if (msgs.length > this.maxMessages) {
+            const systemMsg = msgs[0]?.role === 'system' ? msgs[0] : null;
+            const excess = msgs.length - this.maxMessages;
+            // Remove oldest non-system messages
+            msgs.splice(systemMsg ? 1 : 0, excess);
         }
     }
+    clear(sessionId = this.defaultSession) {
+        this.sessions.delete(sessionId);
+    }
 }
-exports.InMemoryStore = InMemoryStore;
-exports.defaultMemoryStore = new InMemoryStore();
+exports.InMemoryHistory = InMemoryHistory;
+function createMemory(defaultSession, maxMessages) {
+    return new InMemoryHistory(defaultSession, maxMessages);
+}

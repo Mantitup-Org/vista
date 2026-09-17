@@ -457,7 +457,7 @@ function startServer(port = 3003, compiler) {
             const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
             if (finalized)
                 return;
-            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path, { isDev });
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path);
             if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
@@ -475,9 +475,24 @@ function startServer(port = 3003, compiler) {
                 }
             }
             // API ROUTES SUPPORT - Next.js App Router Style
-            // File-based `route.*` handlers are already resolved above, for `/api/*` as well
-            // as any other path, so only the typed API remains to try here.
             if (req.path.startsWith('/api/')) {
+                const legacyApiMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path);
+                if (legacyApiMatch) {
+                    try {
+                        await (0, typed_api_runtime_1.runLegacyApiRoute)({
+                            req,
+                            res,
+                            apiPath: legacyApiMatch.filePath,
+                            params: legacyApiMatch.params,
+                            isDev,
+                        });
+                        return;
+                    }
+                    catch (error) {
+                        console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
+                        return res.status(500).json({ error: 'Internal Server Error in API' });
+                    }
+                }
                 const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
                     req,
                     res,

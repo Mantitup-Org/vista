@@ -130,6 +130,8 @@ import {
 import { RouteErrorBoundary } from '../components/error-boundary';
 import { RouteSuspense } from '../components/route-suspense';
 import {
+  resolveLegacyRouteHandlerPath,
+  resolveLegacyApiRoutePath,
   resolveRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
@@ -888,8 +890,17 @@ async function handleApiRoute(
   typedApiConfig: ReturnType<typeof resolveTypedApiConfig>
 ): Promise<void> {
   try {
-    // File-based `route.*` handlers are resolved by the caller, for `/api/*` as well
-    // as any other path, so only the typed API remains to try here.
+    const legacyApiPath = resolveLegacyApiRoutePath(runtimeRoot, req.path);
+    if (legacyApiPath) {
+      await runLegacyApiRoute({
+        req,
+        res,
+        apiPath: legacyApiPath,
+        isDev,
+      });
+      return;
+    }
+
     const typedHandled = await runTypedApiRoute({
       req,
       res,
@@ -1766,7 +1777,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
     }
 
-    const routeHandlerMatch = resolveRouteHandlerMatch(runtimeRoot, req.path, { isDev });
+    const routeHandlerMatch = resolveRouteHandlerMatch(runtimeRoot, req.path);
     if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({

@@ -482,6 +482,9 @@ function startUpstream() {
     setupTypeScriptRuntime(runtimeRoot);
     const flightServerPath = resolveFromWorkspace('react-server-dom-webpack/server.node', cwd);
     const flightServer = require(flightServerPath);
+    if (typeof flightServer.registerServerReference === 'function') {
+        (0, runtime_actions_1.setRegisterServerReference)(flightServer.registerServerReference);
+    }
     installClientLoadHook(runtimeRoot, flightServer.createClientModuleProxy);
     (0, fetch_policy_1.installSegmentFetchPolicyShim)();
     const serverManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'server', 'server-manifest.json');

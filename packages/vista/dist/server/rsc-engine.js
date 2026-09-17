@@ -696,8 +696,16 @@ function appendVaryHeader(existing, nextValue) {
 }
 async function handleApiRoute(req, res, runtimeRoot, isDev, typedApiConfig) {
     try {
-        // File-based `route.*` handlers are resolved by the caller, for `/api/*` as well
-        // as any other path, so only the typed API remains to try here.
+        const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(runtimeRoot, req.path);
+        if (legacyApiPath) {
+            await (0, typed_api_runtime_1.runLegacyApiRoute)({
+                req,
+                res,
+                apiPath: legacyApiPath,
+                isDev,
+            });
+            return;
+        }
         const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
             req,
             res,
@@ -1431,7 +1439,7 @@ function startRSCServer(options = {}) {
                     return;
                 }
             }
-            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(runtimeRoot, req.path, { isDev });
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(runtimeRoot, req.path);
             if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({

@@ -1,46 +1,46 @@
-import type { AgentMemory, Message } from './types';
+import type { MemoryStore, Message } from './types';
 
-export interface InMemoryStoreOptions {
-  maxMessages?: number;
-  ttlMs?: number;
-}
+/** Default maximum number of messages retained per session.
+ * Prevents unbounded growth in long-lived processes.
+ * System messages are always preserved when trimming. */
+const DEFAULT_MAX_MESSAGES = 100;
 
-export class InMemoryStore implements AgentMemory {
-  private sessions = new Map<string, { messages: Message[]; expiresAt: number }>();
-  private maxMessages: number;
-  private ttlMs?: number;
+export class InMemoryHistory implements MemoryStore {
+  private sessions = new Map<string, Message[]>();
 
-  constructor(options: InMemoryStoreOptions = {}) {
-    this.maxMessages = options.maxMessages || 100;
-    this.ttlMs = options.ttlMs;
+  constructor(
+    private defaultSession = 'default',
+    /** Maximum messages per session. Older messages are evicted when exceeded.
+     * Set to Infinity to disable the limit. */
+    private maxMessages = DEFAULT_MAX_MESSAGES
+  ) {}
+
+  getMessages(sessionId = this.defaultSession): Message[] {
+    const list = this.sessions.get(sessionId) || [];
+    return [...list];
   }
 
-  async get(sessionId: string): Promise<Message[]> {
-    this.cleanExpired();
-    const session = this.sessions.get(sessionId);
-    if (!session) return [];
-    return [...session.messages];
-  }
+  addMessage(message: Message, sessionId = this.defaultSession): void {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, []);
+    }
+    const msgs = this.sessions.get(sessionId)!;
+    msgs.push({ ...message });
 
-  async save(sessionId: string, messages: Message[]): Promise<void> {
-    const trimmed = messages.slice(-this.maxMessages);
-    const expiresAt = this.ttlMs ? Date.now() + this.ttlMs : Infinity;
-    this.sessions.set(sessionId, { messages: trimmed, expiresAt });
-  }
-
-  async clear(sessionId: string): Promise<void> {
-    this.sessions.delete(sessionId);
-  }
-
-  private cleanExpired(): void {
-    if (!this.ttlMs) return;
-    const now = Date.now();
-    for (const [id, session] of this.sessions.entries()) {
-      if (session.expiresAt <= now) {
-        this.sessions.delete(id);
-      }
+    // Trim to maxMessages — preserve system messages at index 0 if present
+    if (msgs.length > this.maxMessages) {
+      const systemMsg = msgs[0]?.role === 'system' ? msgs[0] : null;
+      const excess = msgs.length - this.maxMessages;
+      // Remove oldest non-system messages
+      msgs.splice(systemMsg ? 1 : 0, excess);
     }
   }
+
+  clear(sessionId = this.defaultSession): void {
+    this.sessions.delete(sessionId);
+  }
 }
 
-export const defaultMemoryStore = new InMemoryStore();
+export function createMemory(defaultSession?: string, maxMessages?: number): MemoryStore {
+  return new InMemoryHistory(defaultSession, maxMessages);
+}

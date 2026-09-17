@@ -45,19 +45,6 @@ if (command === 'g' || command === 'generate') {
   return;
 }
 
-if (command === 'deploy') {
-  const { runDeployCommand } = require('../dist/bin/deploy');
-  runDeployCommand(flags)
-    .then((code) => {
-      if (code !== 0) process.exit(code);
-    })
-    .catch((err) => {
-      console.error('Deploy failed:', err);
-      process.exit(1);
-    });
-  return;
-}
-
 const useLegacy = flags.includes('--legacy') || process.env.VISTA_LEGACY === 'true';
 const useRSC = !useLegacy;
 const explicitFlashpack = flags.includes('--flashpack');
@@ -110,6 +97,30 @@ process.env.VISTA_FLASHPACK = engineVariant === 'flashpack' ? 'true' : 'false';
 // Mark startup time for "Ready in Xms" display
 const { markStartTime } = require('../dist/server/logger');
 markStartTime();
+
+/**
+ * If --adapter <target> was passed to vista build, run deployment output generation
+ * after the build completes. This ensures `vista build --adapter vercel` selects
+ * the adapter explicitly instead of relying on environment auto-detection.
+ */
+function runDeployOutputsIfRequested() {
+  const targetAdapter = getFlagValue('--adapter');
+  if (!targetAdapter) return;
+
+  try {
+    const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
+    generateDeploymentOutputs({
+      cwd: process.cwd(),
+      vistaDir: path.join(process.cwd(), '.vista'),
+      adapter: targetAdapter,
+      debug: flags.includes('--debug'),
+    });
+    console.log(`[vista:deploy] Generated deployment outputs for adapter: ${targetAdapter}`);
+  } catch (err) {
+    console.error('[vista:build] Failed to generate deployment outputs:', err.message);
+  }
+}
+
 
 if (command === 'dev') {
   forceRuntimeEnv('development');
@@ -172,6 +183,7 @@ if (command === 'dev') {
         .then(() => {
           console.log('');
           console.log('Production build complete!');
+          runDeployOutputsIfRequested();
         })
         .catch((err) => {
           console.error('Flashpack build failed:', err);
@@ -187,6 +199,7 @@ if (command === 'dev') {
       .then(() => {
         console.log('');
         console.log('Production build complete!');
+        runDeployOutputsIfRequested();
       })
       .catch((err) => {
         console.error('RSC Build failed:', err);
@@ -199,6 +212,7 @@ if (command === 'dev') {
     buildClient(false)
       .then(() => {
         console.log('Production build complete!');
+        runDeployOutputsIfRequested();
       })
       .catch((err) => {
         console.error('Build failed:', err);
@@ -241,6 +255,82 @@ if (command === 'dev') {
     const { startServer } = require('../dist/server/engine');
     startServer(process.env.PORT || 3003);
   }
+} else if (command === 'deploy') {
+  forceRuntimeEnv('production');
+  const cwd = process.cwd();
+  const vistaDir = path.join(cwd, '.vista');
+  const debug = flags.includes('--debug');
+
+  // Support both --adapter (legacy) and --target (new)
+  const target = getFlagValue('--target') || getFlagValue('--adapter');
+  const isDryRun = flags.includes('--dry-run');
+  const skipBuild = flags.includes('--skip-build');
+  const force = flags.includes('--force');
+
+  if (!skipBuild) {
+    // Run vista build first unless --skip-build is passed
+    const buildProc = require('child_process').spawnSync(
+      process.execPath,
+      [__filename, 'build', ...(target ? ['--adapter', target] : [])],
+      { cwd, stdio: 'inherit', env: process.env }
+    );
+    if (buildProc.status !== 0) {
+      console.error('[vista:deploy] Build failed.');
+      process.exit(1);
+    }
+  }
+
+  const {
+    nodeAdapter,
+    vercelAdapter,
+    cloudflareAdapter,
+    renderAdapter,
+    dockerAdapter,
+    getAdapter,
+  } = require('../dist/adapters');
+
+  const adapterCtx = { cwd, vistaDir, debug };
+
+  if (target === 'vercel') {
+    // Generate Vercel Build Output API v3
+    vercelAdapter.build(adapterCtx);
+    // Also write .vercel/output/config.json if not already produced
+    const vercelOut = path.join(cwd, '.vercel', 'output');
+    const configPath = path.join(vercelOut, 'config.json');
+    if (!require('fs').existsSync(configPath)) {
+      require('fs').mkdirSync(vercelOut, { recursive: true });
+      require('fs').writeFileSync(configPath, JSON.stringify({
+        version: 3,
+        routes: [
+          { handle: 'filesystem' },
+          { src: '^/_vista/(.*)$', dest: '/$1' },
+          { src: '^/$', dest: '/static/pages/index.html' },
+          { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+        ],
+      }, null, 2));
+    }
+  } else if (target === 'cloudflare') {
+    cloudflareAdapter.build(adapterCtx);
+  } else if (target === 'render') {
+    renderAdapter.build(adapterCtx);
+    nodeAdapter.build(adapterCtx);
+  } else if (target === 'docker') {
+    dockerAdapter.build(adapterCtx);
+    nodeAdapter.build(adapterCtx);
+  } else if (target === 'netlify') {
+    const netlifyAdapterMod = getAdapter('netlify');
+    if (netlifyAdapterMod) {
+      netlifyAdapterMod.build(adapterCtx);
+    }
+  } else {
+    // No explicit target — run all adapters via generateDeploymentOutputs
+    const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
+    generateDeploymentOutputs({ cwd, vistaDir, debug, adapter: target ?? undefined });
+  }
+
+  const dryRunMode = isDryRun ? 'dry-run' : 'live';
+  console.log(`[vista:deploy] Deploy artifacts generated for ${target || 'all'} (${dryRunMode} mode).`);
+
 } else {
   console.log('');
   console.log('Vista JS Framework CLI');
@@ -251,7 +341,7 @@ if (command === 'dev') {
   console.log('  dev     Start development server with HMR');
   console.log('  build   Create production build');
   console.log('  start   Start production server');
-  console.log('  deploy  Build and deploy to a hosting platform');
+  console.log('  deploy  Generate zero-config deployment adapters (vercel, cloudflare, render, docker, node)');
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
   console.log('');
   console.log('Options:');
@@ -260,14 +350,17 @@ if (command === 'dev') {
   console.log('  --flashpack   Use Rust-first Flashpack engine path');
   console.log('  --default-engine   Force default engine path');
   console.log('  --webpack   Alias of --default-engine');
-  console.log('  deploy --target <platform>   Deploy to render, vercel, cloudflare, netlify, or docker');
-  console.log('  deploy --dry-run             Validate and emit deploy artifacts only');
+  console.log('  --adapter <target>   Select deployment adapter (vercel, cloudflare, render, docker, node)');
+  console.log('                       Works with both `vista build` and `vista deploy`');
   console.log('');
   console.log('Examples:');
-  console.log('  vista dev            # Start dev server (RSC mode)');
-  console.log('  vista dev --legacy   # Start dev server with legacy SSR');
-  console.log('  vista dev --flashpack   # Start dev server with Flashpack mode');
-  console.log('  vista build          # Production build with RSC');
-  console.log('  vista g api-init     # Generate typed API starter files');
+  console.log('  vista dev                         # Start dev server (RSC mode)');
+  console.log('  vista dev --legacy                # Start dev server with legacy SSR');
+  console.log('  vista dev --flashpack             # Start dev server with Flashpack mode');
+  console.log('  vista build                       # Production build with RSC');
+  console.log('  vista build --adapter vercel      # Build + generate Vercel output');
+  console.log('  vista build --adapter cloudflare  # Build + generate Cloudflare Workers output');
+  console.log('  vista deploy --adapter docker     # Generate Docker deployment output');
+  console.log('  vista g api-init                  # Generate typed API starter files');
   console.log('');
 }

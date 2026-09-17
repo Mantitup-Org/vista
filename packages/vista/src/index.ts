@@ -36,16 +36,6 @@ export { callServer } from './client/server-actions';
 export type { ClientManifest, ClientComponentEntry } from './build/rsc/client-manifest';
 export type { ServerManifest, ServerComponentEntry, RouteEntry } from './build/rsc/server-manifest';
 
-// Server & Middleware exports
-export { NextResponse } from './server/index';
-export type {
-  VistaMiddlewareContext,
-  VistaMiddlewareRequest,
-  MiddlewareResult,
-  MiddlewareConfig,
-  MiddlewareFunction,
-  NextFunction,
-} from './server/index';
-
-// AI Framework
-export * from './ai';
+// NOTE: The AI framework (vista/ai) and deployment adapters (vista/adapters) are
+// server-only and NOT exported from the root entry to prevent polluting client bundles.
+// Import directly from the subpath: import { agent, tool } from 'vista/ai'

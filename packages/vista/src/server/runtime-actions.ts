@@ -58,6 +58,12 @@ export function createInlineServerActionId(
   return `${createStableFileUrl(filePath)}#inline_${ordinal}_${normalizeHint(hint)}`;
 }
 
+export const SERVER_REFERENCE_TAG = Symbol.for('react.server.reference');
+
+export function setRegisterServerReference(fn: RegisterServerReferenceFn | null): void {
+  cachedRegisterServerReference = fn;
+}
+
 export function registerInlineServerReference<T extends Function>(
   reference: T,
   id: string,
@@ -70,10 +76,39 @@ export function registerInlineServerReference<T extends Function>(
   const normalizedExportName = normalizeExportName(exportName);
   const registerServerReference = getRegisterServerReference();
   if (registerServerReference) {
-    registerServerReference(reference, id, normalizedExportName);
+    try {
+      registerServerReference(reference, id, normalizedExportName);
+    } catch {
+      // Fallback manual registration below
+    }
+  }
+
+  // Ensure React Server Components serializer recognizes the reference as a valid Server Reference
+  const targetId = normalizedExportName === 'default' ? id : `${id}#${normalizedExportName}`;
+  const funcObj = reference as any;
+  if (funcObj.$$typeof !== SERVER_REFERENCE_TAG) {
+    try {
+      Object.defineProperties(reference, {
+        $$typeof: { value: SERVER_REFERENCE_TAG, configurable: true, enumerable: false },
+        $$id: { value: targetId, configurable: true, enumerable: true },
+        $$bound: { value: funcObj.$$bound ?? null, configurable: true, enumerable: false },
+        $$location: {
+          value: funcObj.$$location ?? Error('react-server-action-frame'),
+          configurable: true,
+          enumerable: false,
+        },
+      });
+    } catch {
+      funcObj.$$typeof = SERVER_REFERENCE_TAG;
+      funcObj.$$id = targetId;
+      funcObj.$$bound = funcObj.$$bound ?? null;
+    }
   }
 
   registeredReferences.set(id, reference);
+  if (targetId !== id) {
+    registeredReferences.set(targetId, reference);
+  }
   return reference;
 }
 

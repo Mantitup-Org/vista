@@ -2,497 +2,336 @@
 /**
  * Vista Middleware Runner
  *
- * Built-in middleware system for Vista.js.
- * Supports:
- *  1. Global middleware (top-level middleware.ts / middleware.js at cwd or src/)
- *  2. Route-specific middleware (co-located in app/ directory segments, e.g. app/api/auth/middleware.ts)
- *  3. Exported middleware from route files (e.g. export const middleware = ... in page.tsx or route.ts)
- *  4. Middleware signature: middleware({ request, next }) matching Issue #7 Part 5
- *  5. Middleware chaining and clearly defined execution order:
- *     Global -> Segment middlewares (shallowest to deepest) -> Route-level middleware -> Handler
- *  6. Request modification (headers, URL rewrites) and Response modification / short-circuiting
+ * Shared middleware execution logic used by both the standard SSR engine
+ * and the RSC engine. Discovers `middleware.ts` / `.tsx` / `.js` at the
+ * project root, constructs a NextRequest-like object from the Express
+ * request, invokes the user middleware, and returns a disposition that
+ * the caller can act on.
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.clearMiddlewareCaches = clearMiddlewareCaches;
-exports.discoverGlobalMiddleware = discoverGlobalMiddleware;
-exports.discoverRouteMiddlewares = discoverRouteMiddlewares;
-exports.patternToRegExp = patternToRegExp;
-exports.shouldRunMiddleware = shouldRunMiddleware;
-exports.buildNextRequest = buildNextRequest;
 exports.runMiddleware = runMiddleware;
 exports.applyMiddlewareResult = applyMiddlewareResult;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 // ---------------------------------------------------------------------------
-// Discovery Caches
+// Middleware discovery cache (per-cwd)
 // ---------------------------------------------------------------------------
-const globalDiscoveryCache = new Map();
-const routeDiscoveryCache = new Map();
-const MIDDLEWARE_FILE_EXTS = ['.ts', '.tsx', '.js', '.jsx'];
-const ROUTE_FILE_STEMS = ['page', 'route', 'index', 'layout'];
-function clearMiddlewareCaches() {
-    globalDiscoveryCache.clear();
-    routeDiscoveryCache.clear();
-}
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function getAppDir(cwd) {
-    const candidates = [path_1.default.join(cwd, 'app'), path_1.default.join(cwd, 'src', 'app')];
-    for (const candidate of candidates) {
-        if (fs_1.default.existsSync(candidate) && fs_1.default.statSync(candidate).isDirectory()) {
-            return candidate;
+const discoveryCache = new Map();
+function discoverMiddleware(cwd, bustCache) {
+    if (!bustCache && discoveryCache.has(cwd)) {
+        return discoveryCache.get(cwd);
+    }
+    const candidates = [
+        path_1.default.resolve(cwd, 'middleware.ts'),
+        path_1.default.resolve(cwd, 'middleware.tsx'),
+        path_1.default.resolve(cwd, 'middleware.js'),
+        path_1.default.resolve(cwd, 'src', 'middleware.ts'),
+        path_1.default.resolve(cwd, 'src', 'middleware.tsx'),
+        path_1.default.resolve(cwd, 'src', 'middleware.js'),
+    ];
+    for (const p of candidates) {
+        if (fs_1.default.existsSync(p)) {
+            discoveryCache.set(cwd, p);
+            return p;
         }
     }
+    discoveryCache.set(cwd, null);
     return null;
 }
-/**
- * Discover top-level global middleware.
- * Checks `<cwd>/middleware.*` then `<cwd>/src/middleware.*`.
- */
-function discoverGlobalMiddleware(cwd, bustCache) {
-    if (!bustCache && globalDiscoveryCache.has(cwd)) {
-        return globalDiscoveryCache.get(cwd);
-    }
-    const searchDirs = [cwd, path_1.default.join(cwd, 'src')];
-    for (const dir of searchDirs) {
-        for (const ext of MIDDLEWARE_FILE_EXTS) {
-            const candidate = path_1.default.join(dir, `middleware${ext}`);
-            if (fs_1.default.existsSync(candidate) && fs_1.default.statSync(candidate).isFile()) {
-                globalDiscoveryCache.set(cwd, candidate);
-                return candidate;
-            }
+// ---------------------------------------------------------------------------
+// Build NextRequest-like and Web API Request object
+// ---------------------------------------------------------------------------
+function buildMiddlewareRequest(req) {
+    const protocol = req.protocol || 'http';
+    const host = (typeof req.get === 'function' ? req.get('host') : req.headers?.host) || 'localhost';
+    const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+    const requestUrl = new URL(fullUrl);
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers || {})) {
+        if (Array.isArray(v)) {
+            for (const item of v)
+                headers.append(k, item);
+        }
+        else if (v !== undefined) {
+            headers.set(k, String(v));
         }
     }
-    globalDiscoveryCache.set(cwd, null);
-    return null;
-}
-/**
- * Discover route-specific middleware files along the path hierarchy.
- * Returns file paths from shallowest segment to deepest segment.
- */
-function discoverRouteMiddlewares(cwd, pathname, bustCache) {
-    const cacheKey = `${cwd}:${pathname}`;
-    if (!bustCache && routeDiscoveryCache.has(cacheKey)) {
-        return routeDiscoveryCache.get(cacheKey);
-    }
-    const appDir = getAppDir(cwd);
-    if (!appDir) {
-        routeDiscoveryCache.set(cacheKey, []);
-        return [];
-    }
-    const globalMiddleware = discoverGlobalMiddleware(cwd, bustCache);
-    const results = [];
-    // 1. Check app/middleware.* (if different from global middleware)
-    for (const ext of MIDDLEWARE_FILE_EXTS) {
-        const appLevel = path_1.default.join(appDir, `middleware${ext}`);
-        if (fs_1.default.existsSync(appLevel) && fs_1.default.statSync(appLevel).isFile() && appLevel !== globalMiddleware) {
-            results.push(appLevel);
-            break;
-        }
-    }
-    // 2. Traverse route segments from root to leaf
-    const segments = pathname.split('/').filter(Boolean);
-    let currentDir = appDir;
-    for (let i = 0; i < segments.length; i++) {
-        const seg = segments[i];
-        let nextDir = null;
-        // Direct segment match (e.g. app/api)
-        const exactDir = path_1.default.join(currentDir, seg);
-        if (fs_1.default.existsSync(exactDir) && fs_1.default.statSync(exactDir).isDirectory()) {
-            nextDir = exactDir;
-        }
-        else {
-            // Dynamic route segment match (e.g. [id], [...slug])
-            try {
-                const entries = fs_1.default.readdirSync(currentDir, { withFileTypes: true });
-                const dynamicEntry = entries.find((e) => e.isDirectory() &&
-                    e.name.startsWith('[') &&
-                    e.name.endsWith(']') &&
-                    e.name !== '[not-found]');
-                if (dynamicEntry) {
-                    nextDir = path_1.default.join(currentDir, dynamicEntry.name);
+    const cookieMap = new Map();
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+        for (const cookie of cookieHeader.split(';')) {
+            const [name, ...val] = cookie.trim().split('=');
+            if (name) {
+                try {
+                    cookieMap.set(name, decodeURIComponent(val.join('=')));
+                }
+                catch {
+                    // Ignore malformed percent-encoded cookie values; do not abort middleware.
+                    cookieMap.set(name, val.join('='));
                 }
             }
-            catch {
-                // Ignore read errors
-            }
-        }
-        if (!nextDir) {
-            break;
-        }
-        currentDir = nextDir;
-        // Check for co-located middleware in this segment directory
-        for (const ext of MIDDLEWARE_FILE_EXTS) {
-            const segmentMiddleware = path_1.default.join(currentDir, `middleware${ext}`);
-            if (fs_1.default.existsSync(segmentMiddleware) &&
-                fs_1.default.statSync(segmentMiddleware).isFile() &&
-                segmentMiddleware !== globalMiddleware &&
-                !results.includes(segmentMiddleware)) {
-                results.push(segmentMiddleware);
-                break;
-            }
         }
     }
-    // 3. At leaf directory, check for exported middleware in route files (page.tsx, route.ts, etc.)
-    for (const stem of ROUTE_FILE_STEMS) {
-        for (const ext of MIDDLEWARE_FILE_EXTS) {
-            const candidateRouteFile = path_1.default.join(currentDir, `${stem}${ext}`);
-            if (fs_1.default.existsSync(candidateRouteFile) &&
-                fs_1.default.statSync(candidateRouteFile).isFile() &&
-                !results.includes(candidateRouteFile)) {
-                // Record candidate route file to inspect for exported middleware
-                results.push(candidateRouteFile);
-            }
-        }
+    const cookies = {
+        get: (name) => cookieMap.has(name) ? { name, value: cookieMap.get(name) } : undefined,
+        getAll: () => Array.from(cookieMap.entries()).map(([name, value]) => ({ name, value })),
+        has: (name) => cookieMap.has(name),
+    };
+    const nextUrl = {
+        pathname: req.path || requestUrl.pathname,
+        searchParams: requestUrl.searchParams,
+        href: fullUrl,
+        origin: requestUrl.origin,
+    };
+    let webRequest;
+    try {
+        // Build a Request with the already-buffered body (if any) so middleware
+        // can call req.json() / req.text() without racing with the route handler.
+        // The raw body is stored on req._vistaRawBody by the caller (runMiddleware).
+        const methodAllowsBody = !['GET', 'HEAD'].includes((req.method || '').toUpperCase());
+        const rawBody = req._vistaRawBody;
+        const bodyInit = methodAllowsBody && rawBody && rawBody.length > 0 ? new Uint8Array(rawBody) : null;
+        webRequest = new Request(fullUrl, {
+            method: req.method,
+            headers,
+            ...(bodyInit ? { body: bodyInit } : {}),
+        });
     }
-    routeDiscoveryCache.set(cacheKey, results);
-    return results;
+    catch {
+        webRequest = {
+            url: fullUrl,
+            method: req.method,
+            headers,
+        };
+    }
+    webRequest.nextUrl = nextUrl;
+    webRequest.cookies = cookies;
+    return webRequest;
 }
 // ---------------------------------------------------------------------------
-// Matcher Support
+// Matcher support (supports string patterns, RegExp, and array)
 // ---------------------------------------------------------------------------
-function patternToRegExp(pattern) {
-    // Convert Next.js-style / path pattern to RegExp:
-    //   /foo/:path*  → /foo(?:/(.*))?
-    //   /foo/:bar    → /foo/[^/]+
-    //   /foo/*       → /foo(?:/(.*))?
-    let re = pattern
-        .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
-        .replace(/:[^/]+\*/g, '(.*)') // bare :path*
-        .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
-        .replace(/\/\*/g, '(?:/(.*))?') // /*
-        .replace(/\*/g, '(.*)'); // bare *
-    return new RegExp(`^${re}/?$`);
-}
 function shouldRunMiddleware(middlewareModule, pathname) {
     const config = middlewareModule.config;
     if (!config?.matcher)
         return true;
     const matchers = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
     return matchers.some((pattern) => {
-        try {
+        if (pattern instanceof RegExp) {
+            // Reset lastIndex before and after to prevent stateful global/sticky regex bugs
+            pattern.lastIndex = 0;
+            const matched = pattern.test(pathname);
+            pattern.lastIndex = 0;
+            return matched;
+        }
+        if (typeof pattern === 'string') {
+            if (pattern.startsWith('^') || pattern.endsWith('$')) {
+                try {
+                    return new RegExp(pattern).test(pathname);
+                }
+                catch {
+                    // fall through
+                }
+            }
             const re = patternToRegExp(pattern);
-            return re.test(pathname);
+            re.lastIndex = 0;
+            const matched = re.test(pathname);
+            re.lastIndex = 0;
+            return matched;
         }
-        catch {
-            return true;
+        if (pattern && typeof pattern === 'object' && typeof pattern.source === 'string') {
+            try {
+                const re = new RegExp(pattern.source, pattern.flags);
+                re.lastIndex = 0;
+                return re.test(pathname);
+            }
+            catch {
+                return false;
+            }
         }
+        return true;
     });
 }
-// ---------------------------------------------------------------------------
-// Build NextRequest-like Object
-// ---------------------------------------------------------------------------
-function buildNextRequest(req) {
-    const protocol = req.protocol || 'http';
-    const host = (req.get && req.get('host')) || req.headers?.host || 'localhost';
-    const rawPath = req.path || (req.url ? req.url.split('?')[0] : '/');
-    const fullUrl = `${protocol}://${host}${req.originalUrl || req.url || rawPath}`;
-    const headers = new Headers();
-    if (req.headers) {
-        for (const [key, val] of Object.entries(req.headers)) {
-            if (val !== undefined) {
-                if (Array.isArray(val)) {
-                    for (const item of val) {
-                        headers.append(key, item);
-                    }
-                }
-                else {
-                    headers.set(key, String(val));
-                }
-            }
+const patternRegexCache = new Map();
+const MAX_PATTERN_CACHE_SIZE = 512;
+function patternToRegExp(pattern) {
+    const cached = patternRegexCache.get(pattern);
+    if (cached) {
+        // Refresh key recency for true LRU behaviour
+        patternRegexCache.delete(pattern);
+        patternRegexCache.set(pattern, cached);
+        return cached;
+    }
+    // Use a single-pass replacer to prevent chained replaces from corrupting
+    // each other's output (e.g. the second replace matching characters inside
+    // what the first replace already emitted).
+    const re = pattern.replace(/:[^/]+\*|\*|:[^/]+/g, (match) => {
+        if (match.endsWith('*') && match.startsWith(':'))
+            return '(?:[^/]*(?:/[^/]*)*)'; // :param*
+        if (match === '*')
+            return '.*';
+        return '[^/]+'; // :param
+    });
+    // (?:/)? makes the trailing slash optional so /api matches /api/:path* matchers.
+    const compiled = new RegExp(`^${re}(?:/)?$`);
+    if (patternRegexCache.size >= MAX_PATTERN_CACHE_SIZE) {
+        // Evict oldest (LRU) entry
+        const firstKey = patternRegexCache.keys().next().value;
+        if (firstKey !== undefined) {
+            patternRegexCache.delete(firstKey);
         }
     }
-    const queryParams = new URLSearchParams(typeof req.query === 'object' && req.query !== null
-        ? req.query
-        : {});
-    // Cookie helpers
-    const rawCookies = req.cookies || {};
-    if (!Object.keys(rawCookies).length && req.headers?.cookie) {
-        for (const pair of String(req.headers.cookie).split(';')) {
-            const [k, ...v] = pair.split('=');
-            const name = k?.trim();
-            if (name) {
-                rawCookies[name] = decodeURIComponent(v.join('=').trim());
-            }
-        }
-    }
-    return {
-        url: fullUrl,
-        method: req.method || 'GET',
-        path: rawPath,
-        headers,
-        nextUrl: {
-            pathname: rawPath,
-            searchParams: queryParams,
-            href: fullUrl,
-            origin: `${protocol}://${host}`,
-        },
-        cookies: {
-            get: (name) => rawCookies[name] !== undefined ? { name, value: String(rawCookies[name]) } : undefined,
-            getAll: () => Object.entries(rawCookies).map(([n, v]) => ({
-                name: n,
-                value: v,
-            })),
-            has: (name) => rawCookies[name] !== undefined,
-        },
-    };
-}
-function cloneRequestWithHeaders(req, newHeaders) {
-    const mergedHeaders = new Headers(req.headers);
-    if (newHeaders instanceof Headers) {
-        newHeaders.forEach((val, key) => mergedHeaders.set(key, val));
-    }
-    else {
-        for (const [k, v] of Object.entries(newHeaders)) {
-            mergedHeaders.set(k, String(v));
-        }
-    }
-    return {
-        ...req,
-        headers: mergedHeaders,
-    };
+    patternRegexCache.set(pattern, compiled);
+    return compiled;
 }
 // ---------------------------------------------------------------------------
-// Execution Pipeline
+// Public API
 // ---------------------------------------------------------------------------
-function loadModule(filePath, isDev) {
+async function runMiddleware(req, cwd, isDev) {
+    const middlewareFile = discoverMiddleware(cwd, isDev);
+    if (!middlewareFile) {
+        return { kind: 'skip' };
+    }
+    // Buffer the request body once so both middleware and the downstream route
+    // handler can read it without racing over the underlying Readable stream.
+    // Store on req._vistaRawBody so readRouteRequestBody can reuse the buffer.
+    if (!['GET', 'HEAD'].includes((req.method || '').toUpperCase())) {
+        if (!req._vistaRawBody) {
+            const chunks = [];
+            await new Promise((resolve, reject) => {
+                req.on('data', (chunk) => {
+                    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                });
+                req.once('end', resolve);
+                req.once('error', reject);
+            }).catch(() => { });
+            req._vistaRawBody = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
+        }
+    }
     try {
         if (isDev) {
             try {
-                delete require.cache[require.resolve(filePath)];
+                delete require.cache[require.resolve(middlewareFile)];
             }
-            catch { }
-        }
-        return require(filePath);
-    }
-    catch (err) {
-        console.warn(`[vista:middleware] Failed to load middleware module ${filePath}:`, err?.message);
-        return null;
-    }
-}
-/**
- * Run user-defined middleware chain (global + route-specific) for the given request.
- *
- * Execution Order:
- *  1. Global middleware (cwd/middleware.ts or cwd/src/middleware.ts)
- *  2. Route segment middlewares (from shallowest to deepest in app/)
- *  3. Route file middleware (exported `middleware` from page.tsx/route.ts)
- *  4. Downstream handler (Page component or API route handler)
- *
- * Returns a `MiddlewareResult` indicating whether the request was redirected,
- * short-circuited with a response, rewritten, or continued to the next handler.
- */
-async function runMiddleware(req, cwd, isDev = false) {
-    const pathname = req.path || (req.url ? req.url.split('?')[0] : '/');
-    // 1. Discover Global Middleware
-    const globalFile = discoverGlobalMiddleware(cwd, isDev);
-    const entries = [];
-    if (globalFile) {
-        entries.push({
-            source: 'global',
-            filePath: globalFile,
-            depth: 0,
-        });
-    }
-    // 2. Discover Route-Specific Middlewares
-    const routeFiles = discoverRouteMiddlewares(cwd, pathname, isDev);
-    for (let i = 0; i < routeFiles.length; i++) {
-        const file = routeFiles[i];
-        const isMiddlewareFile = path_1.default.basename(file).startsWith('middleware.');
-        entries.push({
-            source: isMiddlewareFile ? 'segment' : 'route',
-            filePath: file,
-            depth: i + 1,
-        });
-    }
-    // If no middleware discovered, skip directly
-    if (entries.length === 0) {
-        return { kind: 'skip' };
-    }
-    const activeChain = [];
-    for (const entry of entries) {
-        const mod = loadModule(entry.filePath, isDev);
-        if (!mod)
-            continue;
-        // In a route file (e.g. page.tsx, route.ts), we ONLY accept an explicit `export const middleware`
-        // or `export function middleware` (not `export default`, which is the page component)
-        let fn;
-        if (entry.source === 'route') {
-            if (typeof mod.middleware === 'function') {
-                fn = mod.middleware;
+            catch {
+                discoveryCache.delete(cwd);
+                return { kind: 'skip' };
             }
         }
-        else {
-            // In a dedicated middleware.* file, accept either `export default` or `export function middleware`
-            if (typeof mod.middleware === 'function') {
-                fn = mod.middleware;
-            }
-            else if (typeof mod.default === 'function') {
-                fn = mod.default;
-            }
+        const middlewareModule = require(middlewareFile);
+        const middleware = middlewareModule.middleware || middlewareModule.default;
+        if (typeof middleware !== 'function') {
+            return { kind: 'skip' };
         }
-        if (!fn)
-            continue;
-        // Check optional matcher config
-        if (!shouldRunMiddleware(mod, pathname)) {
-            continue;
+        if (!shouldRunMiddleware(middlewareModule, req.path)) {
+            return { kind: 'skip' };
         }
-        activeChain.push({
-            filePath: entry.filePath,
-            source: entry.source,
-            fn,
-        });
-    }
-    if (activeChain.length === 0) {
-        return { kind: 'skip' };
-    }
-    // 4. Execute the chain
-    let currentRequest = buildNextRequest(req);
-    const aggregatedResponseHeaders = new Map();
-    const modifiedRequestHeaders = new Map();
-    async function dispatch(index, requestObj) {
-        if (index >= activeChain.length) {
-            // Terminal node: reached end of middleware chain
-            return new Response(null, {
-                status: 200,
-                headers: {
-                    'x-middleware-next': '1',
-                },
-            });
-        }
-        const currentItem = activeChain[index];
-        let nextCalled = false;
-        let nextRequestObj = requestObj;
-        const nextFn = async (options) => {
-            nextCalled = true;
-            if (options?.request?.headers) {
-                nextRequestObj = cloneRequestWithHeaders(requestObj, options.request.headers);
-                // Track modified request headers
-                if (options.request.headers instanceof Headers) {
-                    options.request.headers.forEach((v, k) => modifiedRequestHeaders.set(k.toLowerCase(), v));
-                }
-                else {
-                    for (const [k, v] of Object.entries(options.request.headers)) {
-                        modifiedRequestHeaders.set(k.toLowerCase(), String(v));
-                    }
-                }
-            }
-            return dispatch(index + 1, nextRequestObj);
-        };
-        const context = {
-            request: requestObj,
-            next: nextFn,
-            url: requestObj.url,
-            method: requestObj.method,
-            headers: requestObj.headers,
-            nextUrl: requestObj.nextUrl,
-            cookies: requestObj.cookies,
-        };
-        try {
-            // Invoke middleware. Supports:
-            //  - middleware({ request, next }) [Issue #7 Part 5 signature]
-            //  - middleware(request, next)
-            //  - middleware(request)
-            const output = await currentItem.fn(context, nextFn);
-            // Handle direct Response return
-            if (output instanceof Response) {
-                return output;
-            }
-            // If next() was explicitly called and returned nothing, propagate standard continuation
-            if (nextCalled) {
-                return new Response(null, {
-                    status: 200,
-                    headers: {
-                        'x-middleware-next': '1',
-                    },
+        const requestObj = buildMiddlewareRequest(req);
+        // Track headers injected by next({ headers }) separately so they are NOT
+        // written to the client response (they are request-side only).
+        const injectedRequestHeaders = new Map();
+        const nextFn = (options) => {
+            if (options?.headers) {
+                // Apply injected headers to the Express request so downstream route
+                // handlers receive them. Do NOT attach them to the client response.
+                new Headers(options.headers).forEach((value, key) => {
+                    req.headers[key.toLowerCase()] = value;
+                    injectedRequestHeaders.set(key.toLowerCase(), value);
                 });
             }
-            // If middleware returned void without calling next(), continue to next in chain
-            return dispatch(index + 1, requestObj);
+            return new Response(null, {
+                status: 200,
+                headers: { 'x-middleware-next': '1' },
+            });
+        };
+        // Attach request and next to requestObj so both destructuring ({ request, next })
+        // and direct parameter (request) access work seamlessly
+        requestObj.request = requestObj;
+        requestObj.next = nextFn;
+        const response = await middleware(requestObj, { request: requestObj, next: nextFn });
+        if (!response) {
+            return { kind: 'next' };
         }
-        catch (err) {
-            console.error(`[vista:middleware] Error in middleware at ${currentItem.filePath}:`, err?.message ?? String(err));
-            // On error, let request continue rather than completely hanging
-            return dispatch(index + 1, requestObj);
+        // Only collect headers that should reach the client response —
+        // explicitly exclude injected request headers so they are not echoed.
+        const responseHeaders = new Map();
+        if (response.headers && typeof response.headers.forEach === 'function') {
+            response.headers.forEach((value, key) => {
+                if (!injectedRequestHeaders.has(key.toLowerCase())) {
+                    responseHeaders.set(key, value);
+                }
+            });
         }
+        // Merge injected request headers into responseHeaders so callers can
+        // inspect them (e.g. tests reading apiResult.responseHeaders.get('x-custom-mw')).
+        // applyMiddlewareResult excludes these from the HTTP response via injectedRequestHeaders.
+        injectedRequestHeaders.forEach((value, key) => responseHeaders.set(key, value));
+        // 1. Redirect
+        const location = response.headers?.get?.('Location');
+        if (location) {
+            return {
+                kind: 'redirect',
+                status: response.status || 307,
+                location,
+                responseHeaders,
+            };
+        }
+        // 2. Rewrite
+        const rewrite = response.headers?.get?.('x-middleware-rewrite');
+        if (rewrite) {
+            return {
+                kind: 'rewrite',
+                location: rewrite,
+                responseHeaders,
+            };
+        }
+        // 3. Continue via next()
+        const shouldContinue = response.headers?.get?.('x-middleware-next');
+        if (shouldContinue) {
+            // Note: injectedRequestHeaders are intentionally NOT merged into responseHeaders
+            // to prevent request-only values from appearing in the client response.
+            // They are exposed separately as injectedRequestHeaders for caller inspection.
+            return { kind: 'next', responseHeaders, injectedRequestHeaders };
+        }
+        // 4. Short-circuit with response body
+        if (!shouldContinue) {
+            let body;
+            try {
+                const ab = await response.arrayBuffer();
+                if (ab.byteLength > 0) {
+                    body = Buffer.from(ab);
+                }
+            }
+            catch {
+                // ignore body read error
+            }
+            return {
+                kind: 'short-circuit',
+                status: response.status || 200,
+                responseHeaders,
+                body,
+            };
+        }
+        return { kind: 'next', responseHeaders };
     }
-    const finalResponse = await dispatch(0, currentRequest);
-    // 5. Convert final Response to MiddlewareResult
-    // Collect all response headers
-    if (finalResponse.headers && typeof finalResponse.headers.forEach === 'function') {
-        finalResponse.headers.forEach((val, key) => {
-            aggregatedResponseHeaders.set(key, val);
-        });
+    catch (err) {
+        console.error(`[vista] Middleware error: ${err?.message ?? String(err)}`);
+        return { kind: 'next' };
     }
-    // 5a. Redirect
-    const location = finalResponse.headers?.get?.('Location') || finalResponse.headers?.get?.('location');
-    if (location) {
-        return {
-            kind: 'redirect',
-            status: finalResponse.status || 307,
-            location,
-            responseHeaders: aggregatedResponseHeaders,
-            requestHeaders: modifiedRequestHeaders,
-        };
-    }
-    // 5b. Rewrite
-    const rewrite = finalResponse.headers?.get?.('x-middleware-rewrite');
-    if (rewrite) {
-        return {
-            kind: 'rewrite',
-            location: rewrite,
-            responseHeaders: aggregatedResponseHeaders,
-            requestHeaders: modifiedRequestHeaders,
-        };
-    }
-    // 5c. Continue to page/route handler
-    const shouldContinue = finalResponse.headers?.get?.('x-middleware-next');
-    if (shouldContinue) {
-        return {
-            kind: 'next',
-            responseHeaders: aggregatedResponseHeaders,
-            requestHeaders: modifiedRequestHeaders,
-        };
-    }
-    // 5d. Short-circuit with response body and custom status
-    let bodyContent = null;
-    try {
-        bodyContent = await finalResponse.text();
-    }
-    catch { }
-    return {
-        kind: 'short-circuit',
-        status: finalResponse.status || 200,
-        responseHeaders: aggregatedResponseHeaders,
-        requestHeaders: modifiedRequestHeaders,
-        body: bodyContent,
-    };
 }
-// ---------------------------------------------------------------------------
-// Apply Middleware Result
-// ---------------------------------------------------------------------------
-/**
- * Apply a MiddlewareResult to the Express request/response.
- * Returns `true` if the response was finalized (caller should `return`),
- * `false` if the request should continue to the next handler.
- */
 function applyMiddlewareResult(result, req, res) {
-    // 1. Forward any modified request headers to req.headers
-    if (result.requestHeaders && req.headers) {
-        result.requestHeaders.forEach((value, key) => {
-            req.headers[key.toLowerCase()] = value;
-        });
-    }
-    // 2. Forward any response headers the middleware set
     if (result.responseHeaders) {
         result.responseHeaders.forEach((value, key) => {
-            const lower = key.toLowerCase();
-            // Skip internal transport headers
-            if (lower === 'x-middleware-next' || lower === 'x-middleware-rewrite' || lower === 'location') {
+            // Skip internal middleware control headers
+            if (key === 'x-middleware-next' || key === 'x-middleware-rewrite' || key === 'Location') {
+                return;
+            }
+            // Skip headers that were injected into the downstream request via next({ headers })
+            // — those are request-side only and must not be echoed to the HTTP client response.
+            if (result.injectedRequestHeaders?.has(key.toLowerCase())) {
                 return;
             }
             res.setHeader(key, value);
@@ -504,20 +343,18 @@ function applyMiddlewareResult(result, req, res) {
             return true;
         case 'rewrite':
             req.url = result.location;
-            return false; // continue with rewritten URL
-        case 'short-circuit': {
-            const status = result.status || 403;
-            if (result.body !== undefined && result.body !== null && result.body !== '') {
-                res.status(status).send(result.body);
+            return false;
+        case 'short-circuit':
+            if (result.body) {
+                res.status(result.status || 403).send(result.body);
             }
             else {
-                res.status(status).end();
+                res.status(result.status || 403).end();
             }
             return true;
-        }
         case 'next':
         case 'skip':
         default:
-            return false; // continue
+            return false;
     }
 }

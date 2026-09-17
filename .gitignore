@@ -26,6 +26,7 @@ Cargo.lock
 
 # Vista (BUILD_DIR = packages/vista/src/constants.ts)
 .vista/
+.tmp/
 vista-debug.log
 **/*.vista-cache
 apps/web/.tmp-web-start.err

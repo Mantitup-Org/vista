@@ -19,7 +19,18 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "vista": ["../packages/vista/dist/index.d.ts"],
+      "vista/ai": ["../packages/vista/dist/ai/index.d.ts"],
+      "vista/adapters": ["../packages/vista/dist/adapters/index.d.ts"],
+      "vista/*": ["../packages/vista/dist/*"],
+      "@vistagenic/vista": ["../packages/vista/dist/index.d.ts"],
+      "@vistagenic/vista/ai": ["../packages/vista/dist/ai/index.d.ts"],
+      "@vistagenic/vista/adapters": ["../packages/vista/dist/adapters/index.d.ts"],
+      "@vistagenic/vista/*": ["../packages/vista/dist/*"],
+      "react": ["../node_modules/@types/react"],
+      "react/jsx-runtime": ["../node_modules/@types/react/jsx-runtime"],
+      "react-dom": ["../node_modules/@types/react-dom"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "**/*.d.ts", ".next/types/**/*.ts"],

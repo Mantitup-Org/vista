@@ -1,119 +1,115 @@
-import type { StreamChunk, TokenUsage, ToolCall } from './types';
-
-export class AgentStream implements AsyncIterable<StreamChunk> {
-  private source: AsyncIterable<StreamChunk>;
-
-  constructor(source: AsyncIterable<StreamChunk>) {
-    this.source = source;
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<StreamChunk> {
-    return this.source[Symbol.asyncIterator]();
-  }
-
-  /**
-   * Converts the stream into a Server-Sent Events (SSE) Response.
-   * Format is compatible with UI clients and standard EventSource.
-   */
-  toDataStreamResponse(init?: ResponseInit): Response {
-    const encoder = new TextEncoder();
-    const source = this.source;
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of source) {
-            const line = `data: ${JSON.stringify(chunk)}\n\n`;
-            controller.enqueue(encoder.encode(line));
-          }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-        } catch (error: any) {
-          const errChunk: StreamChunk = {
-            type: 'error',
-            error: error?.message || 'Stream processing error',
-          };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`));
+export function createReadableTextStream(
+  chunks: string[] | AsyncIterable<string>
+): ReadableStream<string> {
+  if (Array.isArray(chunks)) {
+    let index = 0;
+    return new ReadableStream<string>({
+      pull(controller) {
+        if (index < chunks.length) {
+          controller.enqueue(chunks[index++]);
+        } else {
           controller.close();
         }
       },
     });
-
-    const headers = new Headers(init?.headers);
-    headers.set('Content-Type', 'text/event-stream; charset=utf-8');
-    headers.set('Cache-Control', 'no-cache, no-transform');
-    headers.set('Connection', 'keep-alive');
-
-    return new Response(stream, {
-      ...init,
-      status: init?.status ?? 200,
-      headers,
-    });
   }
 
-  /**
-   * Converts the stream into a simple text-only Response stream.
-   */
-  toTextStreamResponse(init?: ResponseInit): Response {
-    const encoder = new TextEncoder();
-    const source = this.source;
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const chunk of source) {
-            if (chunk.type === 'text-delta' && chunk.textDelta) {
-              controller.enqueue(encoder.encode(chunk.textDelta));
-            }
-          }
+  const iterator = chunks[Symbol.asyncIterator]();
+  return new ReadableStream<string>({
+    async pull(controller) {
+      try {
+        const { value, done } = await iterator.next();
+        if (done) {
           controller.close();
-        } catch (error) {
-          controller.error(error);
+        } else {
+          controller.enqueue(value);
         }
-      },
-    });
-
-    const headers = new Headers(init?.headers);
-    if (!headers.has('Content-Type')) {
-      headers.set('Content-Type', 'text/plain; charset=utf-8');
-    }
-    headers.set('Cache-Control', 'no-cache');
-
-    return new Response(stream, {
-      ...init,
-      status: init?.status ?? 200,
-      headers,
-    });
-  }
-
-  /**
-   * Collects all text and events from the stream into a single result.
-   */
-  async collect(): Promise<{ text: string; toolCalls: ToolCall[]; usage?: TokenUsage }> {
-    let text = '';
-    const toolCalls: ToolCall[] = [];
-    let usage: TokenUsage | undefined;
-
-    for await (const chunk of this.source) {
-      if (chunk.type === 'text-delta' && chunk.textDelta) {
-        text += chunk.textDelta;
-      } else if (chunk.type === 'tool-call' && chunk.toolCall) {
-        toolCalls.push(chunk.toolCall);
-      } else if (chunk.type === 'done' && chunk.usage) {
-        usage = chunk.usage;
+      } catch (err) {
+        controller.error(err);
       }
-    }
-
-    return { text, toolCalls, usage };
-  }
+    },
+  });
 }
 
-export function createAIStreamResponse(
-  stream: AsyncIterable<StreamChunk> | AgentStream,
+export function toTextStreamResponse(
+  stream: ReadableStream<string>,
   init?: ResponseInit
 ): Response {
-  if (stream instanceof AgentStream) {
-    return stream.toDataStreamResponse(init);
+  const encoder = new TextEncoder();
+  const reader = stream.getReader();
+
+  // Pull-based adapter: reads one chunk per pull so slow clients experience
+  // bounded memory usage instead of having the entire output queued eagerly.
+  const byteStream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+        } else if (value) {
+          controller.enqueue(encoder.encode(value));
+        }
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel() {
+      reader.cancel().catch(() => { /* ignore */ });
+    },
+  });
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'text/plain; charset=utf-8');
   }
-  return new AgentStream(stream).toDataStreamResponse(init);
+
+  return new Response(byteStream, {
+    ...init,
+    headers,
+  });
 }
+
+export function toDataStreamResponse(
+  stream: ReadableStream<string>,
+  init?: ResponseInit
+): Response {
+  const encoder = new TextEncoder();
+  const reader = stream.getReader();
+
+  // Pull-based adapter with proper cancellation so a disconnected client
+  // doesn't keep the model output accumulating in memory.
+  const byteStream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+          controller.close();
+        } else if (value) {
+          controller.enqueue(encoder.encode(`0:${JSON.stringify(value)}\n`));
+        }
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel() {
+      reader.cancel().catch(() => { /* ignore */ });
+    },
+  });
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has('Content-Type')) {
+    // The data stream protocol uses line-delimited JSON (0:"chunk"\n), not SSE.
+    // text/plain is correct here; text/event-stream would imply EventSource format.
+    headers.set('Content-Type', 'text/plain; charset=utf-8');
+    headers.set('x-vercel-ai-data-stream', 'v1');
+  }
+  headers.set('Cache-Control', 'no-cache');
+  headers.set('Connection', 'keep-alive');
+
+  return new Response(byteStream, {
+    ...init,
+    headers,
+  });
+}
+

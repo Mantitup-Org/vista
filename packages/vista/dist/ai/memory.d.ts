@@ -1,16 +1,16 @@
-import type { AgentMemory, Message } from './types';
-export interface InMemoryStoreOptions {
-    maxMessages?: number;
-    ttlMs?: number;
-}
-export declare class InMemoryStore implements AgentMemory {
-    private sessions;
+import type { MemoryStore, Message } from './types';
+export declare class InMemoryHistory implements MemoryStore {
+    private defaultSession;
+    /** Maximum messages per session. Older messages are evicted when exceeded.
+     * Set to Infinity to disable the limit. */
     private maxMessages;
-    private ttlMs?;
-    constructor(options?: InMemoryStoreOptions);
-    get(sessionId: string): Promise<Message[]>;
-    save(sessionId: string, messages: Message[]): Promise<void>;
-    clear(sessionId: string): Promise<void>;
-    private cleanExpired;
+    private sessions;
+    constructor(defaultSession?: string, 
+    /** Maximum messages per session. Older messages are evicted when exceeded.
+     * Set to Infinity to disable the limit. */
+    maxMessages?: number);
+    getMessages(sessionId?: string): Message[];
+    addMessage(message: Message, sessionId?: string): void;
+    clear(sessionId?: string): void;
 }
-export declare const defaultMemoryStore: InMemoryStore;
+export declare function createMemory(defaultSession?: string, maxMessages?: number): MemoryStore;

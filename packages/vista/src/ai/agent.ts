@@ -1,455 +1,342 @@
-import { resolveModel } from './providers/base';
-import { defaultMemoryStore, InMemoryStore } from './memory';
-import { AgentStream } from './stream';
-import { AgentTelemetry } from './observability';
-import { tool } from './tool';
 import type {
+  Agent,
   AgentConfig,
-  AgentExecutionResult,
-  AgentMemory,
-  AgentStep,
-  LanguageModel,
+  AgentRunOptions,
+  AgentStreamResult,
+  GenerateResult,
+  MemoryStore,
   Message,
-  StreamChunk,
-  TokenUsage,
-  ToolContext,
-  ToolDefinition,
   ToolResult,
 } from './types';
+import { resolveProvider } from './providers';
+import { InMemoryHistory } from './memory';
+import { toDataStreamResponse, toTextStreamResponse } from './stream';
 
-export interface AgentRunOptions {
-  prompt?: string;
-  messages?: Message[];
-  sessionId?: string;
-  abortSignal?: AbortSignal;
+/** Strip provider prefix from model spec (e.g. "openai:gpt-4o" -> "gpt-4o") */
+function stripProviderPrefix(model: string): string {
+  const idx = model.indexOf(':');
+  if (idx === -1) return model;
+  return model.slice(idx + 1) || model;
 }
 
-export class Agent {
-  public readonly name: string;
-  private model: LanguageModel;
-  private config: AgentConfig;
-  private toolsMap: Map<string, ToolDefinition>;
-  private memory?: AgentMemory;
+/** Validate tool arguments against a JSON Schema (required fields + basic types). */
+function validateToolArgs(args: Record<string, unknown>, schema: any, toolName: string): string | null {
+  if (!schema || typeof schema !== 'object') return null;
 
-  constructor(config: AgentConfig) {
-    if (!config.name || typeof config.name !== 'string') {
-      throw new Error('Agent must have a valid string name');
+  const required: string[] = schema.required ?? [];
+  for (const field of required) {
+    if (!(field in args)) {
+      return `Tool "${toolName}" missing required parameter: "${field}"`;
     }
-    this.name = config.name;
-    this.config = config;
-    this.model = resolveModel(config.model);
+  }
 
-    // Initialize tools lookup
-    this.toolsMap = new Map();
-    if (config.tools) {
-      for (const t of config.tools) {
-        if (t && typeof t.name === 'string') {
-          this.toolsMap.set(t.name, t);
-        }
+  const props: Record<string, { type?: string }> = schema.properties ?? {};
+  for (const [key, def] of Object.entries(props)) {
+    if (key in args && def.type) {
+      const actualType = Array.isArray(args[key]) ? 'array' : typeof args[key];
+      if (actualType !== def.type) {
+        return `Tool "${toolName}" parameter "${key}" expected type "${def.type}" but got "${actualType}"`;
       }
     }
-
-    // Initialize memory store
-    if (config.memory === true) {
-      this.memory = defaultMemoryStore;
-    } else if (typeof config.memory === 'object' && config.memory !== null) {
-      this.memory = config.memory;
-    }
   }
 
-  private async resolveSystemPrompt(): Promise<string | undefined> {
-    if (typeof this.config.systemPrompt === 'function') {
-      return await this.config.systemPrompt();
-    }
-    return this.config.systemPrompt;
+  return null;
+}
+
+const MAX_TOOL_ITERATIONS = 5;
+
+export function agent(config: AgentConfig): Agent {
+  if (!config.model) {
+    throw new Error('[vista/ai] Agent must specify a "model"');
   }
 
-  private normalizeInput(input: string | Message[] | AgentRunOptions): {
+  const name = config.name || 'agent';
+  const model = config.model;
+  const systemPrompt = config.systemPrompt || config.system;
+  const tools = config.tools || [];
+  const memory: MemoryStore | undefined =
+    config.memory === true
+      ? new InMemoryHistory()
+      : config.memory && typeof config.memory === 'object'
+        ? config.memory
+        : undefined;
+
+  const provider = resolveProvider(model);
+  // The model name passed to the provider must not include the provider prefix.
+  const resolvedModelName =
+    typeof model === 'string' ? stripProviderPrefix(model) : provider.name;
+
+  async function buildMessages(runOpts: AgentRunOptions): Promise<{
     messages: Message[];
-    sessionId?: string;
-    abortSignal?: AbortSignal;
-  } {
-    if (typeof input === 'string') {
-      return { messages: [{ role: 'user', content: input }] };
+    sessionId: string;
+  }> {
+    const sessionId = runOpts.sessionId || 'default';
+    const messages: Message[] = [];
+
+    if (systemPrompt) {
+      messages.push({ role: 'system', content: systemPrompt });
     }
-    if (Array.isArray(input)) {
-      return { messages: [...input] };
+
+    if (memory) {
+      const history = await memory.getMessages(sessionId);
+      messages.push(...history);
     }
-    const messages = input.messages ? [...input.messages] : [];
-    if (input.prompt) {
-      messages.push({ role: 'user', content: input.prompt });
+
+    if (runOpts.messages && runOpts.messages.length > 0) {
+      messages.push(...runOpts.messages);
     }
-    return {
-      messages,
-      sessionId: input.sessionId,
-      abortSignal: input.abortSignal,
-    };
+
+    if (runOpts.prompt) {
+      const userMessage: Message = { role: 'user', content: runOpts.prompt };
+      messages.push(userMessage);
+      if (memory) {
+        await memory.addMessage(userMessage, sessionId);
+      }
+    }
+
+    return { messages, sessionId };
   }
 
-  /**
-   * Run the agent through a multi-step reasoning and tool-execution loop.
-   */
-  async run(input: string | Message[] | AgentRunOptions): Promise<AgentExecutionResult> {
-    const { messages: incomingMessages, sessionId, abortSignal } = this.normalizeInput(input);
-    const telemetry = new AgentTelemetry(this.config.observability);
-    telemetry.start();
-
-    // Load memory history if session provided
-    let conversationHistory: Message[] = [];
-    if (this.memory && sessionId) {
-      const stored = await this.memory.get(sessionId);
-      conversationHistory = [...stored];
-    }
-    conversationHistory.push(...incomingMessages);
-
-    const systemPrompt = await this.resolveSystemPrompt();
-    const maxSteps = this.config.maxSteps || 5;
-    const toolsList = Array.from(this.toolsMap.values());
-
-    const steps: AgentStep[] = [];
-    let currentStep = 1;
-    let finalAnswer = '';
-    let finishReason = 'stop';
-
-    while (currentStep <= maxSteps) {
-      if (abortSignal?.aborted) {
-        throw new Error('Agent execution aborted');
-      }
-
-      telemetry.recordStepStart(currentStep);
-
-      const stepResult = await this.model.generateText({
-        messages: conversationHistory,
-        systemPrompt,
-        tools: toolsList.length > 0 ? toolsList : undefined,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        abortSignal,
-      });
-
-      const stepRecord: AgentStep = {
-        stepNumber: currentStep,
-        prompt: [...conversationHistory],
-        text: stepResult.text,
-        toolCalls: stepResult.toolCalls,
-        usage: stepResult.usage,
-      };
-
-      // 1. If no tool calls requested, we have reached the final answer
-      if (!stepResult.toolCalls || stepResult.toolCalls.length === 0) {
-        finalAnswer = stepResult.text;
-        finishReason = stepResult.finishReason || 'stop';
-
-        conversationHistory.push({
-          role: 'assistant',
-          content: finalAnswer,
+  async function executeToolCalls(
+    toolCalls: NonNullable<GenerateResult['toolCalls']>
+  ): Promise<ToolResult[]> {
+    const results: ToolResult[] = [];
+    for (const call of toolCalls) {
+      const toolDef = tools.find((t) => t.name === call.function.name);
+      if (!toolDef) {
+        results.push({
+          toolCallId: call.id,
+          toolName: call.function.name,
+          result: null,
+          error: `Tool "${call.function.name}" not found on agent "${name}"`,
         });
-
-        telemetry.recordStepFinish(stepRecord);
-        steps.push(stepRecord);
-
-        if (this.config.onStepFinish) {
-          await this.config.onStepFinish(stepRecord);
-        }
-        break;
+        continue;
       }
 
-      // 2. Model requested tool calls
-      conversationHistory.push({
-        role: 'assistant',
-        content: stepResult.text,
-        toolCalls: stepResult.toolCalls,
-      });
+      try {
+        const rawArgs = call.function.arguments;
+        const args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
 
-      const toolResults: ToolResult[] = [];
-
-      for (const call of stepResult.toolCalls) {
-        telemetry.recordToolCall(call);
-        const registeredTool = this.toolsMap.get(call.name);
-
-        if (!registeredTool) {
-          const errRes: ToolResult = {
+        // Validate args against the tool's JSON Schema before execution
+        const validationError = validateToolArgs(args, toolDef.parameters, toolDef.name);
+        if (validationError) {
+          results.push({
             toolCallId: call.id,
-            name: call.name,
-            result: `Error: Tool "${call.name}" is not registered on agent "${this.name}".`,
-            isError: true,
-          };
-          toolResults.push(errRes);
-          telemetry.recordToolResult(errRes);
-          conversationHistory.push({
-            role: 'tool',
-            name: call.name,
-            toolCallId: call.id,
-            content: errRes.result,
+            toolName: toolDef.name,
+            result: null,
+            error: validationError,
           });
           continue;
         }
 
-        const toolCtx: ToolContext = {
-          step: currentStep,
-          messages: conversationHistory,
-          agentName: this.name,
-          abortSignal,
+        const result = await toolDef.execute(args);
+        results.push({
+          toolCallId: call.id,
+          toolName: toolDef.name,
+          result,
+        });
+      } catch (err) {
+        results.push({
+          toolCallId: call.id,
+          toolName: toolDef.name,
+          result: null,
+          error: (err as Error)?.message ?? String(err),
+        });
+      }
+    }
+    return results;
+  }
+
+  async function generate(options: AgentRunOptions | string): Promise<GenerateResult> {
+    const runOpts: AgentRunOptions = typeof options === 'string' ? { prompt: options } : options;
+    const { messages, sessionId } = await buildMessages(runOpts);
+
+    // Conversation loop: keep running until the model stops requesting tools.
+    const conversationMessages = [...messages];
+    // Accumulate all tool calls and results across iterations so callers can inspect them.
+    const allToolCalls: NonNullable<GenerateResult['toolCalls']> = [];
+    const allToolResults: ToolResult[] = [];
+
+    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+      const result = await provider.generate({
+        model: resolvedModelName,
+        messages: conversationMessages,
+        tools,
+        temperature: runOpts.temperature ?? config.temperature,
+        maxTokens: runOpts.maxTokens ?? config.maxTokens,
+      });
+
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        const toolResults = await executeToolCalls(result.toolCalls);
+        result.toolResults = toolResults;
+
+        // Accumulate across iterations
+        allToolCalls.push(...result.toolCalls);
+        allToolResults.push(...toolResults);
+
+        // Record assistant turn with tool calls
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: result.text,
+          toolCalls: result.toolCalls,
         };
-
-        try {
-          const args =
-            typeof call.arguments === 'object' && call.arguments !== null
-              ? call.arguments
-              : typeof call.arguments === 'string'
-                ? JSON.parse(call.arguments || '{}')
-                : {};
-
-          const rawOutput = await registeredTool.execute(args, toolCtx);
-          const serializedOutput =
-            typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
-
-          const successRes: ToolResult = {
-            toolCallId: call.id,
-            name: call.name,
-            result: rawOutput,
-          };
-          toolResults.push(successRes);
-          telemetry.recordToolResult(successRes);
-
-          conversationHistory.push({
-            role: 'tool',
-            name: call.name,
-            toolCallId: call.id,
-            content: serializedOutput,
-          });
-        } catch (toolError: any) {
-          const errMessage = toolError?.message || 'Tool execution failed';
-          const failureRes: ToolResult = {
-            toolCallId: call.id,
-            name: call.name,
-            result: `Error executing ${call.name}: ${errMessage}`,
-            isError: true,
-          };
-          toolResults.push(failureRes);
-          telemetry.recordToolResult(failureRes);
-
-          conversationHistory.push({
-            role: 'tool',
-            name: call.name,
-            toolCallId: call.id,
-            content: failureRes.result,
-          });
+        conversationMessages.push(assistantMessage);
+        if (memory) {
+          await memory.addMessage(assistantMessage, sessionId);
         }
+
+        // Record tool result messages and add to conversation
+        for (const tr of toolResults) {
+          const toolMessage: Message = {
+            role: 'tool',
+            name: tr.toolName,
+            toolCallId: tr.toolCallId,
+            content: JSON.stringify(tr.result ?? { error: tr.error }),
+          };
+          conversationMessages.push(toolMessage);
+          if (memory) {
+            await memory.addMessage(toolMessage, sessionId);
+          }
+        }
+
+        // Loop back to let the model produce its final answer
+        continue;
       }
 
-      stepRecord.toolResults = toolResults;
-      telemetry.recordStepFinish(stepRecord);
-      steps.push(stepRecord);
-
-      if (this.config.onStepFinish) {
-        await this.config.onStepFinish(stepRecord);
+      // No more tool calls — record assistant response and return
+      if (memory && result.text) {
+        await memory.addMessage(
+          {
+            role: 'assistant',
+            content: result.text,
+          },
+          sessionId
+        );
       }
 
-      currentStep++;
-      if (currentStep > maxSteps) {
-        finishReason = 'length';
-        finalAnswer =
-          stepResult.text ||
-          `Agent reached maximum step limit (${maxSteps}) before arriving at final answer.`;
+      // Merge accumulated tool call info into the final result
+      if (allToolCalls.length > 0) {
+        result.toolCalls = allToolCalls;
+        result.toolResults = allToolResults;
       }
+
+      return result;
     }
 
-    // Save updated memory if configured
-    if (this.memory && sessionId) {
-      await this.memory.save(sessionId, conversationHistory);
+    // Exceeded max iterations — build merged final result
+    const lastResult: GenerateResult = {
+      text: allToolResults.length > 0
+        ? JSON.stringify(allToolResults[allToolResults.length - 1].result ?? '')
+        : '',
+      toolCalls: allToolCalls.length > 0 ? allToolCalls : undefined,
+      toolResults: allToolResults.length > 0 ? allToolResults : undefined,
+      finishReason: 'length',
+    };
+    return lastResult;
+  }
+
+  async function stream(options: AgentRunOptions | string): Promise<AgentStreamResult> {
+    const runOpts: AgentRunOptions = typeof options === 'string' ? { prompt: options } : options;
+    const { messages, sessionId } = await buildMessages(runOpts);
+
+    // If this agent has tools, we must run the tool loop synchronously first
+    // (since streaming providers emit text-only and ignore delta.tool_calls).
+    // Execute tool calls via generate() then stream the final text response.
+    if (tools.length > 0) {
+      const result = await generate(runOpts);
+      const finalText = result.text || '';
+      // Stream the final text as a single-chunk ReadableStream
+      const rawStream = new ReadableStream<string>({
+        start(controller) {
+          if (finalText) controller.enqueue(finalText);
+          controller.close();
+        },
+      });
+
+      const [stream1, stream2] = rawStream.tee();
+      return {
+        textStream: stream1,
+        toTextStreamResponse(init?: ResponseInit) {
+          return toTextStreamResponse(stream2, init);
+        },
+        toDataStreamResponse(init?: ResponseInit) {
+          return toDataStreamResponse(stream2, init);
+        },
+      };
     }
 
-    const metrics = telemetry.finish();
+    const rawStream = await provider.stream({
+      model: resolvedModelName,
+      messages,
+      tools,
+      temperature: runOpts.temperature ?? config.temperature,
+      maxTokens: runOpts.maxTokens ?? config.maxTokens,
+    });
+
+    // Wrap the stream in a passthrough that collects text for memory recording.
+    // This avoids tee() race conditions where fire-and-forget memory writes
+    // happen after clearMemory() is called by the consumer.
+    let collectedText = '';
+    const memoryCapturingStream = new TransformStream<string, string>({
+      transform(chunk, controller) {
+        collectedText += chunk;
+        controller.enqueue(chunk);
+      },
+      async flush(_controller) {
+        if (memory && collectedText) {
+          try {
+            await memory.addMessage(
+              { role: 'assistant', content: collectedText },
+              sessionId
+            );
+          } catch {
+            // Memory recording is best-effort
+          }
+        }
+      },
+    });
+
+    const textStream = rawStream.pipeThrough(memoryCapturingStream);
+
+    // Tee into two independent branches:
+    //   stream1 — returned as textStream for direct consumer reading
+    //   stream2 — used by toTextStreamResponse / toDataStreamResponse helpers
+    const [stream1, stream2] = textStream.tee();
 
     return {
-      text: finalAnswer,
-      messages: conversationHistory,
-      steps,
-      usage: metrics.totalUsage,
-      finishReason,
+      textStream: stream1,
+      toTextStreamResponse(init?: ResponseInit) {
+        return toTextStreamResponse(stream2, init);
+      },
+      toDataStreamResponse(init?: ResponseInit) {
+        return toDataStreamResponse(stream2, init);
+      },
     };
   }
 
-  /**
-   * Stream the agent's response, yielding real-time text deltas and tool events.
-   */
-  stream(input: string | Message[] | AgentRunOptions): AgentStream {
-    const self = this;
-    const { messages: incomingMessages, sessionId, abortSignal } = this.normalizeInput(input);
 
-    async function* streamGenerator(): AsyncIterable<StreamChunk> {
-      // For streaming, we run the agent steps and yield incremental events
-      let conversationHistory: Message[] = [];
-      if (self.memory && sessionId) {
-        const stored = await self.memory.get(sessionId);
-        conversationHistory = [...stored];
-      }
-      conversationHistory.push(...incomingMessages);
-
-      const systemPrompt = await self.resolveSystemPrompt();
-      const maxSteps = self.config.maxSteps || 5;
-      const toolsList = Array.from(self.toolsMap.values());
-
-      let currentStep = 1;
-      const totalUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-
-      while (currentStep <= maxSteps) {
-        if (abortSignal?.aborted) {
-          yield { type: 'error', error: 'Agent execution aborted' };
-          return;
-        }
-
-        // Stream from the underlying model
-        const chunks: StreamChunk[] = [];
-        let accumulatedText = '';
-        const toolCalls: any[] = [];
-
-        for await (const chunk of self.model.streamText({
-          messages: conversationHistory,
-          systemPrompt,
-          tools: toolsList.length > 0 ? toolsList : undefined,
-          temperature: self.config.temperature,
-          maxTokens: self.config.maxTokens,
-          abortSignal,
-        })) {
-          if (chunk.type === 'text-delta' && chunk.textDelta) {
-            accumulatedText += chunk.textDelta;
-            yield chunk;
-          } else if (chunk.type === 'tool-call' && chunk.toolCall) {
-            toolCalls.push(chunk.toolCall);
-            yield chunk;
-          } else if (chunk.type === 'done' && chunk.usage) {
-            totalUsage.promptTokens += chunk.usage.promptTokens;
-            totalUsage.completionTokens += chunk.usage.completionTokens;
-            totalUsage.totalTokens += chunk.usage.totalTokens;
-          }
-        }
-
-        // If no tool calls, generation is complete
-        if (toolCalls.length === 0) {
-          conversationHistory.push({
-            role: 'assistant',
-            content: accumulatedText,
-          });
-          yield { type: 'step-finish' };
-          break;
-        }
-
-        // Handle tool calls
-        conversationHistory.push({
-          role: 'assistant',
-          content: accumulatedText,
-          toolCalls,
-        });
-
-        for (const call of toolCalls) {
-          const registeredTool = self.toolsMap.get(call.name);
-          if (!registeredTool) {
-            const errRes = {
-              toolCallId: call.id,
-              name: call.name,
-              result: `Tool "${call.name}" not found`,
-              isError: true,
-            };
-            yield { type: 'tool-result', toolResult: errRes };
-            conversationHistory.push({
-              role: 'tool',
-              name: call.name,
-              toolCallId: call.id,
-              content: errRes.result,
-            });
-            continue;
-          }
-
-          try {
-            const args =
-              typeof call.arguments === 'object' && call.arguments !== null
-                ? call.arguments
-                : typeof call.arguments === 'string'
-                  ? JSON.parse(call.arguments || '{}')
-                  : {};
-            const result = await registeredTool.execute(args, {
-              step: currentStep,
-              messages: conversationHistory,
-              agentName: self.name,
-              abortSignal,
-            });
-            const serialized = typeof result === 'string' ? result : JSON.stringify(result);
-            yield {
-              type: 'tool-result',
-              toolResult: { toolCallId: call.id, name: call.name, result },
-            };
-            conversationHistory.push({
-              role: 'tool',
-              name: call.name,
-              toolCallId: call.id,
-              content: serialized,
-            });
-          } catch (err: any) {
-            const errRes = {
-              toolCallId: call.id,
-              name: call.name,
-              result: err?.message || 'Tool execution error',
-              isError: true,
-            };
-            yield { type: 'tool-result', toolResult: errRes };
-            conversationHistory.push({
-              role: 'tool',
-              name: call.name,
-              toolCallId: call.id,
-              content: errRes.result,
-            });
-          }
-        }
-
-        yield { type: 'step-finish' };
-        currentStep++;
-      }
-
-      if (self.memory && sessionId) {
-        await self.memory.save(sessionId, conversationHistory);
-      }
-
-      yield { type: 'done', usage: totalUsage };
-    }
-
-    return new AgentStream(streamGenerator());
-  }
-
-  /**
-   * Composes this agent as a callable Tool for another agent (multi-agent hierarchy).
-   */
-  asTool(options?: { name?: string; description?: string }): ToolDefinition {
-    const toolName = options?.name || `ask_${this.name.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
-    const toolDescription =
-      options?.description ||
-      `Delegate a question, task, or request to the specialized ${this.name} agent.`;
-
-    return tool({
-      name: toolName,
-      description: toolDescription,
-      parameters: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: `The query or instruction to give to the ${this.name} agent`,
-          },
-        },
-        required: ['query'],
-      },
-      execute: async ({ query }: { query: string }) => {
-        const result = await this.run(query);
-        return result.text;
-      },
-    });
-  }
+  return {
+    name,
+    model,
+    systemPrompt,
+    tools,
+    memory,
+    run: generate,
+    generate,
+    stream,
+    async getHistory(sessionId = 'default'): Promise<Message[]> {
+      if (!memory) return [];
+      return await memory.getMessages(sessionId);
+    },
+    async clearMemory(sessionId = 'default'): Promise<void> {
+      if (!memory) return;
+      await memory.clear(sessionId);
+    },
+    async addMessage(message: Message, sessionId = 'default'): Promise<void> {
+      if (!memory) return;
+      await memory.addMessage(message, sessionId);
+    },
+  };
 }
 
-/**
- * Creates a Vista AI Agent instance.
- */
-export function agent(config: AgentConfig): Agent {
-  return new Agent(config);
-}
+export const createAgent = agent;

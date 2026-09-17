@@ -1,5 +1,5 @@
 "use strict";
 /**
- * Vista AI Core Types
+ * Vista.js AI Application Framework Types
  */
 Object.defineProperty(exports, "__esModule", { value: true });

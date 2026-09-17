@@ -1,117 +1,93 @@
 /**
- * Vista AI Core Types
+ * Vista.js AI Application Framework Types
  */
-export type Role = 'system' | 'user' | 'assistant' | 'tool';
-export interface ToolCall {
-    id: string;
-    name: string;
-    arguments: Record<string, any> | string;
-}
-export interface ToolResult {
-    toolCallId: string;
-    name: string;
-    result: any;
-    isError?: boolean;
-}
 export interface Message {
-    role: Role;
+    role: 'system' | 'user' | 'assistant' | 'tool';
     content: string;
     name?: string;
     toolCallId?: string;
     toolCalls?: ToolCall[];
 }
-export interface TokenUsage {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
+export interface ToolCall {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string | Record<string, any>;
+    };
 }
-export interface ModelOptions {
-    model: string;
-    apiKey?: string;
-    baseURL?: string;
-    temperature?: number;
-    maxTokens?: number;
-    topP?: number;
-    headers?: Record<string, string>;
-}
-export interface GenerateTextOptions {
-    messages: Message[];
-    systemPrompt?: string;
-    tools?: ToolDefinition[];
-    temperature?: number;
-    maxTokens?: number;
-    abortSignal?: AbortSignal;
-}
-export interface GenerateTextResult {
-    text: string;
-    toolCalls?: ToolCall[];
-    usage?: TokenUsage;
-    finishReason?: 'stop' | 'tool-calls' | 'length' | 'error' | string;
-    raw?: any;
-}
-export type StreamChunkType = 'text-delta' | 'tool-call' | 'tool-result' | 'step-finish' | 'error' | 'done';
-export interface StreamChunk {
-    type: StreamChunkType;
-    textDelta?: string;
-    toolCall?: ToolCall;
-    toolResult?: ToolResult;
-    usage?: TokenUsage;
+export interface ToolResult {
+    toolCallId: string;
+    toolName: string;
+    result: any;
     error?: string;
-}
-export interface LanguageModel {
-    provider: string;
-    modelName: string;
-    generateText(options: GenerateTextOptions): Promise<GenerateTextResult>;
-    streamText(options: GenerateTextOptions): AsyncIterable<StreamChunk>;
-}
-export interface ToolContext {
-    step: number;
-    messages: Message[];
-    agentName?: string;
-    abortSignal?: AbortSignal;
 }
 export interface ToolDefinition<TParams = any, TResult = any> {
     name: string;
     description: string;
-    parameters?: any;
-    execute: (args: TParams, context?: ToolContext) => Promise<TResult> | TResult;
+    parameters?: Record<string, any>;
+    execute: (params: TParams) => Promise<TResult> | TResult;
 }
-export interface AgentStep {
-    stepNumber: number;
-    prompt: Message[];
+export interface MemoryStore {
+    getMessages(sessionId?: string): Promise<Message[]> | Message[];
+    addMessage(message: Message, sessionId?: string): Promise<void> | void;
+    clear(sessionId?: string): Promise<void> | void;
+}
+export interface ModelProvider {
+    name: string;
+    generate(options: GenerateOptions): Promise<GenerateResult>;
+    stream(options: GenerateOptions): Promise<ReadableStream<string>>;
+}
+export interface GenerateOptions {
+    model: string;
+    messages: Message[];
+    tools?: ToolDefinition[];
+    temperature?: number;
+    maxTokens?: number;
+}
+export interface GenerateResult {
     text: string;
     toolCalls?: ToolCall[];
     toolResults?: ToolResult[];
-    usage?: TokenUsage;
-}
-export interface AgentExecutionResult {
-    text: string;
-    messages: Message[];
-    steps: AgentStep[];
-    usage: TokenUsage;
-    finishReason: string;
-}
-export interface ObservabilityHandler {
-    onStepStart?: (stepNumber: number) => void;
-    onStepFinish?: (step: AgentStep) => void;
-    onToolCall?: (call: ToolCall) => void;
-    onToolResult?: (result: ToolResult) => void;
-    onError?: (error: Error) => void;
-}
-export interface AgentMemory {
-    get(sessionId: string): Promise<Message[]> | Message[];
-    save(sessionId: string, messages: Message[]): Promise<void> | void;
-    clear(sessionId: string): Promise<void> | void;
+    finishReason?: string;
+    usage?: {
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+    };
 }
 export interface AgentConfig {
-    name: string;
-    model: string | LanguageModel;
-    systemPrompt?: string | (() => string | Promise<string>);
-    tools?: (ToolDefinition | any)[];
-    memory?: boolean | AgentMemory;
-    maxSteps?: number;
+    name?: string;
+    model: string | ModelProvider;
+    system?: string;
+    systemPrompt?: string;
+    tools?: ToolDefinition[];
+    memory?: boolean | MemoryStore;
     temperature?: number;
     maxTokens?: number;
-    observability?: boolean | ObservabilityHandler;
-    onStepFinish?: (step: AgentStep) => void | Promise<void>;
+}
+export interface AgentRunOptions {
+    prompt?: string;
+    messages?: Message[];
+    sessionId?: string;
+    temperature?: number;
+    maxTokens?: number;
+}
+export interface AgentStreamResult {
+    textStream: ReadableStream<string>;
+    toTextStreamResponse(init?: ResponseInit): Response;
+    toDataStreamResponse(init?: ResponseInit): Response;
+}
+export interface Agent {
+    name: string;
+    model: string | ModelProvider;
+    systemPrompt?: string;
+    tools: ToolDefinition[];
+    memory?: MemoryStore;
+    run(options: AgentRunOptions | string): Promise<GenerateResult>;
+    generate(options: AgentRunOptions | string): Promise<GenerateResult>;
+    stream(options: AgentRunOptions | string): Promise<AgentStreamResult>;
+    getHistory(sessionId?: string): Promise<Message[]>;
+    clearMemory(sessionId?: string): Promise<void>;
+    addMessage(message: Message, sessionId?: string): Promise<void>;
 }

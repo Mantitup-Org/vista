@@ -141,6 +141,12 @@ function scanForClientComponents(
       const ext = path.extname(item.name);
       if (!['.tsx', '.ts', '.jsx', '.js'].includes(ext)) continue;
 
+      const base = path.basename(item.name, ext);
+      if (base === 'route' || base === 'middleware') {
+        // Strict separation: API route handlers and middleware must never be client components
+        continue;
+      }
+
       try {
         const source = fs.readFileSync(fullPath, 'utf-8');
 

@@ -1,47 +1,22 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.createTool = void 0;
 exports.tool = tool;
-exports.formatToolForOpenAI = formatToolForOpenAI;
-exports.formatToolForAnthropic = formatToolForAnthropic;
-exports.formatToolForGemini = formatToolForGemini;
-function tool(options) {
-    if (!options.name || typeof options.name !== 'string') {
-        throw new Error('Tool must have a valid string name');
+function tool(config) {
+    if (!config.name || typeof config.name !== 'string') {
+        throw new Error('[vista/ai] Tool must have a valid string "name"');
     }
-    if (!options.description || typeof options.description !== 'string') {
-        throw new Error(`Tool "${options.name}" must have a description`);
+    if (!config.description || typeof config.description !== 'string') {
+        throw new Error('[vista/ai] Tool must have a valid string "description"');
     }
-    if (typeof options.execute !== 'function') {
-        throw new Error(`Tool "${options.name}" must have an execute function`);
+    if (typeof config.execute !== 'function') {
+        throw new Error('[vista/ai] Tool must provide an "execute" function');
     }
     return {
-        name: options.name,
-        description: options.description,
-        parameters: options.parameters || { type: 'object', properties: {} },
-        execute: options.execute,
+        name: config.name,
+        description: config.description,
+        parameters: config.parameters || { type: 'object', properties: {} },
+        execute: config.execute,
     };
 }
-function formatToolForOpenAI(tool) {
-    return {
-        type: 'function',
-        function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters || { type: 'object', properties: {} },
-        },
-    };
-}
-function formatToolForAnthropic(tool) {
-    return {
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.parameters || { type: 'object', properties: {} },
-    };
-}
-function formatToolForGemini(tool) {
-    return {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters || { type: 'object', properties: {} },
-    };
-}
+exports.createTool = tool;
