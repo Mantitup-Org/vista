@@ -38,6 +38,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.worktrees/
 *.swp
 *.swo
 
