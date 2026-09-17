@@ -1,5 +1,7 @@
 # Node
 node_modules/
+# Graphify generated local artifacts
+graphify-out/
 # Ignore dist except for packages/vista/dist (needed for Render/Vercel)
 dist/
 !packages/vista/dist/
