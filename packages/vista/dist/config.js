@@ -3,13 +3,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.defaultConfig = exports.defaultCacheComponentsConfig = exports.defaultTypedApiConfig = exports.defaultStructureValidationConfig = void 0;
+exports.defaultConfig = exports.defaultDeployConfig = exports.defaultCacheComponentsConfig = exports.defaultTypedApiConfig = exports.defaultStructureValidationConfig = void 0;
 exports.resolveStructureValidationConfig = resolveStructureValidationConfig;
 exports.resolveEngineVariant = resolveEngineVariant;
 exports.applyEngineVariantToEnv = applyEngineVariantToEnv;
 exports.resolveAndApplyEngineVariant = resolveAndApplyEngineVariant;
 exports.resolveTypedApiConfig = resolveTypedApiConfig;
 exports.resolveCacheComponentsConfig = resolveCacheComponentsConfig;
+exports.resolveDeployConfig = resolveDeployConfig;
+exports.inferDeployOutputForTarget = inferDeployOutputForTarget;
 exports.loadConfig = loadConfig;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
@@ -29,6 +31,12 @@ exports.defaultTypedApiConfig = {
 exports.defaultCacheComponentsConfig = {
     enabled: false,
 };
+exports.defaultDeployConfig = {
+    target: 'auto',
+    output: 'standalone',
+    prod: true,
+    preferBuildOutputApi: true,
+};
 exports.defaultConfig = {
     images: {},
     engine: {
@@ -37,6 +45,7 @@ exports.defaultConfig = {
     validation: {
         structure: { ...exports.defaultStructureValidationConfig },
     },
+    deploy: { ...exports.defaultDeployConfig },
     experimental: {
         typedApi: { ...exports.defaultTypedApiConfig },
         cacheComponents: { ...exports.defaultCacheComponentsConfig },
@@ -122,6 +131,52 @@ function resolveCacheComponentsConfig(config) {
         enabled: Boolean(merged.enabled),
     };
 }
+function normalizeDeployTarget(raw) {
+    const value = String(raw ?? '')
+        .trim()
+        .toLowerCase();
+    const allowed = [
+        'auto',
+        'render',
+        'vercel',
+        'cloudflare',
+        'netlify',
+        'docker',
+    ];
+    return allowed.includes(value) ? value : undefined;
+}
+function normalizeDeployOutput(raw) {
+    const value = String(raw ?? '')
+        .trim()
+        .toLowerCase();
+    if (value === 'standalone' || value === 'static' || value === 'hybrid') {
+        return value;
+    }
+    return undefined;
+}
+function resolveDeployConfig(config) {
+    const merged = {
+        ...exports.defaultDeployConfig,
+        ...(config.deploy ?? {}),
+    };
+    const target = normalizeDeployTarget(merged.target) ?? exports.defaultDeployConfig.target;
+    const output = normalizeDeployOutput(merged.output) ?? exports.defaultDeployConfig.output;
+    return {
+        target,
+        output,
+        prod: merged.prod !== false,
+        preferBuildOutputApi: merged.preferBuildOutputApi !== false,
+    };
+}
+function inferDeployOutputForTarget(target) {
+    if (target === 'vercel' || target === 'cloudflare' || target === 'netlify') {
+        return 'static';
+    }
+    if (target === 'render' || target === 'docker') {
+        return 'standalone';
+    }
+    return 'standalone';
+}
 function mergeConfig(userConfig) {
     const mergedBase = {
         ...exports.defaultConfig,
@@ -142,6 +197,10 @@ function mergeConfig(userConfig) {
         server: {
             ...(exports.defaultConfig.server ?? {}),
             ...(userConfig.server ?? {}),
+        },
+        deploy: {
+            ...exports.defaultDeployConfig,
+            ...(userConfig.deploy ?? {}),
         },
         validation: {
             ...(exports.defaultConfig.validation ?? {}),

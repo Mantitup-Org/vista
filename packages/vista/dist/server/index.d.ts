@@ -87,7 +87,11 @@ export declare class NextResponse extends Response {
     static json<T>(data: T, init?: ResponseInit): NextResponse;
     static redirect(url: string | URL, status?: number): NextResponse;
     static rewrite(url: string | URL): NextResponse;
-    static next(): NextResponse;
+    static next(options?: {
+        request?: {
+            headers?: Headers | Record<string, string>;
+        };
+    }): NextResponse;
 }
 export interface NextRequest extends Request {
     nextUrl: {
@@ -100,3 +104,5 @@ export interface NextRequest extends Request {
     headers: Headers;
 }
 export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';
+export { runMiddleware, applyMiddlewareResult, discoverGlobalMiddleware, discoverRouteMiddlewares, clearMiddlewareCaches, buildNextRequest, patternToRegExp, shouldRunMiddleware, } from './middleware-runner';
+export type { MiddlewareResult, VistaMiddlewareRequest, VistaMiddlewareContext, MiddlewareFunction, MiddlewareConfig, MiddlewareModule, NextFunction, } from './middleware-runner';

@@ -37,6 +37,40 @@ function writeFileIfMissing(baseDir, relativePath, content) {
     fs_1.default.writeFileSync(absolutePath, content, 'utf8');
     return { path: absolutePath, created: true };
 }
+function renderAgent(kebabName) {
+    const camelName = toCamelCase(kebabName);
+    return [
+        "import { agent, tool } from '@vistagenic/vista/ai';",
+        '',
+        `export const ${camelName}Agent = agent({`,
+        `  name: '${kebabName}',`,
+        "  model: process.env.VISTA_AI_MODEL || 'openai:gpt-4o',",
+        `  systemPrompt: 'You are a helpful AI assistant for ${kebabName}.',`,
+        '  tools: [',
+        '    tool({',
+        "      name: 'ping',",
+        "      description: 'Check agent connectivity',",
+        '      execute: async () => ({ status: \"ok\", time: new Date().toISOString() }),',
+        '    }),',
+        '  ],',
+        '  memory: true,',
+        '});',
+        '',
+    ].join('\n');
+}
+function renderAgentRoute(kebabName) {
+    const camelName = toCamelCase(kebabName);
+    return [
+        `import { ${camelName}Agent } from '../../agents/${kebabName}/agent';`,
+        '',
+        'export async function POST(req: Request) {',
+        '  const { prompt, messages, sessionId } = await req.json();',
+        `  const stream = ${camelName}Agent.stream({ prompt, messages, sessionId });`,
+        '  return stream.toDataStreamResponse();',
+        '}',
+        '',
+    ].join('\n');
+}
 function findMatchingBrace(source, openBraceIndex) {
     let depth = 0;
     for (let i = openBraceIndex; i < source.length; i++) {
@@ -158,7 +192,7 @@ function renderRouter(name) {
         '  return v.router({',
         `    ${camel}: v.procedure.query(() => ({`,
         `      route: '${toKebabCase(name)}',`,
-        "      ok: true,",
+        '      ok: true,',
         '    })),',
         '  });',
         '}',
@@ -170,13 +204,14 @@ function printGenerateUsage(log) {
     log('  vista g api-init');
     log('  vista g router <name>');
     log('  vista g procedure <name> [get|post]');
+    log('  vista g agent <name>');
 }
 async function runGenerateCommand(args, options = {}) {
     const cwd = options.cwd ?? process.cwd();
     const log = options.log ?? console.log;
     const error = options.error ?? console.error;
     const command = (args[0] || '').toLowerCase();
-    if (!command || !['api-init', 'router', 'procedure'].includes(command)) {
+    if (!command || !['api-init', 'router', 'procedure', 'agent'].includes(command)) {
         printGenerateUsage(log);
         return 1;
     }
@@ -241,6 +276,25 @@ async function runGenerateCommand(args, options = {}) {
         const result = writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'procedures', `${safeName}.ts`), renderProcedure(safeName, methodArg));
         const relativePath = path_1.default.relative(cwd, result.path).replace(/\\/g, '/');
         log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
+        return 0;
+    }
+    if (command === 'agent') {
+        const rawName = args[1];
+        if (!rawName) {
+            error('Missing agent name. Example: vista g agent support');
+            return 1;
+        }
+        const safeName = toKebabCase(rawName);
+        if (!safeName) {
+            error(`Invalid agent name "${rawName}".`);
+            return 1;
+        }
+        const agentFile = writeFileIfMissing(cwd, path_1.default.join('app', 'agents', safeName, 'agent.ts'), renderAgent(safeName));
+        const routeFile = writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'agents', safeName, 'route.ts'), renderAgentRoute(safeName));
+        [agentFile, routeFile].forEach((res) => {
+            const relativePath = path_1.default.relative(cwd, res.path).replace(/\\/g, '/');
+            log(`${res.created ? 'created' : 'skipped'} ${relativePath}`);
+        });
         return 0;
     }
     printGenerateUsage(log);

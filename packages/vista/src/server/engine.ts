@@ -41,8 +41,7 @@ import { revalidatePath } from './static-generator';
 import { getAllFontHTML as getFontHeadHTML } from '../font/registry';
 import { getStyledNotFoundHTML } from './not-found-page';
 import {
-  resolveLegacyRouteHandlerPath,
-  resolveLegacyApiRoutePath,
+  resolveRouteHandlerMatch,
   runLegacyApiRoute,
   runTypedApiRoute,
 } from './typed-api-runtime';
@@ -560,13 +559,14 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     const finalized = applyMiddlewareResult(middlewareResult, req, res);
     if (finalized) return;
 
-    const routeHandlerPath = resolveLegacyRouteHandlerPath(cwd, req.path);
-    if (routeHandlerPath) {
+    const routeHandlerMatch = resolveRouteHandlerMatch(cwd, req.path, { isDev });
+    if (routeHandlerMatch) {
       try {
         await runLegacyApiRoute({
           req,
           res,
-          apiPath: routeHandlerPath,
+          apiPath: routeHandlerMatch.filePath,
+          params: routeHandlerMatch.params,
           isDev,
         });
         return;
@@ -579,26 +579,9 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
     }
 
     // API ROUTES SUPPORT - Next.js App Router Style
+    // File-based `route.*` handlers are already resolved above, for `/api/*` as well
+    // as any other path, so only the typed API remains to try here.
     if (req.path.startsWith('/api/')) {
-      const legacyApiPath = resolveLegacyApiRoutePath(cwd, req.path);
-
-      if (legacyApiPath) {
-        try {
-          await runLegacyApiRoute({
-            req,
-            res,
-            apiPath: legacyApiPath,
-            isDev,
-          });
-          return;
-        } catch (error) {
-          console.error(
-            `[vista:ssr] API route error: ${(error as Error)?.message ?? String(error)}`
-          );
-          return res.status(500).json({ error: 'Internal Server Error in API' });
-        }
-      }
-
       const typedHandled = await runTypedApiRoute({
         req,
         res,

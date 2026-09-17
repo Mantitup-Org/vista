@@ -6,7 +6,7 @@
  * These functions only work on the server side.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.unstable_cache = exports.revalidateTag = exports.revalidatePath = exports.cacheTag = exports.cacheLife = exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
+exports.shouldRunMiddleware = exports.patternToRegExp = exports.buildNextRequest = exports.clearMiddlewareCaches = exports.discoverRouteMiddlewares = exports.discoverGlobalMiddleware = exports.applyMiddlewareResult = exports.runMiddleware = exports.unstable_cache = exports.revalidateTag = exports.revalidatePath = exports.cacheTag = exports.cacheLife = exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
 exports.cookies = cookies;
 exports.headers = headers;
 exports.draftMode = draftMode;
@@ -269,11 +269,11 @@ class NextResponse extends Response {
             },
         });
     }
-    static next() {
+    static next(options) {
+        const responseHeaders = new Headers();
+        responseHeaders.set('x-middleware-next', '1');
         return new NextResponse(null, {
-            headers: {
-                'x-middleware-next': '1',
-            },
+            headers: responseHeaders,
         });
     }
 }
@@ -284,3 +284,15 @@ Object.defineProperty(exports, "cacheTag", { enumerable: true, get: function () 
 Object.defineProperty(exports, "revalidatePath", { enumerable: true, get: function () { return cache_1.revalidatePath; } });
 Object.defineProperty(exports, "revalidateTag", { enumerable: true, get: function () { return cache_1.revalidateTag; } });
 Object.defineProperty(exports, "unstable_cache", { enumerable: true, get: function () { return cache_1.unstable_cache; } });
+// ============================================================================
+// Middleware System
+// ============================================================================
+var middleware_runner_1 = require("./middleware-runner");
+Object.defineProperty(exports, "runMiddleware", { enumerable: true, get: function () { return middleware_runner_1.runMiddleware; } });
+Object.defineProperty(exports, "applyMiddlewareResult", { enumerable: true, get: function () { return middleware_runner_1.applyMiddlewareResult; } });
+Object.defineProperty(exports, "discoverGlobalMiddleware", { enumerable: true, get: function () { return middleware_runner_1.discoverGlobalMiddleware; } });
+Object.defineProperty(exports, "discoverRouteMiddlewares", { enumerable: true, get: function () { return middleware_runner_1.discoverRouteMiddlewares; } });
+Object.defineProperty(exports, "clearMiddlewareCaches", { enumerable: true, get: function () { return middleware_runner_1.clearMiddlewareCaches; } });
+Object.defineProperty(exports, "buildNextRequest", { enumerable: true, get: function () { return middleware_runner_1.buildNextRequest; } });
+Object.defineProperty(exports, "patternToRegExp", { enumerable: true, get: function () { return middleware_runner_1.patternToRegExp; } });
+Object.defineProperty(exports, "shouldRunMiddleware", { enumerable: true, get: function () { return middleware_runner_1.shouldRunMiddleware; } });
