@@ -10,6 +10,7 @@ const COMMANDS = [
   ['scripts/test-vista-hardening.cjs'],
   ['scripts/test-vista-output.cjs'],
   ['scripts/test-inline-server-actions.cjs'],
+  ['scripts/test-api-routes.cjs'],
   ['scripts/test-rsc-conformance.cjs'],
   ['scripts/test-flashpack-dev.cjs'],
   ['scripts/test-flashpack-state.cjs'],

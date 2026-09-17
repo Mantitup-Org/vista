@@ -175,6 +175,7 @@ Choose the narrowest relevant checks first, then run the larger suite before req
 npm --prefix packages/vista run build
 pnpm test:server-runtime
 pnpm test:inline-server-actions
+pnpm test:api-routes
 pnpm test:rsc-conformance
 pnpm test:vista-output
 ```
@@ -184,6 +185,10 @@ or anything that rewrites source at require time, run `pnpm test:inline-server-a
 first: it is the fast guard for inline `'use server'` / `'use cache'` directives, and it
 fails with a pointed message instead of surfacing as an HTTP 500 in the conformance suite.
 See section 13.4 of `developer.md` for the background.
+
+If you change file-based API routes (`app/**/route.ts` discovery, matching, or method
+dispatch), `pnpm test:api-routes` is the fast guard - it needs no dev server and no
+Rust toolchain. See section 5.4 of `developer.md` for which file owns what.
 
 ### If you change Flashpack behavior
 

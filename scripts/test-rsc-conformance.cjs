@@ -226,6 +226,44 @@ async function fetchJson(url) {
   return JSON.parse(text);
 }
 
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    method: options.method || 'GET',
+    headers: options.body ? { 'content-type': 'application/json' } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${options.method || 'GET'} ${url}\n${text}`);
+  }
+  return { response, json: JSON.parse(text) };
+}
+
+function readClientAssetSources() {
+  const roots = [
+    path.join(fixtureDir, '.vista', 'static'),
+    path.join(fixtureDir, '.flash', 'static'),
+  ];
+  const sources = [];
+
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!/\.(js|mjs|cjs|json|css|map|html)$/i.test(entry.name)) continue;
+      sources.push({ file: fullPath, content: fs.readFileSync(fullPath, 'utf8') });
+    }
+  };
+
+  roots.forEach(walk);
+  return sources;
+}
+
 async function fetchJsonResponse(url) {
   const response = await fetch(url, { cache: 'no-store' });
   const text = await response.text();
@@ -698,6 +736,121 @@ async function runEngineConformance(engineVariant, port) {
       edgeApiResponse.response.headers.get('x-vista-advanced-runtime'),
       'route-handler',
       'Expected advanced runtime header on edge route handler responses'
+    );
+
+    // ------------------------------------------------------------------
+    // File-based API route handlers (app/**/route.js)
+    // ------------------------------------------------------------------
+
+    // Every HTTP method the framework claims to support must reach its handler.
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      const methodResponse = await requestJson(
+        `${server.baseUrl}/conformance/api-methods`,
+        method === 'GET' || method === 'DELETE' ? { method } : { method, body: { ping: method } }
+      );
+      assert.equal(methodResponse.json.ok, true, `Expected ${method} route handler to succeed`);
+      assert.equal(methodResponse.json.from, 'conformance-api-methods');
+      assert.equal(
+        methodResponse.json.method,
+        method,
+        `Expected ${method} to dispatch to the ${method} export`
+      );
+      assert.equal(
+        methodResponse.response.headers.get('x-vista-advanced-runtime'),
+        'route-handler',
+        `Expected route-handler trace header on ${method} responses`
+      );
+    }
+
+    const postEcho = await requestJson(`${server.baseUrl}/conformance/api-methods`, {
+      method: 'POST',
+      body: { ping: 'POST' },
+    });
+    assert.deepEqual(
+      postEcho.json.body,
+      { ping: 'POST' },
+      'Expected the POST route handler to receive the request body'
+    );
+
+    // An unsupported method reports the methods that are available.
+    const notAllowed = await fetch(`${server.baseUrl}/conformance/api-catch-all/a`, {
+      method: 'PUT',
+      cache: 'no-store',
+    });
+    assert.equal(notAllowed.status, 405, 'Expected 405 for a method the route does not export');
+    assert.equal(
+      notAllowed.headers.get('allow'),
+      'GET, OPTIONS',
+      'Expected the 405 response to advertise the supported methods'
+    );
+
+    // Dynamic segments resolve and reach the handler as params.
+    const dynamicRoute = await requestJson(`${server.baseUrl}/conformance/api-dynamic/vista-42`);
+    assert.equal(dynamicRoute.json.from, 'conformance-api-dynamic');
+    assert.equal(
+      dynamicRoute.json.id,
+      'vista-42',
+      'Expected the dynamic segment to arrive as context.params.id'
+    );
+
+    const dynamicDelete = await requestJson(`${server.baseUrl}/conformance/api-dynamic/vista-43`, {
+      method: 'DELETE',
+    });
+    assert.equal(dynamicDelete.json.deleted, 'vista-43');
+
+    // Catch-all segments arrive as an array, in order.
+    const catchAllRoute = await requestJson(
+      `${server.baseUrl}/conformance/api-catch-all/one/two/three`
+    );
+    assert.equal(catchAllRoute.json.from, 'conformance-api-catch-all');
+    assert.deepEqual(
+      catchAllRoute.json.segments,
+      ['one', 'two', 'three'],
+      'Expected catch-all params to arrive as an ordered array'
+    );
+
+    // Route handlers are registered at build time, not just resolved by guesswork.
+    const routesManifest = JSON.parse(
+      fs.readFileSync(path.join(fixtureDir, '.vista', 'routes-manifest.json'), 'utf8')
+    );
+    const registeredPatterns = new Set(
+      (builtServerManifest.routeHandlers || []).map((entry) => entry.pattern)
+    );
+    for (const expectedPattern of [
+      '/conformance/api',
+      '/conformance/api-methods',
+      '/conformance/api-dynamic/:id',
+      '/conformance/api-catch-all/:segments*',
+    ]) {
+      assert.ok(
+        registeredPatterns.has(expectedPattern),
+        `Expected ${expectedPattern} in the server manifest route handlers, found: ` +
+          JSON.stringify([...registeredPatterns], null, 2)
+      );
+    }
+    assert.ok(
+      Array.isArray(routesManifest.routeHandlers) && routesManifest.routeHandlers.length > 0,
+      'Expected routes-manifest.json to record file-based route handlers'
+    );
+    const methodsEntry = (builtServerManifest.routeHandlers || []).find(
+      (entry) => entry.pattern === '/conformance/api-methods'
+    );
+    assert.deepEqual(
+      methodsEntry.methods,
+      ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+      'Expected the manifest to record the exported HTTP methods'
+    );
+
+    // Route handler code, and anything it imports, must stay off the client.
+    const clientAssets = readClientAssetSources();
+    assert.ok(clientAssets.length > 0, 'Expected to find client assets to scan');
+    const leakedAssets = clientAssets
+      .filter((asset) => asset.content.includes('vista-route-handler-server-only-marker'))
+      .map((asset) => path.relative(fixtureDir, asset.file));
+    assert.deepEqual(
+      leakedAssets,
+      [],
+      `Route handler server-only code leaked into client assets: ${leakedAssets.join(', ')}`
     );
 
     await assertPageContains(

@@ -457,13 +457,14 @@ function startServer(port = 3003, compiler) {
             const finalized = (0, middleware_runner_1.applyMiddlewareResult)(middlewareResult, req, res);
             if (finalized)
                 return;
-            const routeHandlerPath = (0, typed_api_runtime_1.resolveLegacyRouteHandlerPath)(cwd, req.path);
-            if (routeHandlerPath) {
+            const routeHandlerMatch = (0, typed_api_runtime_1.resolveRouteHandlerMatch)(cwd, req.path, { isDev });
+            if (routeHandlerMatch) {
                 try {
                     await (0, typed_api_runtime_1.runLegacyApiRoute)({
                         req,
                         res,
-                        apiPath: routeHandlerPath,
+                        apiPath: routeHandlerMatch.filePath,
+                        params: routeHandlerMatch.params,
                         isDev,
                     });
                     return;
@@ -474,23 +475,9 @@ function startServer(port = 3003, compiler) {
                 }
             }
             // API ROUTES SUPPORT - Next.js App Router Style
+            // File-based `route.*` handlers are already resolved above, for `/api/*` as well
+            // as any other path, so only the typed API remains to try here.
             if (req.path.startsWith('/api/')) {
-                const legacyApiPath = (0, typed_api_runtime_1.resolveLegacyApiRoutePath)(cwd, req.path);
-                if (legacyApiPath) {
-                    try {
-                        await (0, typed_api_runtime_1.runLegacyApiRoute)({
-                            req,
-                            res,
-                            apiPath: legacyApiPath,
-                            isDev,
-                        });
-                        return;
-                    }
-                    catch (error) {
-                        console.error(`[vista:ssr] API route error: ${error?.message ?? String(error)}`);
-                        return res.status(500).json({ error: 'Internal Server Error in API' });
-                    }
-                }
                 const typedHandled = await (0, typed_api_runtime_1.runTypedApiRoute)({
                     req,
                     res,
