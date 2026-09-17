@@ -14,13 +14,14 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.adapters = exports.dockerAdapter = exports.renderAdapter = exports.cloudflareAdapter = exports.vercelAdapter = exports.nodeAdapter = void 0;
+exports.adapters = exports.netlifyAdapter = exports.dockerAdapter = exports.renderAdapter = exports.cloudflareAdapter = exports.vercelAdapter = exports.nodeAdapter = void 0;
 exports.getAdapter = getAdapter;
 const node_1 = require("./node");
 const vercel_1 = require("./vercel");
 const cloudflare_1 = require("./cloudflare");
 const render_1 = require("./render");
 const docker_1 = require("./docker");
+const netlify_1 = require("./netlify");
 __exportStar(require("./types"), exports);
 var node_2 = require("./node");
 Object.defineProperty(exports, "nodeAdapter", { enumerable: true, get: function () { return node_2.nodeAdapter; } });
@@ -32,6 +33,8 @@ var render_2 = require("./render");
 Object.defineProperty(exports, "renderAdapter", { enumerable: true, get: function () { return render_2.renderAdapter; } });
 var docker_2 = require("./docker");
 Object.defineProperty(exports, "dockerAdapter", { enumerable: true, get: function () { return docker_2.dockerAdapter; } });
+var netlify_2 = require("./netlify");
+Object.defineProperty(exports, "netlifyAdapter", { enumerable: true, get: function () { return netlify_2.netlifyAdapter; } });
 exports.adapters = {
     node: node_1.nodeAdapter,
     standalone: node_1.nodeAdapter,
@@ -40,6 +43,7 @@ exports.adapters = {
     'cloudflare-workers': cloudflare_1.cloudflareAdapter,
     render: render_1.renderAdapter,
     docker: docker_1.dockerAdapter,
+    netlify: netlify_1.netlifyAdapter,
 };
 function getAdapter(name) {
     return exports.adapters[name.toLowerCase()];

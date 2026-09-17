@@ -257,15 +257,80 @@ if (command === 'dev') {
   }
 } else if (command === 'deploy') {
   forceRuntimeEnv('production');
-  const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
-  const targetAdapter = getFlagValue('--adapter');
-  generateDeploymentOutputs({
-    cwd: process.cwd(),
-    vistaDir: path.join(process.cwd(), '.vista'),
-    adapter: targetAdapter,
-    debug: flags.includes('--debug'),
-  });
-  console.log('[vista:deploy] Generated deployment outputs.');
+  const cwd = process.cwd();
+  const vistaDir = path.join(cwd, '.vista');
+  const debug = flags.includes('--debug');
+
+  // Support both --adapter (legacy) and --target (new)
+  const target = getFlagValue('--target') || getFlagValue('--adapter');
+  const isDryRun = flags.includes('--dry-run');
+  const skipBuild = flags.includes('--skip-build');
+  const force = flags.includes('--force');
+
+  if (!skipBuild) {
+    // Run vista build first unless --skip-build is passed
+    const buildProc = require('child_process').spawnSync(
+      process.execPath,
+      [__filename, 'build', ...(target ? ['--adapter', target] : [])],
+      { cwd, stdio: 'inherit', env: process.env }
+    );
+    if (buildProc.status !== 0) {
+      console.error('[vista:deploy] Build failed.');
+      process.exit(1);
+    }
+  }
+
+  const {
+    nodeAdapter,
+    vercelAdapter,
+    cloudflareAdapter,
+    renderAdapter,
+    dockerAdapter,
+    getAdapter,
+  } = require('../dist/adapters');
+
+  const adapterCtx = { cwd, vistaDir, debug };
+
+  if (target === 'vercel') {
+    // Generate Vercel Build Output API v3
+    vercelAdapter.build(adapterCtx);
+    // Also write .vercel/output/config.json if not already produced
+    const vercelOut = path.join(cwd, '.vercel', 'output');
+    const configPath = path.join(vercelOut, 'config.json');
+    if (!require('fs').existsSync(configPath)) {
+      require('fs').mkdirSync(vercelOut, { recursive: true });
+      require('fs').writeFileSync(configPath, JSON.stringify({
+        version: 3,
+        routes: [
+          { handle: 'filesystem' },
+          { src: '^/_vista/(.*)$', dest: '/$1' },
+          { src: '^/$', dest: '/static/pages/index.html' },
+          { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+        ],
+      }, null, 2));
+    }
+  } else if (target === 'cloudflare') {
+    cloudflareAdapter.build(adapterCtx);
+  } else if (target === 'render') {
+    renderAdapter.build(adapterCtx);
+    nodeAdapter.build(adapterCtx);
+  } else if (target === 'docker') {
+    dockerAdapter.build(adapterCtx);
+    nodeAdapter.build(adapterCtx);
+  } else if (target === 'netlify') {
+    const netlifyAdapterMod = getAdapter('netlify');
+    if (netlifyAdapterMod) {
+      netlifyAdapterMod.build(adapterCtx);
+    }
+  } else {
+    // No explicit target — run all adapters via generateDeploymentOutputs
+    const { generateDeploymentOutputs } = require('../dist/bin/deploy-output');
+    generateDeploymentOutputs({ cwd, vistaDir, debug, adapter: target ?? undefined });
+  }
+
+  const dryRunMode = isDryRun ? 'dry-run' : 'live';
+  console.log(`[vista:deploy] Deploy artifacts generated for ${target || 'all'} (${dryRunMode} mode).`);
+
 } else {
   console.log('');
   console.log('Vista JS Framework CLI');
