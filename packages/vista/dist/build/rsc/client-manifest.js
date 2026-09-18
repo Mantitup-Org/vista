@@ -11,6 +11,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.discoverProjectClientRoots = discoverProjectClientRoots;
 exports.generateClientManifest = generateClientManifest;
 exports.generateClientManifestWithRoots = generateClientManifestWithRoots;
 exports.getClientComponent = getClientComponent;
@@ -20,6 +21,48 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const component_identity_1 = require("./component-identity");
 const constants_1 = require("../../constants");
+const PROJECT_CLIENT_SCAN_SKIP = new Set([
+    'node_modules',
+    '.vista',
+    '.flash',
+    'dist',
+    'public',
+    'coverage',
+    'build',
+    'out',
+]);
+/**
+ * Top-level app directories that may contain `'use client'` modules.
+ * Discovery is directory membership, not the import graph, so `utils/`,
+ * `lib/`, and `src/` have to be scanned explicitly or they never enter
+ * the React Client Manifest.
+ */
+function discoverProjectClientRoots(cwd) {
+    const roots = [];
+    if (!fs_1.default.existsSync(cwd)) {
+        return roots;
+    }
+    let entries;
+    try {
+        entries = fs_1.default.readdirSync(cwd, { withFileTypes: true });
+    }
+    catch {
+        return roots;
+    }
+    for (const entry of entries) {
+        if (!entry.isDirectory())
+            continue;
+        if (entry.name.startsWith('.'))
+            continue;
+        if (PROJECT_CLIENT_SCAN_SKIP.has(entry.name))
+            continue;
+        roots.push({
+            dir: path_1.default.join(cwd, entry.name),
+            prefix: `${entry.name.replace(/\\/g, '/')}/`,
+        });
+    }
+    return roots;
+}
 // Try to load Rust NAPI bindings
 let rustNative = null;
 try {
@@ -127,7 +170,8 @@ function scanForClientComponents(dir, scanRoot, components, pathPrefix = '') {
  * Generate the client component manifest
  */
 function generateClientManifest(cwd, appDir) {
-    return generateClientManifestWithRoots(cwd, appDir);
+    const additionalRoots = discoverProjectClientRoots(cwd).filter((root) => path_1.default.resolve(root.dir) !== path_1.default.resolve(appDir));
+    return generateClientManifestWithRoots(cwd, appDir, additionalRoots);
 }
 function generateClientManifestWithRoots(cwd, appDir, additionalRoots = []) {
     const components = [];

@@ -55,7 +55,7 @@ function writeFileIfMissing(baseDir: string, relativePath: string, content: stri
 function renderAgent(kebabName: string): string {
   const camelName = toCamelCase(kebabName);
   return [
-    "import { agent, tool } from '@vistagenic/vista/ai';",
+    "import { agent, tool } from 'vista/ai';",
     '',
     `export const ${camelName}Agent = agent({`,
     `  name: '${kebabName}',`,

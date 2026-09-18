@@ -15,6 +15,7 @@
 import path from 'path';
 import fs from 'fs';
 import type { Request, Response as ExpressResponse } from 'express';
+import { safeDecodeURIComponent } from './cookie-parse';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -321,7 +322,7 @@ export function buildNextRequest(req: Request): VistaMiddlewareRequest {
       const [k, ...v] = pair.split('=');
       const name = k?.trim();
       if (name) {
-        rawCookies[name] = decodeURIComponent(v.join('=').trim());
+        rawCookies[name] = safeDecodeURIComponent(v.join('=').trim());
       }
     }
   }
@@ -568,6 +569,11 @@ export async function runMiddleware(
   // Collect all response headers
   if (finalResponse.headers && typeof finalResponse.headers.forEach === 'function') {
     finalResponse.headers.forEach((val, key) => {
+      const lower = key.toLowerCase();
+      if (lower.startsWith('x-middleware-request-')) {
+        modifiedRequestHeaders.set(lower.slice('x-middleware-request-'.length), val);
+        return;
+      }
       aggregatedResponseHeaders.set(key, val);
     });
   }
@@ -646,7 +652,12 @@ export function applyMiddlewareResult(
     result.responseHeaders.forEach((value, key) => {
       const lower = key.toLowerCase();
       // Skip internal transport headers
-      if (lower === 'x-middleware-next' || lower === 'x-middleware-rewrite' || lower === 'location') {
+      if (
+        lower === 'x-middleware-next' ||
+        lower === 'x-middleware-rewrite' ||
+        lower === 'location' ||
+        lower.startsWith('x-middleware-request-')
+      ) {
         return;
       }
       res.setHeader(key, value);

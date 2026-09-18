@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'node:stream';
 import type express from 'express';
 import {
   executeRoute,
@@ -14,6 +15,7 @@ import { mergeSegmentConfigs, parseSegmentConfig, type ResolvedSegmentConfig } f
 import { setCurrentSegmentConfig } from './request-context';
 import { resolveRouteHandler, ROUTE_HANDLER_METHODS } from './route-handler-registry';
 import type { RouteParams } from './route-patterns';
+import { safeDecodeURIComponent } from './cookie-parse';
 
 type TypedApiRouter = StackRouter<ProcedureRecord, any, any>;
 type RouteRuntimeMode = 'nodejs' | 'edge' | 'experimental-edge';
@@ -45,7 +47,7 @@ class BodyLimitError extends Error {
   status = 413;
 
   constructor(limitBytes: number) {
-    super(`Typed API body exceeds configured limit (${limitBytes} bytes)`);
+    super(`Request body exceeds configured limit (${limitBytes} bytes)`);
     this.name = 'BodyLimitError';
   }
 }
@@ -63,6 +65,12 @@ type TypedRouteResult =
   | { kind: 'handled'; status: number; payload: unknown }
   | { kind: 'method-not-allowed'; status: 405; error: string }
   | { kind: 'not-found' };
+
+const DEFAULT_ROUTE_BODY_LIMIT_BYTES = 1024 * 1024;
+
+function isWebResponse(value: unknown): value is Response {
+  return typeof Response !== 'undefined' && value instanceof Response;
+}
 
 function isStackRouterLike(value: unknown): value is TypedApiRouter {
   if (!value || typeof value !== 'object') {
@@ -228,9 +236,43 @@ async function sendFetchResponse(res: express.Response, response: Response): Pro
     res.setHeader(key, value);
   });
 
-  const arrayBuffer = await response.arrayBuffer();
+  const method = String((res as any).req?.method || '').toUpperCase();
+  res.status(response.status);
+
+  if (method === 'HEAD' || !response.body) {
+    res.end();
+    return;
+  }
+
+  const canPipe =
+    typeof (res as any).once === 'function' &&
+    typeof (res as any).on === 'function' &&
+    typeof res.write === 'function' &&
+    typeof res.end === 'function';
+
+  if (canPipe && typeof Readable.fromWeb === 'function') {
+    try {
+      const nodeStream = Readable.fromWeb(response.body as any);
+      await new Promise<void>((resolve, reject) => {
+        const fail = (error: Error) => reject(error);
+        nodeStream.once('error', fail);
+        (res as any).once('error', fail);
+        (res as any).once('finish', () => resolve());
+        nodeStream.pipe(res);
+      });
+      return;
+    } catch {
+      // Fall through to buffering when the web stream cannot be piped.
+    }
+  }
+
+  const arrayBuffer = await new Response(response.body).arrayBuffer();
   const body = Buffer.from(arrayBuffer);
-  res.status(response.status).send(body);
+  if (typeof res.send === 'function') {
+    res.send(body);
+    return;
+  }
+  res.end(body);
 }
 
 function applyRuntimeTraceHeaders(
@@ -250,7 +292,7 @@ function createReadonlyCookieStore(header: string | null) {
       const [rawName, ...valueParts] = segment.split('=');
       const name = rawName?.trim();
       if (!name) continue;
-      cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+      cookieMap.set(name, safeDecodeURIComponent(valueParts.join('=').trim()));
     }
   }
 
@@ -268,17 +310,60 @@ function createReadonlyCookieStore(header: string | null) {
   };
 }
 
-async function readRouteRequestBody(req: express.Request): Promise<Buffer | undefined> {
+function bufferFromParsedBody(body: unknown): Buffer | undefined {
+  if (body === undefined || body === null) {
+    return undefined;
+  }
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+  if (typeof body === 'string') {
+    return Buffer.from(body);
+  }
+  if (typeof body === 'object') {
+    return Buffer.from(JSON.stringify(body));
+  }
+  return Buffer.from(String(body));
+}
+
+async function readRouteRequestBody(
+  req: express.Request,
+  bodySizeLimitBytes: number = DEFAULT_ROUTE_BODY_LIMIT_BYTES
+): Promise<Buffer | undefined> {
   if (req.method === 'GET' || req.method === 'HEAD') {
     return undefined;
   }
 
+  const hasParsedBody = Object.prototype.hasOwnProperty.call(req, 'body') && (req as any).body !== undefined;
+  const streamEnded = (req as any).readableEnded === true || (req as any).complete === true;
+
+  if (hasParsedBody && streamEnded) {
+    const parsed = bufferFromParsedBody((req as any).body);
+    if (parsed && parsed.length > bodySizeLimitBytes) {
+      throw new BodyLimitError(bodySizeLimitBytes);
+    }
+    return parsed;
+  }
+
   const chunks: Buffer[] = [];
+  let size = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > bodySizeLimitBytes) {
+      throw new BodyLimitError(bodySizeLimitBytes);
+    }
+    chunks.push(buffer);
   }
 
   if (chunks.length === 0) {
+    if (hasParsedBody) {
+      const parsed = bufferFromParsedBody((req as any).body);
+      if (parsed && parsed.length > bodySizeLimitBytes) {
+        throw new BodyLimitError(bodySizeLimitBytes);
+      }
+      return parsed;
+    }
     return undefined;
   }
 
@@ -454,8 +539,8 @@ async function executeTypedRoute(
 
   return {
     kind: 'handled',
-    status: 200,
-    payload: result.serializedData,
+    status: isWebResponse(result.data) ? result.data.status : 200,
+    payload: isWebResponse(result.data) ? result.data : result.serializedData,
   };
 }
 
@@ -584,22 +669,30 @@ export async function runLegacyApiRoute(options: {
   }
 
   if (typeof methodHandler === 'function') {
-    const requestBody = await readRouteRequestBody(req);
-    const request = createRouteRequest(req, requestBody);
+    try {
+      const requestBody = await readRouteRequestBody(req);
+      const request = createRouteRequest(req, requestBody);
+      const result = await methodHandler(request, { params });
+      if (result instanceof Response) {
+        (res as any).req = (res as any).req || req;
+        await sendFetchResponse(res, result);
+        return;
+      }
 
-    const result = await methodHandler(request, { params });
-    if (result instanceof Response) {
-      await sendFetchResponse(res, result);
+      if (result !== undefined) {
+        res.status(200).json(result);
+        return;
+      }
+
+      res.status(204).end();
       return;
+    } catch (error) {
+      if (error instanceof BodyLimitError) {
+        res.status(error.status).json({ error: error.message });
+        return;
+      }
+      throw error;
     }
-
-    if (result !== undefined) {
-      res.status(200).json(result);
-      return;
-    }
-
-    res.status(204).end();
-    return;
   }
 
   if (isEdgeRuntime(runtime) && typeof apiModule.default === 'function') {
@@ -683,6 +776,12 @@ export async function runTypedApiRoute(options: {
 
     if (routeResult.kind === 'method-not-allowed') {
       res.status(routeResult.status).json({ error: routeResult.error });
+      return true;
+    }
+
+    if (isWebResponse(routeResult.payload)) {
+      (res as any).req = (res as any).req || req;
+      await sendFetchResponse(res, routeResult.payload);
       return true;
     }
 

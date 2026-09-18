@@ -82,8 +82,21 @@ function createDirectiveError(filename: string, message: string): Error {
   return new Error(`[vista:cache] ${path.basename(filename)}: ${message}`);
 }
 
+function isVistaFrameworkModule(filename: string): boolean {
+  const normalized = normalizeModulePath(filename);
+  return (
+    /\/packages\/vista\/(src|dist)\//.test(normalized) ||
+    /\/node_modules\/vista\//.test(normalized) ||
+    /\/node_modules\/@vistagenic\/vista\//.test(normalized)
+  );
+}
+
 function isProjectModule(filename: string, roots: string[]): boolean {
   const normalized = normalizeModulePath(filename);
+  if (!/\.[cm]?[jt]sx?$/i.test(normalized)) {
+    return false;
+  }
+
   const matchesRoot = roots.some((root) => {
     const rootPrefix = normalizeModulePath(`${root}${path.sep}`);
     return normalized.startsWith(rootPrefix);
@@ -96,12 +109,16 @@ function isProjectModule(filename: string, roots: string[]): boolean {
     );
   });
 
-  if (!matchesRoot) return false;
+  if (isVistaFrameworkModule(filename)) {
+    return true;
+  }
+
+  if (!matchesRoot && !isStandaloneProjectModule) return false;
   if (normalized.includes('/node_modules/')) return false;
   if (normalized.includes('/.vista/') && !isStandaloneProjectModule) return false;
   if (normalized.includes('/.flash/')) return false;
 
-  return /\.[cm]?[jt]sx?$/i.test(normalized);
+  return true;
 }
 
 function isStringDirectiveStatement(statement: any, directive: string): boolean {
@@ -840,8 +857,18 @@ export function installModuleCompileHook(options: {
   createClientModuleProxy?: ClientModuleProxyFactory;
   cacheComponentsEnabled?: boolean;
 }): void {
+  const vistaRuntimeDir = path.resolve(__dirname, '..');
+  const vistaPackageRoot = path.resolve(__dirname, '..', '..');
   activeCompileRoots = Array.from(
-    new Set([options.cwd, path.resolve(__dirname, '..')].map((entry) => path.resolve(entry)))
+    new Set(
+      [
+        options.cwd,
+        vistaRuntimeDir,
+        vistaPackageRoot,
+        path.join(vistaPackageRoot, 'src'),
+        path.join(vistaPackageRoot, 'dist'),
+      ].map((entry) => path.resolve(entry))
+    )
   );
   activeRuntimeActionsSpecifier = require.resolve('./runtime-actions');
   activeCacheRuntimeSpecifier = require.resolve('./cache');

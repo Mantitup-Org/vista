@@ -127,12 +127,8 @@ if (command === 'dev') {
       });
       return;
     }
-    const { buildRSC } = useFlashpack
-      ? require('../dist/bin/build-rsc-flashpack')
-      : require('../dist/bin/build-rsc');
-    const { startRSCServer } = useFlashpack
-      ? require('../dist/server/rsc-engine-flashpack')
-      : require('../dist/server/rsc-engine');
+    const { buildRSC } = require('../dist/bin/build-rsc');
+    const { startRSCServer } = require('../dist/server/rsc-engine');
 
     buildRSC(true)
       .then(({ clientCompiler }) => {
@@ -179,9 +175,7 @@ if (command === 'dev') {
         });
       return;
     }
-    const { buildRSC } = useFlashpack
-      ? require('../dist/bin/build-rsc-flashpack')
-      : require('../dist/bin/build-rsc');
+    const { buildRSC } = require('../dist/bin/build-rsc');
 
     buildRSC(false)
       .then(() => {
@@ -232,10 +226,7 @@ if (command === 'dev') {
       return;
     }
 
-    const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
-    const { startRSCServer } = useFlashpack
-      ? require('../dist/server/rsc-engine-flashpack')
-      : require('../dist/server/rsc-engine');
+    const { startRSCServer } = require('../dist/server/rsc-engine');
     startRSCServer({ port: process.env.PORT || 3003 });
   } else {
     const { startServer } = require('../dist/server/engine');

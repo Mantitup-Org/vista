@@ -22,7 +22,7 @@ import {
   writeCanonicalVistaArtifacts,
   writeReservedVistaArtifacts,
 } from '../build/manifest';
-import { generateClientManifestWithRoots } from '../build/rsc/client-manifest';
+import { generateClientManifestWithRoots, discoverProjectClientRoots } from '../build/rsc/client-manifest';
 import { generateServerManifest } from '../build/rsc/server-manifest';
 import { scanAppDirectory, isNativeAvailable, getVersion } from './file-scanner';
 import {
@@ -83,13 +83,14 @@ function collectUseClientFiles(dir: string, collected: Set<string>): void {
   for (const entry of entries) {
     const absolutePath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
       collectUseClientFiles(absolutePath, collected);
       continue;
     }
 
-    if (!entry.isFile() || !entry.name.endsWith('.js')) {
-      continue;
-    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name);
+    if (!['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'].includes(ext)) continue;
 
     if (hasUseClientDirective(absolutePath)) {
       collected.add(path.resolve(absolutePath));
@@ -117,6 +118,7 @@ function collectFrameworkClientReferences(cwd: string): string[] {
   const collected = new Set<string>();
   for (const packageRoot of roots) {
     collectUseClientFiles(path.join(packageRoot, 'dist'), collected);
+    collectUseClientFiles(path.join(packageRoot, 'src'), collected);
   }
 
   return Array.from(collected);
@@ -318,7 +320,10 @@ export async function buildRSC(watch: boolean = false): Promise<{
 }> {
   const cwd = process.cwd();
   const appDir = path.join(cwd, 'app');
-  const componentsDir = path.join(cwd, 'components');
+  const projectClientRoots = discoverProjectClientRoots(cwd);
+  const additionalClientRoots = projectClientRoots.filter(
+    (root) => path.resolve(root.dir) !== path.resolve(appDir)
+  );
   let clientReferenceFiles: string[] = [];
 
   if (_debug) {
@@ -358,7 +363,9 @@ export async function buildRSC(watch: boolean = false): Promise<{
     }
   }
 
-  // Scan app directory
+  // Scan app/ plus every other top-level project directory (components/, utils/,
+  // lib/, src/, ...) so `'use client'` modules outside app/ still enter the
+  // React Client Manifest. Discovery is directory membership, not the import graph.
   if (fs.existsSync(appDir)) {
     if (_debug) {
       console.log(
@@ -368,33 +375,30 @@ export async function buildRSC(watch: boolean = false): Promise<{
 
     const scanResult = scanAppDirectory(appDir);
     clientReferenceFiles = scanResult.clientComponents.map((component) => component.absolutePath);
-    let componentsScanResult: ReturnType<typeof scanAppDirectory> | null = null;
 
-    if (fs.existsSync(componentsDir)) {
-      componentsScanResult = scanAppDirectory(componentsDir);
-      clientReferenceFiles = Array.from(
-        new Set([
-          ...clientReferenceFiles,
-          ...componentsScanResult.clientComponents.map((component) => component.absolutePath),
-        ])
+    for (const root of additionalClientRoots) {
+      const extraScan = scanAppDirectory(root.dir);
+      clientReferenceFiles.push(
+        ...extraScan.clientComponents.map((component) => component.absolutePath)
       );
+      if (_debug && extraScan.clientComponents.length > 0) {
+        console.log(
+          `[Vista JS RSC] Found ${extraScan.clientComponents.length} client components ('use client') in ${root.prefix}`
+        );
+      }
     }
+
+    clientReferenceFiles = Array.from(new Set(clientReferenceFiles));
 
     if (_debug) {
       console.log(`[Vista JS RSC] Found ${scanResult.serverComponents.length} server components`);
       console.log(
         `[Vista JS RSC] Found ${scanResult.clientComponents.length} client components ('use client') in app/`
       );
-      if (componentsScanResult) {
-        console.log(
-          `[Vista JS RSC] Found ${componentsScanResult.clientComponents.length} client components ('use client') in components/`
-        );
-      }
       console.log(`[Vista JS RSC] Total client reference modules: ${clientReferenceFiles.length}`);
       console.log('');
     }
 
-    // List client components
     if (scanResult.clientComponents.length > 0 && _debug) {
       console.log('[Vista JS RSC] Client Components (will be hydrated on browser):');
       scanResult.clientComponents.forEach((c) => {
@@ -402,15 +406,7 @@ export async function buildRSC(watch: boolean = false): Promise<{
       });
       console.log('');
     }
-    if (componentsScanResult && componentsScanResult.clientComponents.length > 0 && _debug) {
-      console.log('[Vista JS RSC] Components Directory Client Components:');
-      componentsScanResult.clientComponents.forEach((c) => {
-        console.log(`  ✓ components/${c.relativePath}`);
-      });
-      console.log('');
-    }
 
-    // List server components (first few)
     if (scanResult.serverComponents.length > 0 && _debug) {
       console.log('[Vista JS RSC] Server Components (0kb client bundle contribution):');
       scanResult.serverComponents.slice(0, 5).forEach((c) => {
@@ -422,10 +418,9 @@ export async function buildRSC(watch: boolean = false): Promise<{
       console.log('');
     }
 
-    // Check for errors (using client hooks without 'use client')
     const scanErrors = validateModuleBoundaries({
       appDir,
-      extraRoots: fs.existsSync(componentsDir) ? [componentsDir] : [],
+      extraRoots: additionalClientRoots.map((root) => root.dir),
       cacheComponentsEnabled: cacheComponentsConfig.enabled,
     }).issues;
 
@@ -467,9 +462,6 @@ export async function buildRSC(watch: boolean = false): Promise<{
   // Generate manifests
   if (_debug) console.log('[vista:build] Generating manifests...');
 
-  const additionalClientRoots = fs.existsSync(componentsDir)
-    ? [{ dir: componentsDir, prefix: 'components/' }]
-    : [];
   const clientManifest = generateClientManifestWithRoots(cwd, appDir, additionalClientRoots);
   fs.writeFileSync(
     path.join(vistaDirs.root, 'client-manifest.json'),
@@ -571,7 +563,7 @@ export async function buildRSC(watch: boolean = false): Promise<{
     // Watch for CSS + source changes that can affect Tailwind output.
     try {
       const chokidar = require('chokidar');
-      const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data']
+      const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data', 'utils', 'src']
         .map((entry) => path.join(cwd, entry))
         .filter((entry) => fs.existsSync(entry));
       let cssTimer: ReturnType<typeof setTimeout> | null = null;

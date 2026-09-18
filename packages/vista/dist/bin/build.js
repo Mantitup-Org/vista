@@ -19,6 +19,7 @@ const devtools_indicator_snippet_1 = require("./devtools-indicator-snippet");
 const dev_error_overlay_snippet_1 = require("./dev-error-overlay-snippet");
 const deploy_output_1 = require("./deploy-output");
 const module_boundary_validator_1 = require("../server/module-boundary-validator");
+const client_manifest_1 = require("../build/rsc/client-manifest");
 const _debug = !!process.env.VISTA_DEBUG;
 // Helper to run PostCSS
 function runPostCSS(cwd, vistaDir) {
@@ -289,7 +290,7 @@ async function buildClient(watch = false, onRebuild) {
     }
     // Scan app directory using Rust bindings to get client components
     const appDir = path_1.default.join(cwd, 'app');
-    const componentsDir = path_1.default.join(cwd, 'components');
+    const additionalClientRoots = (0, client_manifest_1.discoverProjectClientRoots)(cwd).filter((root) => path_1.default.resolve(root.dir) !== path_1.default.resolve(appDir));
     let clientComponents = [];
     if (fs_1.default.existsSync(appDir)) {
         if (_debug) {
@@ -313,7 +314,7 @@ async function buildClient(watch = false, onRebuild) {
         }
         const moduleBoundaryIssues = (0, module_boundary_validator_1.validateModuleBoundaries)({
             appDir,
-            extraRoots: fs_1.default.existsSync(componentsDir) ? [componentsDir] : [],
+            extraRoots: additionalClientRoots.map((root) => root.dir),
             cacheComponentsEnabled: cacheComponentsConfig.enabled,
         }).issues;
         if (moduleBoundaryIssues.length > 0) {
@@ -335,21 +336,21 @@ async function buildClient(watch = false, onRebuild) {
             }
         }
     }
-    // Also scan components directory (outside app folder) for client components
-    if (fs_1.default.existsSync(componentsDir)) {
+    for (const root of additionalClientRoots) {
         if (_debug)
-            console.log(`[Vista JS] Scanning components/ directory...`);
-        const componentsScanResult = (0, file_scanner_1.scanAppDirectory)(componentsDir);
-        // Map relativePath to include 'components/' prefix for proper resolution
-        const componentsClientList = componentsScanResult.clientComponents.map((c) => ({
-            relativePath: 'components/' + c.relativePath,
-            absolutePath: c.absolutePath,
-        }));
-        clientComponents = [...clientComponents, ...componentsClientList];
-        if (componentsScanResult.clientComponents.length > 0 && _debug) {
-            console.log(`[Vista JS] Client components ('use client') from components/:`);
-            componentsScanResult.clientComponents.forEach((c) => {
-                console.log(`  - components/${c.relativePath}`);
+            console.log(`[Vista JS] Scanning ${root.prefix} directory...`);
+        const extraScan = (0, file_scanner_1.scanAppDirectory)(root.dir);
+        clientComponents = [
+            ...clientComponents,
+            ...extraScan.clientComponents.map((c) => ({
+                relativePath: `${root.prefix}${c.relativePath}`,
+                absolutePath: c.absolutePath,
+            })),
+        ];
+        if (extraScan.clientComponents.length > 0 && _debug) {
+            console.log(`[Vista JS] Client components ('use client') from ${root.prefix}:`);
+            extraScan.clientComponents.forEach((c) => {
+                console.log(`  - ${root.prefix}${c.relativePath}`);
             });
         }
     }

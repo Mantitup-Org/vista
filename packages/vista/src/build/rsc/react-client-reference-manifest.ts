@@ -273,3 +273,30 @@ export function normalizeReactServerConsumerManifest(
 
   return input;
 }
+
+/**
+ * React looks up `file://...#ExportName` in the Flight manifest and throws a
+ * generic error when the key is missing. Wrap the manifest so the message names
+ * the file and the scan-directory requirement.
+ */
+export function createGuardedReactClientManifest(
+  manifest: ReactClientReferenceManifest
+): ReactClientReferenceManifest {
+  return new Proxy(manifest, {
+    get(target, prop, receiver) {
+      if (
+        typeof prop === 'string' &&
+        (prop.startsWith('file:') || prop.includes('#')) &&
+        !Object.prototype.hasOwnProperty.call(target, prop)
+      ) {
+        const fileHint = prop.split('#')[0];
+        throw new Error(
+          `Could not find the module "${prop}" in the React Client Manifest. ` +
+            `Client Components need a 'use client' directive and must live under a scanned project directory ` +
+            `(app/, components/, utils/, lib/, src/, ...). Missing: ${fileHint}`
+        );
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  });
+}

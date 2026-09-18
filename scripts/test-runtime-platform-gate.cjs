@@ -11,6 +11,7 @@ const COMMANDS = [
   ['scripts/test-vista-output.cjs'],
   ['scripts/test-inline-server-actions.cjs'],
   ['scripts/test-api-routes.cjs'],
+  ['scripts/test-rsc-ssr-hardening.cjs'],
   ['scripts/test-vista-deploy.cjs'],
   ['scripts/test-rsc-conformance.cjs'],
   ['scripts/test-flashpack-dev.cjs'],

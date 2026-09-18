@@ -318,6 +318,7 @@ These are the most important scripts to know:
 - `scripts/test-server-runtime.cjs`
 - `scripts/test-inline-server-actions.cjs`
 - `scripts/test-api-routes.cjs`
+- `scripts/test-rsc-ssr-hardening.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`
@@ -352,7 +353,10 @@ If you add a new client export under `packages/vista/src` and it compiles into `
 - first paint to appear
 - then client hydration/runtime to break with missing manifest references
 
-Current fix lives in `packages/vista/src/bin/build-rsc.ts`, which scans the full `dist` tree for framework client references.
+Current fix lives in `packages/vista/src/bin/build-rsc.ts`, which scans the full
+`dist` and `src` trees for framework client references, plus every top-level
+project directory (`components/`, `utils/`, `lib/`, `src/`, ...) so `'use client'`
+modules outside `app/` still enter the React Client Manifest.
 
 ### 13.2 Alias resolution must work in both prerender and runtime
 
@@ -473,7 +477,7 @@ pnpm bench:quick
 ## 15. If You Touch These Areas, Also Check These
 
 - `packages/vista/src/server/*`
-  - run `pnpm test:server-runtime`, `pnpm test:inline-server-actions`, `pnpm test:api-routes`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
+  - run `pnpm test:server-runtime`, `pnpm test:inline-server-actions`, `pnpm test:api-routes`, `pnpm test:rsc-ssr-hardening`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
 - `packages/vista/src/flashpack/*`
   - run `pnpm test:flashpack-dev`, `pnpm test:flashpack-state`
 - `packages/vista/src/theme/*`

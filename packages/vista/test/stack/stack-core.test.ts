@@ -72,6 +72,25 @@ test('middleware chain merges context additions in execution order', async () =>
   assert.deepEqual(events, ['mw1-before:req-1', 'mw2-before:user-7', 'mw1-after:tenant-a']);
 });
 
+test('procedure Response returns keep their HTTP status', async () => {
+  const v = vstack.init();
+  const router = v.router({
+    created: v.procedure.mutation(({ c }) => c.json({ ok: true }, 201)),
+  });
+
+  const result = await executeRoute(router, {
+    path: '/created',
+    method: 'POST',
+    req: { body: {} },
+    ctx: {},
+    env: {},
+  });
+
+  assert.ok(result.data instanceof Response);
+  assert.equal(result.data.status, 201);
+  assert.deepEqual(await result.data.json(), { ok: true });
+});
+
 test('input validation throws StackValidationError on schema failure', async () => {
   const v = vstack.init();
 

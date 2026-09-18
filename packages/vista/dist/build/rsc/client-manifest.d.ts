@@ -6,6 +6,16 @@
  *
  * The manifest maps component paths to their chunk names for client-side loading.
  */
+/**
+ * Top-level app directories that may contain `'use client'` modules.
+ * Discovery is directory membership, not the import graph, so `utils/`,
+ * `lib/`, and `src/` have to be scanned explicitly or they never enter
+ * the React Client Manifest.
+ */
+export declare function discoverProjectClientRoots(cwd: string): Array<{
+    dir: string;
+    prefix: string;
+}>;
 export interface ClientComponentEntry {
     /** Unique ID for this component */
     id: string;

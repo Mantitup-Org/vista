@@ -239,6 +239,15 @@ export async function executeRoute<TProcedures extends ProcedureRecord, TCtx, TE
     serialization,
   });
 
+  if (typeof Response !== 'undefined' && payload instanceof Response) {
+    return {
+      path: normalizedPath,
+      method: normalizedMethod,
+      data: payload,
+      serializedData: payload,
+    };
+  }
+
   const serializedData = serializeWithMode(payload, serialization);
 
   return {

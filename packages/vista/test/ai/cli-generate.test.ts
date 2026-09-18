@@ -31,6 +31,7 @@ test('agent generator creates agent file and streaming route handler', async () 
     assert.equal(fs.existsSync(routePath), true);
 
     const agentSource = fs.readFileSync(agentPath, 'utf8');
+    assert.match(agentSource, /from 'vista\/ai'/);
     assert.match(agentSource, /agent\(\{/);
     assert.match(agentSource, /supportAgent = agent/);
 

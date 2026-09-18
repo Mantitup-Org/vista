@@ -26,6 +26,7 @@ exports.runMiddleware = runMiddleware;
 exports.applyMiddlewareResult = applyMiddlewareResult;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const cookie_parse_1 = require("./cookie-parse");
 // ---------------------------------------------------------------------------
 // Discovery Caches
 // ---------------------------------------------------------------------------
@@ -216,7 +217,7 @@ function buildNextRequest(req) {
             const [k, ...v] = pair.split('=');
             const name = k?.trim();
             if (name) {
-                rawCookies[name] = decodeURIComponent(v.join('=').trim());
+                rawCookies[name] = (0, cookie_parse_1.safeDecodeURIComponent)(v.join('=').trim());
             }
         }
     }
@@ -425,6 +426,11 @@ async function runMiddleware(req, cwd, isDev = false) {
     // Collect all response headers
     if (finalResponse.headers && typeof finalResponse.headers.forEach === 'function') {
         finalResponse.headers.forEach((val, key) => {
+            const lower = key.toLowerCase();
+            if (lower.startsWith('x-middleware-request-')) {
+                modifiedRequestHeaders.set(lower.slice('x-middleware-request-'.length), val);
+                return;
+            }
             aggregatedResponseHeaders.set(key, val);
         });
     }
@@ -492,7 +498,10 @@ function applyMiddlewareResult(result, req, res) {
         result.responseHeaders.forEach((value, key) => {
             const lower = key.toLowerCase();
             // Skip internal transport headers
-            if (lower === 'x-middleware-next' || lower === 'x-middleware-rewrite' || lower === 'location') {
+            if (lower === 'x-middleware-next' ||
+                lower === 'x-middleware-rewrite' ||
+                lower === 'location' ||
+                lower.startsWith('x-middleware-request-')) {
                 return;
             }
             res.setHeader(key, value);

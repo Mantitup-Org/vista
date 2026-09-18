@@ -1,5 +1,5 @@
 import Image from 'vista/image';
-import { ThemeToggle } from '../utils/theme-toggle';
+import { ThemeToggle } from '../components/theme-toggle';
 
 export default function Index() {
   return (

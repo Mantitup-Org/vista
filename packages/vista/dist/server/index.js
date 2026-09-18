@@ -15,6 +15,7 @@ exports.permanentRedirect = permanentRedirect;
 exports.notFound = notFound;
 exports.json = json;
 const request_context_1 = require("./request-context");
+const cookie_parse_1 = require("./cookie-parse");
 function parseCookieHeader(header) {
     const cookieMap = new Map();
     if (!header) {
@@ -25,7 +26,7 @@ function parseCookieHeader(header) {
         const name = rawName?.trim();
         if (!name)
             continue;
-        cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+        cookieMap.set(name, (0, cookie_parse_1.safeDecodeURIComponent)(valueParts.join('=').trim()));
     }
     return cookieMap;
 }
@@ -272,6 +273,15 @@ class NextResponse extends Response {
     static next(options) {
         const responseHeaders = new Headers();
         responseHeaders.set('x-middleware-next', '1');
+        const incoming = options?.request?.headers;
+        if (incoming) {
+            const entries = incoming instanceof Headers ? Array.from(incoming.entries()) : Object.entries(incoming);
+            for (const [key, value] of entries) {
+                if (value == null)
+                    continue;
+                responseHeaders.set(`x-middleware-request-${key}`, String(value));
+            }
+        }
         return new NextResponse(null, {
             headers: responseHeaders,
         });

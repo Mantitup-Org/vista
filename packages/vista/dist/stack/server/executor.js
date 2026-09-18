@@ -164,6 +164,14 @@ async function executeRoute(router, options) {
         middlewares: router.metadata.globalMiddlewares,
         serialization,
     });
+    if (typeof Response !== 'undefined' && payload instanceof Response) {
+        return {
+            path: normalizedPath,
+            method: normalizedMethod,
+            data: payload,
+            serializedData: payload,
+        };
+    }
     const serializedData = (0, serialization_1.serializeWithMode)(payload, serialization);
     return {
         path: normalizedPath,
