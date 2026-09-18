@@ -963,7 +963,8 @@ async function renderFlightToHTMLStream(
   flightSSRClient: FlightSSRClient,
   ssrManifest: SSRManifest,
   res: express.Response,
-  isDev: boolean
+  isDev: boolean,
+  forwardedHeaders: Record<string, string>
 ): Promise<void> {
   const flightUrl = `${upstreamOrigin}/rsc${pathname}${search ? `?${search}` : ''}`;
 
@@ -971,7 +972,7 @@ async function renderFlightToHTMLStream(
   const upstream = await withTimeout(
     flightUrl,
     {
-      headers: { Accept: 'text/x-component' },
+      headers: { Accept: 'text/x-component', ...forwardedHeaders },
     },
     5000
   );
@@ -1636,7 +1637,11 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     try {
       const fetchOptions: RequestInit = {
         method: req.method,
-        headers: { Accept: req.get('Accept') ?? 'text/x-component' },
+        headers: {
+          Accept: req.get('Accept') ?? 'text/x-component',
+          'x-vista-forwarded-host': req.get('host') ?? '',
+          'x-vista-forwarded-proto': req.protocol || 'http',
+        },
       };
 
       // Forward Server Action headers and body for POST requests
@@ -1904,7 +1909,11 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
           flightSSRClient!,
           ssrManifest!,
           res,
-          isDev
+          isDev,
+          {
+            'x-vista-forwarded-host': req.get('host') ?? '',
+            'x-vista-forwarded-proto': req.protocol || 'http',
+          }
         );
         return;
       } catch (flightError: any) {

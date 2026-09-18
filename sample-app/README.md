@@ -29,14 +29,38 @@ npx create-vista-app@latest my-vista-app --typed-api
 ```
 app/
 ├── root.tsx        # Root layout (<html>, <body>, fonts)
-├── index.tsx       # Home page
+├── index.tsx        # Full-stack notes page backed by the notes API
 ├── globals.css     # Global styles (Tailwind CSS v4)
-└── about/
-    └── page.tsx    # Example nested route → /about
+└── api/
+    └── notes/
+        ├── route.ts       # GET/POST /api/notes
+        ├── [id]/route.ts   # GET/PATCH/DELETE /api/notes/:id
+        └── notes-store.ts  # Server-only in-memory data store
 public/
 ├── vista.svg       # Static assets
 vista.config.ts     # Framework configuration
 ```
+
+## Full-stack example
+
+The home page fetches `/api/notes` on each request and renders the response from
+the same file-based API backed by `notes-store.ts`. This demonstrates the full
+page -> API route -> server store boundary without adding a second backend service.
+
+Try the API while the dev server is running:
+
+```text
+GET    /api/notes
+POST   /api/notes
+GET    /api/notes/1
+PATCH  /api/notes/1
+DELETE /api/notes/1
+```
+
+The store is intentionally in memory and deterministic for the example. The page
+is explicitly dynamic so mutations made through the API are visible on the next
+page request. Replace `notes-store.ts` with a database-backed module in a real
+application.
 
 ## Key Concepts
 

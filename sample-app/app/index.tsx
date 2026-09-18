@@ -1,24 +1,68 @@
 import Image from 'vista/image';
+import { headers } from 'vista/server';
 
-export default function Index() {
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
+type Note = { id: string; title: string; body: string };
+
+async function getNotes(): Promise<Note[]> {
+  const requestHeaders = headers();
+  const host = requestHeaders.get('x-vista-forwarded-host') || requestHeaders.get('host');
+  const protocol = requestHeaders.get('x-vista-forwarded-proto') || 'http';
+
+  if (!host) {
+    throw new Error('Unable to determine the sample app origin');
+  }
+
+  const response = await fetch(`${protocol}://${host}/api/notes`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    throw new Error(`Notes API request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { notes: Note[] };
+  return payload.notes;
+}
+
+export default async function Index() {
+  const notes = await getNotes();
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-white dark:bg-black transition-colors duration-200">
-      <div className="-mt-20 mb-10 relative border border-dashed border-gray-300 dark:border-neutral-700 p-10">
-        <div className="absolute -top-0 -left-0 -translate-x-1/2 -translate-y-1/2 w-24 h-24 border border-dashed border-gray-300 dark:border-neutral-700 rounded-full" />
-        <div className="absolute -bottom-0 -right-0 translate-x-1/2 translate-y-1/2 w-24 h-24 border border-dashed border-gray-300 dark:border-neutral-700 rounded-full" />
-        <Image
-          src="/vista.svg"
-          alt="Vista Logo"
-          width={600}
-          height={600}
-          unoptimized
-          className="dark:invert"
-        />
-      </div>
+    <main className="min-h-screen bg-white px-6 py-16 text-zinc-950 dark:bg-black dark:text-zinc-50">
+      <div className="mx-auto grid max-w-4xl gap-12 md:grid-cols-[180px_1fr] md:items-start">
+        <Image src="/vista.svg" alt="Vista Logo" width={180} height={180} unoptimized className="dark:invert" />
 
-      <h1 className="max-w-xs sm:max-w-none text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50 text-center">
-        To get started, edit the index.tsx file.
-      </h1>
+        <section>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-orange-700">Full-stack Vista example</p>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">Notes from the app directory</h1>
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-zinc-600 dark:text-zinc-400">
+            This page fetches the notes API on each request. The browser-facing page and backend handlers live
+            together without a separate server project.
+          </p>
+
+          <div className="mt-10 grid gap-4 sm:grid-cols-2">
+            {notes.map((note) => (
+              <article key={note.id} className="border border-zinc-200 p-5 dark:border-zinc-800">
+                <h2 className="font-semibold">{note.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{note.body}</p>
+                <a
+                  className="mt-4 inline-block text-sm font-medium text-orange-700 underline underline-offset-4"
+                  href={`/api/notes/${note.id}`}
+                >
+                  View JSON endpoint
+                </a>
+              </article>
+            ))}
+          </div>
+
+          <p className="mt-8 text-sm text-zinc-600 dark:text-zinc-400">
+            Collection endpoint: <a className="underline" href="/api/notes">/api/notes</a> (GET and POST). Each
+            note endpoint supports GET, PATCH, and DELETE.
+          </p>
+        </section>
+      </div>
     </main>
   );
 }

@@ -1,8 +1,9 @@
 /**
  * Server-only in-memory store backing the example API routes.
  *
- * Nothing here is imported by a component, so it never enters the client bundle -
- * this is where a real app would talk to its database instead.
+ * The page reaches this store through HTTP by calling the notes API. Keep this
+ * module behind route handlers so it stays out of client bundles and so page
+ * rendering exercises the same full-stack boundary as a persistent backend.
  */
 
 export interface Note {
