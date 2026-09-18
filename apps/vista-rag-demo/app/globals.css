@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-panel: var(--panel);
+  --color-panel-elevated: var(--panel-elevated);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+:root {
+  --background: #f3e8d8;
+  --foreground: #171717;
+  --primary: #ff4c30;
+  --muted: #ebe4d9;
+  --muted-foreground: #5f6570;
+  --border: #ddd4c8;
+  --panel: rgba(255, 255, 255, 0.76);
+  --panel-elevated: rgba(255, 255, 255, 0.92);
+  color-scheme: light;
+}
+
+:root.light {
+  --background: #f3e8d8;
+  --foreground: #171717;
+  --primary: #ff4c30;
+  --muted: #ebe4d9;
+  --muted-foreground: #5f6570;
+  --border: #ddd4c8;
+  --panel: rgba(255, 255, 255, 0.76);
+  --panel-elevated: rgba(255, 255, 255, 0.92);
+  color-scheme: light;
+}
+
+:root.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --primary: #ff4c30;
+  --muted: #11141b;
+  --muted-foreground: #97a0af;
+  --border: #1f2632;
+  --panel: rgba(15, 20, 30, 0.76);
+  --panel-elevated: rgba(11, 16, 24, 0.9);
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}

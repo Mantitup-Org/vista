@@ -1,0 +1,10 @@
+node_modules
+.git
+.vista/cache
+.flash
+.next
+.vercel
+dist
+coverage
+*.log
+.env*
