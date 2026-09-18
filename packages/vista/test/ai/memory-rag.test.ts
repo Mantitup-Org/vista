@@ -80,3 +80,24 @@ test('InMemoryVectorStore and retriever tool find relevant knowledge', async () 
   assert.equal(toolOutput.length >= 1, true);
   assert.match(toolOutput[0].content, /Vista\.js supports React Server Components/);
 });
+
+test('embedTexts posts to an OpenAI-compatible embeddings endpoint', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    assert.match(String(input), /\/embeddings$/);
+    const body = JSON.parse(String(init.body));
+    assert.deepEqual(body.input, ['hello']);
+    return new Response(
+      JSON.stringify({ data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }] }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  }) as typeof fetch;
+
+  try {
+    const { embedTexts } = await import('../../src/ai/embeddings');
+    const vectors = await embedTexts(['hello'], { model: 'mock:echo', apiKey: 'test' });
+    assert.deepEqual(vectors, [[0.1, 0.2, 0.3]]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

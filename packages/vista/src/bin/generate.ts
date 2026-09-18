@@ -88,6 +88,29 @@ function renderAgentRoute(kebabName: string): string {
   ].join('\n');
 }
 
+function renderAppAgentsGuide(): string {
+  return [
+    '# App agents',
+    '',
+    'Runtime Vista agents live in `app/agents/<name>/agent.ts` and stream from `app/api/agents/<name>/route.ts`.',
+    '',
+    'Generate one with:',
+    '',
+    '```bash',
+    'vista g agent support',
+    '```',
+    '',
+    'Model strings use `provider:model`. Free-tier friendly options:',
+    '',
+    '- `groq:llama-3.1-8b-instant` (`GROQ_API_KEY`)',
+    '- `nvidia:meta/llama-3.1-8b-instruct` (`NVIDIA_API_KEY`)',
+    '- `openai:gpt-4o` (`OPENAI_API_KEY`)',
+    '',
+    "Embeddings: `import { embedText } from 'vista/ai'` then pass `embed: embedText` to `createRetrieverTool`.",
+    '',
+  ].join('\n');
+}
+
 function findMatchingBrace(source: string, openBraceIndex: number): number {
   let depth = 0;
   for (let i = openBraceIndex; i < source.length; i++) {
@@ -391,8 +414,9 @@ export async function runGenerateCommand(
       path.join('app', 'api', 'agents', safeName, 'route.ts'),
       renderAgentRoute(safeName)
     );
+    const guideFile = writeFileIfMissing(cwd, path.join('app', 'AGENTS.md'), renderAppAgentsGuide());
 
-    [agentFile, routeFile].forEach((res) => {
+    [agentFile, routeFile, guideFile].forEach((res) => {
       const relativePath = path.relative(cwd, res.path).replace(/\\/g, '/');
       log(`${res.created ? 'created' : 'skipped'} ${relativePath}`);
     });

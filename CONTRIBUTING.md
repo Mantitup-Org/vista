@@ -210,6 +210,12 @@ pnpm test:vstack
 pnpm test:vista-output
 ```
 
+### If you change agents or model providers
+
+```bash
+pnpm test:agents
+```
+
 ### If you change Flashpack behavior
 
 ```bash

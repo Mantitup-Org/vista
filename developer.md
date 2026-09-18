@@ -323,6 +323,7 @@ These are the most important scripts to know:
 - `scripts/test-middleware-security.cjs`
 - `scripts/test-auth.cjs`
 - `scripts/test-vstack.cjs`
+- `scripts/test-agents.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`

@@ -31,6 +31,21 @@ test('parseModelIdentifier correctly separates provider and modelName', () => {
     modelName: 'llama3',
   });
 
+  assert.deepEqual(parseModelIdentifier('nvidia:meta/llama-3.1-8b-instruct'), {
+    provider: 'nvidia',
+    modelName: 'meta/llama-3.1-8b-instruct',
+  });
+
+  assert.deepEqual(parseModelIdentifier('groq:llama-3.1-8b-instant'), {
+    provider: 'groq',
+    modelName: 'llama-3.1-8b-instant',
+  });
+
+  assert.deepEqual(parseModelIdentifier('nim:meta/llama-3.1-8b-instruct'), {
+    provider: 'nim',
+    modelName: 'meta/llama-3.1-8b-instruct',
+  });
+
   assert.deepEqual(parseModelIdentifier('mock:echo'), {
     provider: 'mock',
     modelName: 'echo',
@@ -62,6 +77,14 @@ test('resolveModel instantiates the correct provider driver', () => {
   const ollamaModel = resolveModel('ollama:mistral');
   assert.equal(ollamaModel.provider, 'openai');
   assert.equal(ollamaModel.modelName, 'mistral');
+
+  const nvidiaModel = resolveModel('nvidia:meta/llama-3.1-8b-instruct');
+  assert.equal(nvidiaModel.provider, 'openai');
+  assert.equal(nvidiaModel.modelName, 'meta/llama-3.1-8b-instruct');
+
+  const groqModel = resolveModel('groq:llama-3.1-8b-instant');
+  assert.equal(groqModel.provider, 'openai');
+  assert.equal(groqModel.modelName, 'llama-3.1-8b-instant');
 });
 
 test('mock model generates and streams text', async () => {

@@ -2,7 +2,7 @@
 category: 'ai'
 slug: 'providers'
 title: 'Model Providers Configuration'
-summary: 'Configure OpenAI, Anthropic, Google Gemini, Ollama, and local models in Vista.'
+summary: 'Configure OpenAI, Anthropic, Google Gemini, Groq, NVIDIA NIM, Ollama, and local models in Vista.'
 order: 4
 updatedAt: '2026-03-20'
 ---
@@ -30,6 +30,12 @@ model: 'gemini:gemini-1.5-flash';
 model: 'ollama:llama3';
 model: 'ollama:mistral';
 
+// Groq
+model: 'groq:llama-3.1-8b-instant';
+
+// NVIDIA NIM
+model: 'nvidia:meta/llama-3.1-8b-instruct';
+
 // Mock / Testing
 model: 'mock:echo';
 ```
@@ -52,6 +58,30 @@ GEMINI_API_KEY="AIza..."
 
 # Ollama / Local
 OLLAMA_BASE_URL="http://localhost:11434/v1" # optional (default)
+
+# Groq
+GROQ_API_KEY="gsk_..."
+
+# NVIDIA NIM
+NVIDIA_API_KEY="nvapi-..."
+```
+
+## Embeddings
+
+```ts
+import { embedText, createRetrieverTool, InMemoryVectorStore } from 'vista/ai';
+
+const store = new InMemoryVectorStore();
+store.addDocument({
+  id: 'intro',
+  text: 'Vista is a React framework.',
+  vector: await embedText('Vista is a React framework.', { model: 'openai:text-embedding-3-small' }),
+});
+
+export const search = createRetrieverTool({
+  store,
+  embed: (query) => embedText(query, { model: 'openai:text-embedding-3-small' }),
+});
 ```
 
 ## Custom Provider Options
