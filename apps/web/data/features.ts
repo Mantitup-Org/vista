@@ -1,31 +1,31 @@
 export const features = [
     {
         title: "File-System Routing",
-        description: "Static, dynamic, and catch-all routes work from your folder structure with nested layouts baked in."
+        description: "Pages and layouts under app/ become URLs. Nested layouts, dynamic segments, and catch-all routes are built in."
     },
     {
         title: "React Server Components",
-        description: "Server-first rendering keeps client bundles lean while preserving component-driven DX."
+        description: "Server Components by default. 'use client' modules in app/, components/, utils/, lib/, or src/ enter the client manifest automatically."
     },
     {
         title: "Streaming SSR",
         description: "Progressive HTML streaming improves first paint and keeps UI responsive on slower networks."
     },
     {
-        title: "Typed API (Experimental)",
-        description: "Package-first typed procedures and routers are being integrated behind a safe feature flag."
+        title: "Fullstack APIs",
+        description: "File-based route.ts handlers plus typed procedures (vista g api-init) with createCaller in Server Components."
     },
     {
-        title: "Docs IA with Slug Routing",
-        description: "Official docs now use category + slug routes with left nav, right TOC, and article-level signatures."
+        title: "Auth that ships",
+        description: "vista g auth writes sign-in, OAuth, fail-closed middleware, and a SessionProvider. Credentials POST; OAuth keeps callbackUrl."
     },
     {
-        title: "Built-in Dev Runtime",
-        description: "Fast rebuild loop, server/client manifests, and runtime guards are tuned for framework development."
+        title: "AI and RAG",
+        description: "vista g agent scaffolds chat routes. Groq, NVIDIA NIM, OpenAI, and embedText work with one provider:model string."
     },
     {
         title: "CLI + Scaffolding",
-        description: "Create apps quickly, then layer advanced features without forcing CLI lock-in at runtime."
+        description: "create-vista-app for a React starter. Then vista g auth, vista g api-init, or vista g agent without a second backend."
     },
     {
         title: "Deployable by Default",

@@ -21,6 +21,7 @@ That creates `auth.ts`, `app/api/auth/[...vista]/route.ts`, `/signin`, `/account
 import VistaAuth, { Credentials, GitHub, Google } from 'vista/auth';
 
 export const { handlers, auth, signIn, signOut, authMiddleware } = VistaAuth({
+  pages: { signIn: '/signin' },
   providers: [
     GitHub({}),
     Google({}),
@@ -33,6 +34,11 @@ export const { handlers, auth, signIn, signOut, authMiddleware } = VistaAuth({
       },
     }),
   ],
+  callbacks: {
+    jwt: async ({ token }) => token,
+    session: async ({ session }) => session,
+    redirect: async ({ url }) => url,
+  },
 });
 ```
 
@@ -44,8 +50,16 @@ export const { GET, POST } = handlers;
 ## Usage
 
 - Server Components / route handlers: `const session = await auth()`
-- Middleware: `export default authMiddleware(({ auth }) => Boolean(auth))`
-- Client: `import { SessionProvider, useSession, signIn, signOut } from 'vista/auth/react'`
+- Generated `/signin` POSTs credentials with CSRF and sends OAuth `callbackUrl` through to `/account`
+- Client helper: `await signIn('credentials', { email, password, callbackUrl: '/account' })` (GET is 405 for credentials)
+- Middleware must export a function. Empty `middleware.ts` returns 500 (fail-closed). `/\\` rewrites are rejected
+- `jwt`, `session`, and `redirect` callbacks run. Production sign-out cookies include `Secure` and `HttpOnly` so the session actually clears
+
+```ts
+import { useSession, signIn, signOut } from 'vista/auth/react';
+
+await signIn('github', { callbackUrl: '/account' });
+```
 
 Session cookies are HttpOnly, `SameSite=Lax`, `Secure` in production, and encrypted with AES-256-GCM using `AUTH_SECRET`.
 

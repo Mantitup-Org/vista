@@ -23,7 +23,7 @@ Open `http://localhost:3003`.
 
 - Folders under `app/` are URL routes.
 - Components are **Server Components** by default.
-- Add `'use client'` only where you need browser state, events, or hooks.
+- Add `'use client'` only where you need browser state, events, or hooks. Files in `components/`, `utils/`, `lib/`, or `src/` are scanned into the client manifest — they do not have to live under `app/`.
 - Shared UI goes in `components/`.
 
 ```txt

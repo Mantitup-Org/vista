@@ -33,6 +33,7 @@ Open `http://localhost:3003`.
 - `lib/` — helpers
 - `app/api/` — HTTP APIs and typed API entry
 - `app/agents/` — runtime AI agents (optional)
+- `auth.ts` / `middleware.ts` / `/signin` — after `vista g auth`
 
 ## Tiny API smoke test
 
