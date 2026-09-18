@@ -260,7 +260,37 @@ async function main() {
       'utf8'
     );
     assert.match(configSource, /from 'vista\/auth'/);
+    assert.match(configSource, /pages: \{ signIn: '\/signin' \}/);
+    assert.match(configSource, /jwt: async/);
     assert.match(routeSource, /export const \{ GET, POST \} = handlers/);
+    const signInPage = fs.readFileSync(path.join(cwd, 'app', 'signin', 'page.tsx'), 'utf8');
+    assert.match(signInPage, /signIn\('credentials'/);
+    assert.match(signInPage, /callbackUrl: '\/account'/);
+    const middlewareSource = fs.readFileSync(path.join(cwd, 'middleware.ts'), 'utf8');
+    assert.match(middlewareSource, /export default authMiddleware/);
+    assert.match(middlewareSource, /\/account/);
+    const envExample = fs.readFileSync(path.join(cwd, '.env.example'), 'utf8');
+    assert.match(envExample, /AUTH_SECRET=/);
+    const providerSource = fs.readFileSync(
+      path.join(cwd, 'components', 'auth-session-provider.tsx'),
+      'utf8'
+    );
+    assert.match(providerSource, /SessionProvider/);
+
+    const templateRoot = path.join(
+      repoRoot,
+      'packages',
+      'create-vista-app',
+      'template',
+      'app',
+      'root.tsx'
+    );
+    fs.mkdirSync(path.join(cwd, 'app'), { recursive: true });
+    fs.copyFileSync(templateRoot, path.join(cwd, 'app', 'root.tsx'));
+    const patchExit = await runGenerateCommand(['auth'], { cwd, log() {} });
+    assert.equal(patchExit, 0);
+    const patchedRoot = fs.readFileSync(path.join(cwd, 'app', 'root.tsx'), 'utf8');
+    assert.match(patchedRoot, /AuthSessionProvider/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

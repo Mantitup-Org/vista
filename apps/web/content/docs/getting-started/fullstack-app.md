@@ -74,12 +74,21 @@ Call from the browser with `createVistaClient` from `vista/stack/client`.
 vista g auth
 ```
 
-Creates `auth.ts` and `app/api/auth/[...vista]/route.ts`. Set `AUTH_SECRET`, then:
+Creates:
+
+- `auth.ts` and `app/api/auth/[...vista]/route.ts`
+- `/signin` (credentials POST + OAuth) and `/account`
+- `middleware.ts` that fail-closes `/account` when there is no session
+- `components/auth-session-provider.tsx` (wired into `app/root.tsx` when that file is the default template)
+- `.env.example`
+
+Set `AUTH_SECRET`, then:
 
 ```ts title="auth.ts"
 import VistaAuth, { GitHub, Google, Credentials } from 'vista/auth';
 
 export const { handlers, auth, signIn, signOut, authMiddleware } = VistaAuth({
+  pages: { signIn: '/signin' },
   providers: [
     GitHub({}),
     Google({}),
@@ -101,24 +110,32 @@ In a Server Component or route handler:
 const session = await auth();
 ```
 
-On the client:
+On the client, wrap the tree with `SessionProvider` (the generator does this) then:
 
 ```ts
-import { SessionProvider, useSession, signIn, signOut } from 'vista/auth/react';
+import { useSession, signIn, signOut } from 'vista/auth/react';
+
+await signIn('credentials', { email, password, callbackUrl: '/account' });
+await signIn('github', { callbackUrl: '/account' });
 ```
+
+`signIn('credentials')` POSTs with a CSRF token. OAuth honors `callbackUrl`.
 
 ## Path D — Middleware
 
 ```ts title="middleware.ts"
-import { NextResponse } from 'vista/server';
+import { authMiddleware } from './auth';
 
-export async function middleware({ request, next }) {
-  if (request.nextUrl.pathname.startsWith('/admin') && !request.cookies.get('vista.session-token')) {
-    return NextResponse.redirect(new URL('/api/auth/signin', request.url));
+export default authMiddleware(({ auth, request }) => {
+  const pathname = new URL(request.url).pathname;
+  if (pathname.startsWith('/account') && !auth) {
+    return false;
   }
-  return next();
-}
+  return true;
+});
 ```
+
+The file must export a function (`middleware` or `default`). An empty `middleware.ts` now fails closed (500) instead of skipping auth.
 
 ## Suggested order
 

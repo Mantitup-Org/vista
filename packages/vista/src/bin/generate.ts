@@ -259,6 +259,7 @@ function renderAuthConfig(): string {
     "import VistaAuth, { Credentials, GitHub, Google } from 'vista/auth';",
     '',
     'export const { handlers, auth, signIn, signOut, authMiddleware } = VistaAuth({',
+    "  pages: { signIn: '/signin' },",
     '  providers: [',
     '    GitHub({}),',
     '    Google({}),',
@@ -269,6 +270,11 @@ function renderAuthConfig(): string {
     '      },',
     '    }),',
     '  ],',
+    '  callbacks: {',
+    '    jwt: async ({ token }) => token,',
+    '    session: async ({ session }) => session,',
+    '    redirect: async ({ url }) => url,',
+    '  },',
     '});',
     '',
   ].join('\n');
@@ -281,6 +287,153 @@ function renderAuthRoute(): string {
     'export const { GET, POST } = handlers;',
     '',
   ].join('\n');
+}
+
+function renderAuthMiddleware(): string {
+  return [
+    "import { authMiddleware } from './auth';",
+    '',
+    "export default authMiddleware(({ auth, request }) => {",
+    '  const pathname = new URL(request.url).pathname;',
+    "  if (pathname.startsWith('/account') && !auth) {",
+    '    return false;',
+    '  }',
+    '  return true;',
+    '});',
+    '',
+  ].join('\n');
+}
+
+function renderAuthSessionProvider(): string {
+  return [
+    "'use client';",
+    '',
+    "import type { ReactNode } from 'react';",
+    "import { SessionProvider } from 'vista/auth/react';",
+    '',
+    'export function AuthSessionProvider({ children }: { children: ReactNode }) {',
+    '  return <SessionProvider>{children}</SessionProvider>;',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function renderSignInPage(): string {
+  return [
+    "'use client';",
+    '',
+    "import { useState } from 'react';",
+    "import { signIn } from 'vista/auth/react';",
+    '',
+    'export default function SignInPage() {',
+    "  const [email, setEmail] = useState('');",
+    "  const [password, setPassword] = useState('');",
+    '',
+    '  return (',
+    '    <main style={{ maxWidth: 360, margin: "4rem auto", display: "grid", gap: 12 }}>',
+    '      <h1>Sign in</h1>',
+    '      <form',
+    '        onSubmit={(event) => {',
+    '          event.preventDefault();',
+    "          void signIn('credentials', { email, password, callbackUrl: '/account' });",
+    '        }}',
+    '        style={{ display: "grid", gap: 8 }}',
+    '      >',
+    '        <input',
+    '          type="email"',
+    '          name="email"',
+    '          placeholder="Email"',
+    '          value={email}',
+    '          onChange={(event) => setEmail(event.target.value)}',
+    '          required',
+    '        />',
+    '        <input',
+    '          type="password"',
+    '          name="password"',
+    '          placeholder="Password"',
+    '          value={password}',
+    '          onChange={(event) => setPassword(event.target.value)}',
+    '          required',
+    '        />',
+    '        <button type="submit">Continue with email</button>',
+    '      </form>',
+    '      <button type="button" onClick={() => void signIn("github", { callbackUrl: "/account" })}>',
+    '        Continue with GitHub',
+    '      </button>',
+    '      <button type="button" onClick={() => void signIn("google", { callbackUrl: "/account" })}>',
+    '        Continue with Google',
+    '      </button>',
+    '    </main>',
+    '  );',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function renderAccountPage(): string {
+  return [
+    "import { auth } from '../../auth';",
+    '',
+    'export default async function AccountPage() {',
+    '  const session = await auth();',
+    '  if (!session?.user) {',
+    '    return <p>Not signed in.</p>;',
+    '  }',
+    '  return (',
+    '    <main style={{ maxWidth: 480, margin: "4rem auto" }}>',
+    '      <h1>Account</h1>',
+    '      <p>Signed in as {session.user.email || session.user.name || session.user.id}</p>',
+    '    </main>',
+    '  );',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function renderEnvExample(): string {
+  return [
+    'AUTH_SECRET=',
+    'AUTH_GITHUB_ID=',
+    'AUTH_GITHUB_SECRET=',
+    'AUTH_GOOGLE_ID=',
+    'AUTH_GOOGLE_SECRET=',
+    '',
+  ].join('\n');
+}
+
+function patchRootWithSessionProvider(cwd: string): { path: string; patched: boolean } {
+  const relativePath = path.join('app', 'root.tsx');
+  const absolutePath = path.join(cwd, relativePath);
+  if (!fs.existsSync(absolutePath)) {
+    return { path: absolutePath, patched: false };
+  }
+
+  let source = fs.readFileSync(absolutePath, 'utf8');
+  if (source.includes('AuthSessionProvider')) {
+    return { path: absolutePath, patched: false };
+  }
+
+  if (!source.includes('<ThemeProvider')) {
+    return { path: absolutePath, patched: false };
+  }
+
+  if (!source.includes("from '../components/auth-session-provider'")) {
+    source = source.replace(
+      /from 'vista\/theme';/,
+      "from 'vista/theme';\nimport { AuthSessionProvider } from '../components/auth-session-provider';"
+    );
+  }
+
+  const next = source.replace(
+    /<ThemeProvider([^>]*)>\{children\}<\/ThemeProvider>/,
+    '<ThemeProvider$1><AuthSessionProvider>{children}</AuthSessionProvider></ThemeProvider>'
+  );
+  if (next === source) {
+    return { path: absolutePath, patched: false };
+  }
+
+  fs.writeFileSync(absolutePath, next, 'utf8');
+  return { path: absolutePath, patched: true };
 }
 
 function printGenerateUsage(log: (message: string) => void): void {
@@ -431,12 +584,25 @@ export async function runGenerateCommand(
         path.join('app', 'api', 'auth', '[...vista]', 'route.ts'),
         renderAuthRoute()
       ),
+      writeFileIfMissing(cwd, 'middleware.ts', renderAuthMiddleware()),
+      writeFileIfMissing(
+        cwd,
+        path.join('components', 'auth-session-provider.tsx'),
+        renderAuthSessionProvider()
+      ),
+      writeFileIfMissing(cwd, path.join('app', 'signin', 'page.tsx'), renderSignInPage()),
+      writeFileIfMissing(cwd, path.join('app', 'account', 'page.tsx'), renderAccountPage()),
+      writeFileIfMissing(cwd, '.env.example', renderEnvExample()),
     ];
     writes.forEach((result) => {
       const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
       log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
     });
+    const rootPatch = patchRootWithSessionProvider(cwd);
+    const rootRelative = path.relative(cwd, rootPatch.path).replace(/\\/g, '/');
+    log(rootPatch.patched ? `updated ${rootRelative}` : `skipped ${rootRelative}`);
     log('Set AUTH_SECRET, AUTH_GITHUB_ID/SECRET, AUTH_GOOGLE_ID/SECRET in your environment.');
+    log('Credentials sign-in POSTs from /signin. OAuth honors callbackUrl. /account is auth-gated.');
     return 0;
   }
 

@@ -155,24 +155,26 @@ Or from the browser with `createVistaClient` from `vista/stack/client`.
 vista g auth
 ```
 
+That writes `auth.ts`, `/signin`, `/account`, fail-closed `middleware.ts`, and a `SessionProvider` wrapper. Credentials `signIn` POSTs; OAuth keeps `callbackUrl`.
+
 ```ts
 import VistaAuth, { GitHub, Credentials } from 'vista/auth';
 
 export const { handlers, auth, authMiddleware } = VistaAuth({
+  pages: { signIn: '/signin' },
   providers: [GitHub({}), Credentials({ authorize: async () => null })],
 });
 ```
 
 ```ts
-// middleware.ts
-import { NextResponse } from 'vista/server';
+// middleware.ts (generated)
+import { authMiddleware } from './auth';
 
-export async function middleware({ request, next }) {
-  if (request.nextUrl.pathname.startsWith('/admin') && !request.cookies.get('vista.session-token')) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-  return next();
-}
+export default authMiddleware(({ auth, request }) => {
+  const pathname = new URL(request.url).pathname;
+  if (pathname.startsWith('/account') && !auth) return false;
+  return true;
+});
 ```
 
 Set `AUTH_SECRET` in the environment before using credentials/OAuth.

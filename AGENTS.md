@@ -31,7 +31,7 @@ Narrow tests live as `pnpm test:<name>` in the root `package.json`. After changi
 ## Conventions
 
 - App runtime agents: `vista g agent <name>` → `app/agents/<name>/agent.ts` + `app/api/agents/<name>/route.ts` + `app/AGENTS.md`
-- Auth: `vista g auth` → `auth.ts` + `app/api/auth/[...vista]/route.ts`. Import from `vista/auth` (server) and `vista/auth/react` (client).
+- Auth: `vista g auth` → `auth.ts`, catch-all route, `/signin`, `/account`, fail-closed `middleware.ts`, `SessionProvider` wrapper. Import from `vista/auth` (server) and `vista/auth/react` (client).
 - Typed API: `vista g api-init`. Call procedures from RSC with `v.createCaller(router, { ctx, env })`.
 - Package imports in generated apps use `vista/...`. Inside this monorepo, published name is `@vistagenic/vista`.
 

@@ -15,7 +15,7 @@ Vista ships a NextAuth-shaped auth helper at `vista/auth`. It is designed to be 
 vista g auth
 ```
 
-That creates `auth.ts` and `app/api/auth/[...vista]/route.ts`. Set `AUTH_SECRET` (required), plus provider keys.
+That creates `auth.ts`, `app/api/auth/[...vista]/route.ts`, `/signin`, `/account`, fail-closed `middleware.ts`, a `SessionProvider` wrapper, and `.env.example`. Set `AUTH_SECRET` (required), plus provider keys.
 
 ```ts title="auth.ts"
 import VistaAuth, { Credentials, GitHub, Google } from 'vista/auth';

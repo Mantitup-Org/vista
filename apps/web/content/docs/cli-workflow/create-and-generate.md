@@ -59,7 +59,7 @@ vista g agent <name>
 vista g auth
 ```
 
-`vista g auth` writes `auth.ts` and `app/api/auth/[...vista]/route.ts`. Set `AUTH_SECRET` before signing in.
+`vista g auth` writes `auth.ts`, the catch-all auth route, `/signin`, `/account`, fail-closed `middleware.ts`, a `SessionProvider` wrapper, and `.env.example`. Set `AUTH_SECRET` before signing in. Credentials sign-in POSTs; OAuth keeps `callbackUrl`.
 
 ## Typed Starter
 
