@@ -48,6 +48,55 @@ importers:
         specifier: ^8.0.0
         version: 8.56.1(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
 
+  apps/vista-rag-demo:
+    dependencies:
+      '@swc-node/register':
+        specifier: ^1.9.0
+        version: 1.11.1(@swc/core@1.15.8)(@swc/types@0.1.25)(typescript@5.9.3)
+      '@swc/core':
+        specifier: ^1.4.0
+        version: 1.15.8
+      '@tailwindcss/postcss':
+        specifier: ^4.0.0
+        version: 4.1.18
+      postcss:
+        specifier: ^8.0.0
+        version: 8.5.6
+      postcss-cli:
+        specifier: ^11.0.0
+        version: 11.0.1(jiti@2.6.1)(postcss@8.5.6)(tsx@4.19.1)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.4(react@19.2.4)
+      react-server-dom-webpack:
+        specifier: ^19.0.0
+        version: 19.2.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(webpack@5.104.1(@swc/core@1.15.8))
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.1.18
+      tsx:
+        specifier: ^4.7.0
+        version: 4.19.1
+      vista:
+        specifier: file:../../packages/vista
+        version: '@vistagenic/vista@file:packages/vista(@swc/types@0.1.25)(@types/node@22.19.13)(@types/webpack@5.28.5(@swc/core@1.15.8))(type-fest@0.18.1)(typescript@5.9.3)'
+      webpack:
+        specifier: ^5.90.0
+        version: 5.104.1(@swc/core@1.15.8)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   apps/web:
     dependencies:
       '@content-collections/core':
@@ -7332,6 +7381,22 @@ snapshots:
       type-fest: 0.18.1
       webpack-hot-middleware: 2.26.1
 
+  '@pmmmwh/react-refresh-webpack-plugin@0.5.17(@types/webpack@5.28.5(@swc/core@1.15.8))(react-refresh@0.14.2)(type-fest@0.18.1)(webpack-hot-middleware@2.26.1)(webpack@5.104.1(@swc/core@1.15.8))':
+    dependencies:
+      ansi-html: 0.0.9
+      core-js-pure: 3.47.0
+      error-stack-parser: 2.1.4
+      html-entities: 2.6.0
+      loader-utils: 2.0.4
+      react-refresh: 0.14.2
+      schema-utils: 4.3.3
+      source-map: 0.7.6
+      webpack: 5.104.1(@swc/core@1.15.8)
+    optionalDependencies:
+      '@types/webpack': 5.28.5(@swc/core@1.15.8)
+      type-fest: 0.18.1
+      webpack-hot-middleware: 2.26.1
+
   '@shikijs/core@4.0.2':
     dependencies:
       '@shikijs/primitive': 4.0.2
@@ -7692,6 +7757,18 @@ snapshots:
       - uglify-js
       - webpack-cli
 
+  '@types/webpack@5.28.5(@swc/core@1.15.8)':
+    dependencies:
+      '@types/node': 22.19.13
+      tapable: 2.3.0
+      webpack: 5.104.1(@swc/core@1.15.8)
+    transitivePeerDependencies:
+      - '@swc/core'
+      - esbuild
+      - uglify-js
+      - webpack-cli
+    optional: true
+
   '@types/webpack@5.28.5(@swc/core@1.15.8)(esbuild@0.24.2)':
     dependencies:
       '@types/node': 22.19.13
@@ -7827,6 +7904,42 @@ snapshots:
       ts-node: 10.9.2(@swc/core@1.15.8)(@types/node@22.19.13)(typescript@5.9.3)
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.24.2)
       webpack-dev-middleware: 7.4.5(webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.25.12))
+      webpack-hot-middleware: 2.26.1
+    transitivePeerDependencies:
+      - '@rspack/core'
+      - '@swc/helpers'
+      - '@swc/types'
+      - '@swc/wasm'
+      - '@types/node'
+      - '@types/webpack'
+      - sockjs-client
+      - supports-color
+      - type-fest
+      - typescript
+      - uglify-js
+      - webpack-cli
+      - webpack-dev-server
+      - webpack-plugin-serve
+
+  '@vistagenic/vista@file:packages/vista(@swc/types@0.1.25)(@types/node@22.19.13)(@types/webpack@5.28.5(@swc/core@1.15.8))(type-fest@0.18.1)(typescript@5.9.3)':
+    dependencies:
+      '@pmmmwh/react-refresh-webpack-plugin': 0.5.17(@types/webpack@5.28.5(@swc/core@1.15.8))(react-refresh@0.14.2)(type-fest@0.18.1)(webpack-hot-middleware@2.26.1)(webpack@5.104.1(@swc/core@1.15.8))
+      '@swc-node/register': 1.11.1(@swc/core@1.15.8)(@swc/types@0.1.25)(typescript@5.9.3)
+      '@swc/core': 1.15.8
+      chokidar: 3.6.0
+      css-loader: 7.1.2(webpack@5.104.1(@swc/core@1.15.8))
+      esbuild: 0.24.2
+      express: 4.22.1
+      mini-css-extract-plugin: 2.9.4(webpack@5.104.1(@swc/core@1.15.8))
+      null-loader: 4.0.1(webpack@5.104.1(@swc/core@1.15.8))
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      react-refresh: 0.14.2
+      react-server-dom-webpack: 19.2.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(webpack@5.104.1(@swc/core@1.15.8))
+      swc-loader: 0.2.7(@swc/core@1.15.8)(webpack@5.104.1(@swc/core@1.15.8))
+      ts-node: 10.9.2(@swc/core@1.15.8)(@types/node@22.19.13)(typescript@5.9.3)
+      webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.24.2)
+      webpack-dev-middleware: 7.4.5(webpack@5.104.1(@swc/core@1.15.8))
       webpack-hot-middleware: 2.26.1
     transitivePeerDependencies:
       - '@rspack/core'
@@ -8580,6 +8693,19 @@ snapshots:
       semver: 7.7.4
     optionalDependencies:
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
+
+  css-loader@7.1.2(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      icss-utils: 5.1.0(postcss@8.5.6)
+      postcss: 8.5.6
+      postcss-modules-extract-imports: 3.1.0(postcss@8.5.6)
+      postcss-modules-local-by-default: 4.2.0(postcss@8.5.6)
+      postcss-modules-scope: 3.2.1(postcss@8.5.6)
+      postcss-modules-values: 4.0.0(postcss@8.5.6)
+      postcss-value-parser: 4.2.0
+      semver: 7.7.4
+    optionalDependencies:
+      webpack: 5.104.1(@swc/core@1.15.8)
 
   cssesc@3.0.0: {}
 
@@ -10926,6 +11052,12 @@ snapshots:
       tapable: 2.3.0
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
 
+  mini-css-extract-plugin@2.9.4(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      schema-utils: 4.3.3
+      tapable: 2.3.0
+      webpack: 5.104.1(@swc/core@1.15.8)
+
   minimatch@10.2.1:
     dependencies:
       brace-expansion: 5.0.4
@@ -11049,7 +11181,7 @@ snapshots:
       proc-log: 6.1.0
       semver: 7.7.2
       tar: 7.5.8
-      tinyglobby: 0.2.12
+      tinyglobby: 0.2.15
       which: 6.0.1
     transitivePeerDependencies:
       - supports-color
@@ -11169,6 +11301,12 @@ snapshots:
       loader-utils: 2.0.4
       schema-utils: 3.3.0
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
+
+  null-loader@4.0.1(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      loader-utils: 2.0.4
+      schema-utils: 3.3.0
+      webpack: 5.104.1(@swc/core@1.15.8)
 
   nx@22.5.3(@swc-node/register@1.11.1(@swc/core@1.15.8)(@swc/types@0.1.25)(typescript@5.9.3))(@swc/core@1.15.8):
     dependencies:
@@ -11771,6 +11909,15 @@ snapshots:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
+      webpack-sources: 3.3.4
+
+  react-server-dom-webpack@19.2.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      acorn-loose: 8.5.2
+      neo-async: 2.6.2
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      webpack: 5.104.1(@swc/core@1.15.8)
       webpack-sources: 3.3.4
 
   react@19.2.4: {}
@@ -12520,6 +12667,12 @@ snapshots:
       '@swc/counter': 0.1.3
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
 
+  swc-loader@0.2.7(@swc/core@1.15.8)(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      '@swc/core': 1.15.8
+      '@swc/counter': 0.1.3
+      webpack: 5.104.1(@swc/core@1.15.8)
+
   symbol-observable@1.0.1: {}
 
   tagged-versions@1.3.0:
@@ -12551,14 +12704,14 @@ snapshots:
 
   temp-dir@1.0.0: {}
 
-  terser-webpack-plugin@5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)):
+  terser-webpack-plugin@5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.3.3
       serialize-javascript: 6.0.2
       terser: 5.46.0
-      webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
+      webpack: 5.104.1(@swc/core@1.15.8)
     optionalDependencies:
       '@swc/core': 1.15.8
       esbuild: 0.24.2
@@ -12574,6 +12727,17 @@ snapshots:
     optionalDependencies:
       '@swc/core': 1.15.8
       esbuild: 0.25.12
+
+  terser-webpack-plugin@5.3.16(@swc/core@1.15.8)(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      jest-worker: 27.5.1
+      schema-utils: 4.3.3
+      serialize-javascript: 6.0.2
+      terser: 5.46.0
+      webpack: 5.104.1(@swc/core@1.15.8)
+    optionalDependencies:
+      '@swc/core': 1.15.8
 
   terser@5.46.0:
     dependencies:
@@ -12923,6 +13087,17 @@ snapshots:
     optionalDependencies:
       webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
 
+  webpack-dev-middleware@7.4.5(webpack@5.104.1(@swc/core@1.15.8)):
+    dependencies:
+      colorette: 2.0.20
+      memfs: 4.51.1
+      mime-types: 3.0.2
+      on-finished: 2.4.1
+      range-parser: 1.2.1
+      schema-utils: 4.3.3
+    optionalDependencies:
+      webpack: 5.104.1(@swc/core@1.15.8)
+
   webpack-hot-middleware@2.26.1:
     dependencies:
       ansi-html-community: 0.0.8
@@ -12930,6 +13105,38 @@ snapshots:
       strip-ansi: 6.0.1
 
   webpack-sources@3.3.4: {}
+
+  webpack@5.104.1(@swc/core@1.15.8):
+    dependencies:
+      '@types/eslint-scope': 3.7.7
+      '@types/estree': 1.0.8
+      '@types/json-schema': 7.0.15
+      '@webassemblyjs/ast': 1.14.1
+      '@webassemblyjs/wasm-edit': 1.14.1
+      '@webassemblyjs/wasm-parser': 1.14.1
+      acorn: 8.16.0
+      acorn-import-phases: 1.0.4(acorn@8.16.0)
+      browserslist: 4.28.1
+      chrome-trace-event: 1.0.4
+      enhanced-resolve: 5.20.0
+      es-module-lexer: 2.0.0
+      eslint-scope: 5.1.1
+      events: 3.3.0
+      glob-to-regexp: 0.4.1
+      graceful-fs: 4.2.11
+      json-parse-even-better-errors: 2.3.1
+      loader-runner: 4.3.1
+      mime-types: 2.1.35
+      neo-async: 2.6.2
+      schema-utils: 4.3.3
+      tapable: 2.3.0
+      terser-webpack-plugin: 5.3.16(@swc/core@1.15.8)(webpack@5.104.1(@swc/core@1.15.8))
+      watchpack: 2.5.1
+      webpack-sources: 3.3.4
+    transitivePeerDependencies:
+      - '@swc/core'
+      - esbuild
+      - uglify-js
 
   webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.24.2):
     dependencies:
@@ -12955,7 +13162,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.0
-      terser-webpack-plugin: 5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.25.12))
+      terser-webpack-plugin: 5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8))
       watchpack: 2.5.1
       webpack-sources: 3.3.4
     transitivePeerDependencies:

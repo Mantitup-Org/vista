@@ -3,7 +3,8 @@ import { Geist, Geist_Mono } from 'vista/font/google';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { ThemeProvider, ThemeScript } from 'vista/theme';
+import { AppProviders } from '@/components/app-providers';
+import { ThemeScript } from '@/components/theme-script';
 import {
   absoluteUrl,
   siteDescription,
@@ -125,13 +126,13 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
         suppressHydrationWarning
       >
-        <ThemeProvider defaultTheme="system">
+        <AppProviders>
           <div className="flex min-h-screen flex-col">
             <Navbar />
             {children}
             <Footer />
           </div>
-        </ThemeProvider>
+        </AppProviders>
       </body>
     </html>
   );
