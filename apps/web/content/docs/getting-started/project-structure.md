@@ -34,6 +34,15 @@ my-app/
 - `lib/` contains pure helpers and adapters.
 - `data/` contains local data maps like docs catalogs or feature lists.
 - `app/api/` is for HTTP APIs, legacy route handlers, and typed API entrypoint.
+- `app/agents/` is for runtime AI agents (`vista g agent`).
+- `auth.ts` + `middleware.ts` appear when you add auth/guards.
+
+## Build paths
+
+- UI only → [React App](/docs/getting-started/react-app)
+- APIs / auth → [Fullstack App](/docs/getting-started/fullstack-app)
+- Chat / tools → [AI Overview](/docs/ai/overview)
+- Grounded docs chat → [RAG](/docs/ai/rag)
 
 ## Recommended Team Rule
 

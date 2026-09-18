@@ -17,15 +17,16 @@ Vista AI provides:
 
 - **Zero External Heavyweight Dependencies**: Implemented natively on top of Web `fetch`, Web Streams `ReadableStream`, and standard SSE protocols.
 - **Unified Full-Stack Architecture**: Agents live directly in your project alongside UI and backend APIs (`app/agents/`, `app/api/`).
-- **Multi-Provider Support**: Seamlessly switch between OpenAI, Anthropic Claude, Google Gemini, Ollama, and local models with a single unified API.
+- **Multi-Provider Support**: OpenAI, Anthropic, Gemini, Ollama, Groq, NVIDIA NIM, and mock models with one `provider:model` string.
 - **First-Class React Integration**: Stream agent responses into client components using the native `useAgent` hook.
+- **RAG built in**: `InMemoryVectorStore`, `createRetrieverTool`, and `embedText` for grounded answers.
 
 ## Quick Example
 
 ### 1. Define an Agent
 
 ```typescript title="app/agents/support/agent.ts"
-import { agent, tool } from '@vistagenic/vista/ai';
+import { agent, tool } from 'vista/ai';
 
 export const supportAgent = agent({
   name: 'support',
@@ -53,8 +54,8 @@ export const supportAgent = agent({
 
 ### 2. Expose via Route Handler
 
-```typescript title="app/api/chat/route.ts"
-import { supportAgent } from '@/app/agents/support/agent';
+```typescript title="app/api/agents/support/route.ts"
+import { supportAgent } from '../../../agents/support/agent';
 
 export async function POST(req: Request) {
   const { prompt, messages, sessionId } = await req.json();
@@ -68,11 +69,11 @@ export async function POST(req: Request) {
 ```tsx title="app/chat/page.tsx"
 'use client';
 
-import { useAgent } from '@vistagenic/vista/ai/react';
+import { useAgent } from 'vista/ai/react';
 
 export default function ChatPage() {
   const { messages, input, setInput, handleSubmit, isLoading } = useAgent({
-    api: '/api/chat',
+    api: '/api/agents/support',
   });
 
   return (
@@ -112,9 +113,16 @@ This generates:
 
 - `app/agents/support/agent.ts`
 - `app/api/agents/support/route.ts`
+- `app/AGENTS.md`
+
+## Ground answers with RAG
+
+Index docs, attach `createRetrieverTool`, optionally pass `embedText`. Full walkthrough: [RAG with Vista AI](/docs/ai/rag).
 
 ## Next Steps
 
 - [Defining Agents & Tools](/docs/ai/agents)
 - [Streaming & UI Hooks](/docs/ai/streaming)
 - [Model Providers Configuration](/docs/ai/providers)
+- [RAG with Vista AI](/docs/ai/rag)
+- [Build a Fullstack App](/docs/getting-started/fullstack-app)

@@ -2,11 +2,19 @@
 
 Guidance for coding agents working in this Vista repository. Runtime AI agents that ship inside apps live under `app/agents/` — see that convention below.
 
+## How humans use this framework (point them here)
+
+1. **React app** — pages/layouts under `app/`, `'use client'` for interactivity. See root [README](README.md#1-build-a-normal-react-app) and docs `/docs/getting-started/react-app`.
+2. **Fullstack** — `app/**/route.ts`, `vista g api-init`, `vista g auth`, `middleware.ts`. Docs `/docs/getting-started/fullstack-app`.
+3. **AI** — `vista g agent <name>`, `vista/ai` + `vista/ai/react`. Docs `/docs/ai/overview`.
+4. **RAG** — `InMemoryVectorStore` + `createRetrieverTool` + optional `embedText`. Docs `/docs/ai/rag`. Demo: `apps/vista-rag-demo`.
+
 ## Repo map
 
 - `packages/vista` — framework, CLI (`vista`), RSC/SSR runtime, `vista/auth`, `vista/ai`, `vista/stack`
 - `packages/create-vista-app` — app scaffold
 - `apps/web` — docs site at vista.xyz
+- `apps/vista-rag-demo` — runnable RAG chat demo
 - `crates/` and `flashpack/` — Rust engines
 - Build output is `.vista/` (Next's `.next` equivalent). Do not commit app `.vista/` folders.
 

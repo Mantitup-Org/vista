@@ -1,113 +1,60 @@
-# My Vista App
+# Vista RAG demo
 
-Built with [Vista.js](https://github.com/Mantitup-Org/vista) — the React framework for visionaries.
+End-to-end example of **retrieval-augmented generation** on Vista: knowledge docs → retriever tool → agent → streaming chat UI.
 
-Selected engine for this app: `default`
+No API key is required for the default demo. It uses keyword search in an in-memory store plus a mock model that always calls the retriever. Swap in a real model and embeddings when you want production-style RAG.
 
-Typed API starter: `disabled`
+## Run it
 
-## Getting Started
-
-Run the development server:
+From the monorepo root:
 
 ```bash
+pnpm --filter vista-rag-demo dev
+```
+
+Or:
+
+```bash
+cd apps/vista-rag-demo
 npm run dev
-# or
-pnpm dev
 ```
 
-Open [http://localhost:3003](http://localhost:3003) in your browser.
+Open the URL printed in the terminal (typically `http://localhost:3003`).
 
-If you want typed API starter files in a fresh app:
+## What you are looking at
 
-```bash
-npx create-vista-app@latest my-vista-app --typed-api
-```
+| Piece | Path | Role |
+| --- | --- | --- |
+| Knowledge docs | `lib/rag-knowledge.ts` | Text chunks the agent can retrieve |
+| Agent + retriever | `lib/rag-agent.ts` | `InMemoryVectorStore` + `createRetrieverTool` + `agent()` |
+| API | `app/api/rag-chat/route.ts` | Streams agent output as SSE |
+| UI | chat page under `app/` | `useAgent` against `/api/rag-chat` |
 
-## Project Structure
+## How RAG works here
 
-```
-app/
-├── root.tsx        # Root layout (<html>, <body>, fonts)
-├── index.tsx       # Home page
-├── globals.css     # Global styles (Tailwind CSS v4)
-└── about/
-    └── page.tsx    # Example nested route → /about
-public/
-├── vista.svg       # Static assets
-vista.config.ts     # Framework configuration
-```
+1. Documents are loaded into `InMemoryVectorStore`.
+2. `createRetrieverTool` exposes them as a tool named like `search_knowledge_base`.
+3. On each user question the agent calls that tool.
+4. The model answers from the returned chunks (demo model formats them as a grounded reply).
 
-## Key Concepts
+Keyword mode (default): omit `embed` on the retriever.
 
-- **`app/root.tsx`** — Root layout that wraps every page. Defines `<html>`, fonts, and metadata.
-- **`app/index.tsx`** or **`app/page.tsx`** — Page components. Each folder = a route.
-- **`'use client'`** — Add this directive to make a component interactive (client-side).
-- **Server Components** — All components are server components by default (zero JS sent to browser).
-
-## Available Commands
-
-| Command       | Description                       |
-| ------------- | --------------------------------- |
-| `vista dev`   | Start dev server with the engine selected in `vista.config.ts` |
-| `vista build` | Create production build with the engine selected in `vista.config.ts` |
-| `vista start` | Start production server with the engine selected in `vista.config.ts` |
-| `npm run deploy` | Build and deploy to a hosting platform (Render, Vercel, Cloudflare, Netlify, Docker) |
-| `vista g api-init` | Generate typed API starter files |
-| `vista g router <name>` | Generate a typed router file |
-| `vista g procedure <name> [get\|post]` | Generate a typed procedure file |
-
-## Engine Selection
-
-`create-vista-app` supports both engine variants:
-
-- `default` (webpack path)
-- `flashpack` (Rust-first path)
-
-You can choose at scaffold time, but the generated app still uses the same `npm run dev`, `npm run build`, and `npm run start` scripts. Vista reads the selected engine from `vista.config.ts`.
-
-Example:
-
-```bash
-npx create-vista-app@latest my-vista-app --engine flashpack
-```
-
-The generated config looks like:
+Embedding mode (optional):
 
 ```ts
-engine: {
-  variant: 'flashpack'
-}
+import { embedText, createRetrieverTool } from 'vista/ai';
+
+const search = createRetrieverTool({
+  store,
+  embed: (query) => embedText(query, { model: 'openai:text-embedding-3-small' }),
+  topK: 3,
+});
 ```
 
-Flashpack engine runtime/cache artifacts are stored in `.flash/`.
+Set `OPENAI_API_KEY` (or NVIDIA / Ollama embed endpoints) and change the agent `model` to e.g. `groq:llama-3.1-8b-instant` with `GROQ_API_KEY`.
 
-## Deploy
+## Learn more
 
-Deploy to a supported platform:
-
-```bash
-npm run deploy
-npm run deploy -- --target render --prod
-npm run deploy -- --target vercel --dry-run
-```
-
-Supported targets: `render`, `vercel`, `cloudflare`, `netlify`, `docker`.
-
-## Typed API Rollback
-
-Typed API is experimental and can be disabled anytime from `vista.config.ts`:
-
-```ts
-experimental: {
-  typedApi: {
-    enabled: false
-  }
-}
-```
-
-## Learn More
-
-- [Vista.js GitHub](https://github.com/Mantitup-Org/vista)
-- [React Server Components](https://react.dev/reference/rsc/server-components)
-- [Tailwind CSS v4](https://tailwindcss.com)
+- Framework guide: [RAG with Vista AI](https://vista-js.vercel.app/docs/ai/rag)
+- Root README paths: React / fullstack / AI / RAG
+- `vista g agent <name>` scaffolds agents in any Vista app
