@@ -9,7 +9,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
-use super::scanner::scan_app_directory;
+use super::scanner::{
+    scan_app_directory, scan_project_client_components, ScannedComponent,
+};
 use crate::naming;
 
 /// Entry in the client components manifest
@@ -186,21 +188,18 @@ fn build_url_pattern(relative_path: &str) -> (String, String) {
     (pattern, route_type)
 }
 
-/// Generate client manifest from scan result
-pub fn generate_client_manifest(
-    app_dir: &str,
+fn client_manifest_from_components(
+    client_components: impl IntoIterator<Item = ScannedComponent>,
     build_id: &str,
 ) -> ClientManifest {
-    let scan_result = scan_app_directory(app_dir);
-    
     let mut client_modules = HashMap::new();
     let mut path_to_id = HashMap::new();
     let mut ssr_module_mapping = HashMap::new();
-    
-    for component in scan_result.client_components {
+
+    for component in client_components {
         let module_id = generate_module_id(&component.relative_path, true);
         let chunk_name = generate_chunk_name(&component.relative_path);
-        
+
         let entry = ClientModuleEntry {
             id: module_id.clone(),
             path: component.relative_path.clone(),
@@ -209,7 +208,7 @@ pub fn generate_client_manifest(
             exports: component.exports,
             async_load: false,
         };
-        
+
         path_to_id.insert(component.relative_path.clone(), module_id.clone());
         path_to_id.insert(component.absolute_path.clone(), module_id.clone());
         ssr_module_mapping.insert(
@@ -218,13 +217,41 @@ pub fn generate_client_manifest(
         );
         client_modules.insert(module_id, entry);
     }
-    
+
     ClientManifest {
         build_id: build_id.to_string(),
         client_modules,
         path_to_id,
         ssr_module_mapping,
     }
+}
+
+/// Generate client manifest from the app directory plus sibling project roots.
+///
+/// `cwd` is the project root (parent of `app/` in the typical layout). Extra
+/// directories such as `utils/` and `lib/` are scanned the same way TypeScript
+/// `generateClientManifest` does.
+pub fn generate_client_manifest_for_project(
+    cwd: &str,
+    app_dir: &str,
+    build_id: &str,
+) -> ClientManifest {
+    let mut client_components = scan_app_directory(app_dir).client_components;
+    client_components.extend(scan_project_client_components(cwd, app_dir));
+    client_manifest_from_components(client_components, build_id)
+}
+
+/// Generate client manifest, treating the parent of `app_dir` as the project root.
+pub fn generate_client_manifest(
+    app_dir: &str,
+    build_id: &str,
+) -> ClientManifest {
+    let app_path = Path::new(app_dir);
+    let cwd = app_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(app_path);
+    generate_client_manifest_for_project(&cwd.to_string_lossy(), app_dir, build_id)
 }
 
 /// Generate server manifest from scan result
@@ -341,5 +368,58 @@ mod tests {
     fn test_reserved_internal_route_detection() {
         assert!(is_reserved_internal_route("docs/[not-found]/page.tsx"));
         assert!(!is_reserved_internal_route("docs/[slug]/page.tsx"));
+    }
+
+    #[test]
+    fn test_generate_client_manifest_includes_sibling_client_modules() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-client-manifest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app_dir = root.join("app");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::create_dir_all(root.join("utils")).unwrap();
+        std::fs::create_dir_all(root.join("lib")).unwrap();
+        std::fs::write(
+            app_dir.join("counter.tsx"),
+            "'use client';\nexport default function Counter() { return null; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("utils").join("theme-toggle.tsx"),
+            "'use client';\nexport function ThemeToggle() { return null; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("lib").join("widget.tsx"),
+            "'use client';\nexport function Widget() { return null; }\n",
+        )
+        .unwrap();
+
+        let manifest = generate_client_manifest_for_project(
+            root.to_str().unwrap(),
+            app_dir.to_str().unwrap(),
+            "test-build",
+        );
+        let paths: Vec<String> = manifest
+            .client_modules
+            .values()
+            .map(|entry| entry.path.clone())
+            .collect();
+        std::fs::remove_dir_all(&root).ok();
+
+        assert!(paths.iter().any(|p| p.contains("counter")));
+        assert!(
+            paths.iter().any(|p| p.contains("theme-toggle")),
+            "expected utils/theme-toggle in client manifest, got {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.contains("widget")),
+            "expected lib/widget in client manifest, got {paths:?}"
+        );
     }
 }

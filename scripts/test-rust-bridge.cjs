@@ -26,16 +26,27 @@ function main() {
   assert.equal(metadataInfo.hasGenerateMetadata, true);
 
   const vistaSourceRoot = path.join(repoRoot, 'packages', 'vista', 'src');
-  const imageImport = rustBridge.resolveVistaSourceImport('vista/image', vistaSourceRoot);
-  assert.equal(imageImport.normalizedRequest, 'vista/image');
-  assert(imageImport.candidateBases.includes('image/react-server'));
-  assert(
-    imageImport.resolvedPath.endsWith(path.join('packages', 'vista', 'src', 'image', 'react-server.tsx')),
-    'vista/image should resolve to the react-server source entry'
-  );
-  const headImport = rustBridge.resolveVistaSourceImport('vista/head', vistaSourceRoot);
-  assert(headImport.candidateBases.includes('client/head.react-server'));
-  assert.equal(rustBridge.resolveVistaSourceImport('react', vistaSourceRoot), null);
+    const imageImport = rustBridge.resolveVistaSourceImport('vista/image', vistaSourceRoot);
+    assert.equal(imageImport.normalizedRequest, 'vista/image');
+    assert(imageImport.candidateBases.includes('image/react-server'));
+    assert(
+      imageImport.resolvedPath.endsWith(path.join('packages', 'vista', 'src', 'image', 'react-server.tsx')),
+      'vista/image should resolve to the react-server source entry'
+    );
+    const headImport = rustBridge.resolveVistaSourceImport('vista/head', vistaSourceRoot);
+    assert(headImport.candidateBases.includes('client/head.react-server'));
+    assert.equal(rustBridge.resolveVistaSourceImport('react', vistaSourceRoot), null);
+
+    const themeImport = rustBridge.resolveVistaSourceImport('vista/theme', vistaSourceRoot);
+    assert(themeImport.candidateBases.includes('theme/react-server'));
+    const linkImport = rustBridge.resolveVistaSourceImport('vista/link', vistaSourceRoot);
+    assert(linkImport.candidateBases.includes('client/link.react-server'));
+    const authReactImport = rustBridge.resolveVistaSourceImport('vista/auth/react', vistaSourceRoot);
+    assert(authReactImport.candidateBases.includes('auth/react-server'));
+    const aiReactImport = rustBridge.resolveVistaSourceImport('vista/ai/react', vistaSourceRoot);
+    assert(aiReactImport.candidateBases.includes('ai/react/react-server'));
+    const rscRouterImport = rustBridge.resolveVistaSourceImport('vista/client/rsc-router', vistaSourceRoot);
+    assert(rscRouterImport.candidateBases.includes('client/rsc-router.react-server'));
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-rust-bridge-'));
   const appDir = path.join(tempRoot, 'app');
@@ -68,6 +79,20 @@ function main() {
         'export default function Page() { return "doc"; }',
       ].join('\n')
     );
+    writeFile(
+      path.join(tempRoot, 'utils', 'theme-toggle.tsx'),
+      [
+        "'use client';",
+        'export function ThemeToggle() { return "toggle"; }',
+      ].join('\n')
+    );
+    writeFile(
+      path.join(tempRoot, 'lib', 'widget.tsx'),
+      [
+        "'use client';",
+        'export function Widget() { return "widget"; }',
+      ].join('\n')
+    );
 
     const tree = rustBridge.getRouteTree(appDir);
     assert.equal(tree.kind, 'static');
@@ -81,6 +106,32 @@ function main() {
     const clientManifest = rustBridge.rscGenerateClientManifest(appDir, 'test-build');
     assert.equal(clientManifest.buildId, 'test-build');
     assert(clientManifest.clientModules.length >= 1, 'client manifest should include client modules');
+    const clientPaths = clientManifest.clientModules.map((entry) => String(entry.path || ''));
+    assert(
+      clientPaths.some((modulePath) => modulePath.includes('theme-toggle')),
+      `Rust client manifest should include utils/theme-toggle, got: ${clientPaths.join(', ')}`
+    );
+    assert(
+      clientPaths.some((modulePath) => modulePath.includes('widget')),
+      `Rust client manifest should include lib/widget, got: ${clientPaths.join(', ')}`
+    );
+
+    const projectManifest = rustBridge.rscGenerateClientManifestForProject(
+      tempRoot,
+      appDir,
+      'test-build'
+    );
+    const projectPaths = projectManifest.clientModules.map((entry) => String(entry.path || ''));
+    assert(
+      projectPaths.some((modulePath) => modulePath.includes('theme-toggle')),
+      `for_project manifest should include utils/theme-toggle, got: ${projectPaths.join(', ')}`
+    );
+
+    const extraRoots = rustBridge.rscDiscoverProjectClientRoots(tempRoot);
+    assert(
+      extraRoots.some((root) => String(root.prefix) === 'utils/'),
+      'discover should list utils/ as a client scan root'
+    );
 
     const serverManifest = rustBridge.rscGenerateServerManifest(appDir, 'test-build');
     assert.equal(serverManifest.buildId, 'test-build');

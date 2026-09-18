@@ -12,6 +12,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.isNativeAvailable = isNativeAvailable;
 exports.scanAppNative = scanAppNative;
 exports.generateClientManifestNative = generateClientManifestNative;
+exports.generateClientManifestForProjectNative = generateClientManifestForProjectNative;
+exports.discoverProjectClientRootsNative = discoverProjectClientRootsNative;
 exports.generateServerManifestNative = generateServerManifestNative;
 exports.generateMountIdNative = generateMountIdNative;
 exports.resetMountCounterNative = resetMountCounterNative;
@@ -96,6 +98,37 @@ function generateClientManifestNative(appDir, buildId) {
     }
     catch (e) {
         console.error('Native client manifest generation failed:', e);
+        return null;
+    }
+}
+/**
+ * Generate client manifest from an explicit project root plus `app/`
+ */
+function generateClientManifestForProjectNative(cwd, appDir, buildId) {
+    const native = loadNativeModule();
+    if (!native || typeof native.rscGenerateClientManifestForProject !== 'function') {
+        return null;
+    }
+    try {
+        return native.rscGenerateClientManifestForProject(cwd, appDir, buildId);
+    }
+    catch (e) {
+        console.error('Native project client manifest generation failed:', e);
+        return null;
+    }
+}
+/**
+ * Discover project-level client scan roots using Rust native code
+ */
+function discoverProjectClientRootsNative(cwd) {
+    const native = loadNativeModule();
+    if (!native?.rscDiscoverProjectClientRoots)
+        return null;
+    try {
+        return native.rscDiscoverProjectClientRoots(cwd);
+    }
+    catch (e) {
+        console.error('Native client-root discovery failed:', e);
         return null;
     }
 }

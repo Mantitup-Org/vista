@@ -352,11 +352,7 @@ pub struct NapiClientManifest {
     pub client_modules: Vec<NapiClientModuleEntry>,
 }
 
-/// Generate client manifest (Rust-powered)
-#[napi]
-pub fn rsc_generate_client_manifest(app_dir: String, build_id: String) -> NapiClientManifest {
-    let manifest = vista_transforms::rsc::generate_client_manifest(&app_dir, &build_id);
-    
+fn convert_client_manifest(manifest: vista_transforms::rsc::ClientManifest) -> NapiClientManifest {
     NapiClientManifest {
         build_id: manifest.build_id,
         client_modules: manifest.client_modules.values().map(|e| NapiClientModuleEntry {
@@ -368,6 +364,46 @@ pub fn rsc_generate_client_manifest(app_dir: String, build_id: String) -> NapiCl
             async_load: e.async_load,
         }).collect(),
     }
+}
+
+/// Project-root directory that may contain `'use client'` modules
+#[napi(object)]
+#[derive(Clone, Debug)]
+pub struct NapiClientScanRoot {
+    pub dir: String,
+    pub prefix: String,
+}
+
+/// Discover top-level directories to scan for client components (Rust-powered)
+#[napi]
+pub fn rsc_discover_project_client_roots(cwd: String) -> Vec<NapiClientScanRoot> {
+    vista_transforms::rsc::discover_project_client_roots(&cwd)
+        .into_iter()
+        .map(|root| NapiClientScanRoot {
+            dir: root.dir,
+            prefix: root.prefix,
+        })
+        .collect()
+}
+
+/// Generate client manifest (Rust-powered).
+/// Treats the parent of `app_dir` as the project root so sibling folders
+/// such as `utils/` and `lib/` enter the React Client Manifest.
+#[napi]
+pub fn rsc_generate_client_manifest(app_dir: String, build_id: String) -> NapiClientManifest {
+    convert_client_manifest(vista_transforms::rsc::generate_client_manifest(&app_dir, &build_id))
+}
+
+/// Generate client manifest from an explicit project root plus `app/` (Rust-powered)
+#[napi]
+pub fn rsc_generate_client_manifest_for_project(
+    cwd: String,
+    app_dir: String,
+    build_id: String,
+) -> NapiClientManifest {
+    convert_client_manifest(vista_transforms::rsc::generate_client_manifest_for_project(
+        &cwd, &app_dir, &build_id,
+    ))
 }
 
 /// Route entry for NAPI
@@ -471,11 +507,10 @@ pub fn rsc_prerender_component(file_path: String) -> Option<NapiPrerenderedCompo
     })
 }
 
-/// Pre-render all client components in an app directory
-/// Returns a map of component_id -> placeholder_html
-#[napi]
-pub fn rsc_prerender_all_components(app_dir: String) -> std::collections::HashMap<String, NapiPrerenderedComponent> {
-    vista_transforms::rsc::prerender_all_client_components(&app_dir)
+fn convert_prerender_map(
+    components: std::collections::HashMap<String, vista_transforms::rsc::PrerenderedComponent>,
+) -> std::collections::HashMap<String, NapiPrerenderedComponent> {
+    components
         .into_iter()
         .map(|(k, v)| (k, NapiPrerenderedComponent {
             component_id: v.component_id,
@@ -483,6 +518,24 @@ pub fn rsc_prerender_all_components(app_dir: String) -> std::collections::HashMa
             estimated_height: v.estimated_height,
         }))
         .collect()
+}
+
+/// Pre-render all client components in an app directory
+/// Returns a map of component_id -> placeholder_html
+#[napi]
+pub fn rsc_prerender_all_components(app_dir: String) -> std::collections::HashMap<String, NapiPrerenderedComponent> {
+    convert_prerender_map(vista_transforms::rsc::prerender_all_client_components(&app_dir))
+}
+
+/// Pre-render client components from `app/` plus sibling project roots
+#[napi]
+pub fn rsc_prerender_all_components_for_project(
+    cwd: String,
+    app_dir: String,
+) -> std::collections::HashMap<String, NapiPrerenderedComponent> {
+    convert_prerender_map(vista_transforms::rsc::prerender_all_client_components_for_project(
+        &cwd, &app_dir,
+    ))
 }
 
 #[cfg(test)]

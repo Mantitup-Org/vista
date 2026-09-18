@@ -235,17 +235,36 @@ fn generate_placeholder_html(
 
 /// Batch pre-render all client components in a directory
 pub fn prerender_all_client_components(app_dir: &str) -> HashMap<String, PrerenderedComponent> {
+    let app_path = Path::new(app_dir);
+    let cwd = app_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(app_path);
+    prerender_all_client_components_for_project(&cwd.to_string_lossy(), app_dir)
+}
+
+/// Batch pre-render client components from `app/` plus sibling project roots.
+pub fn prerender_all_client_components_for_project(
+    cwd: &str,
+    app_dir: &str,
+) -> HashMap<String, PrerenderedComponent> {
     let mut components = HashMap::new();
-    
+
     fn scan_dir(dir: &Path, components: &mut HashMap<String, PrerenderedComponent>) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
                 if path.is_dir() {
+                    if name.starts_with('.') || name == "node_modules" {
+                        continue;
+                    }
                     scan_dir(&path, components);
                 } else if let Some(ext) = path.extension() {
                     if ext == "tsx" || ext == "jsx" {
-                        if let Some(prerendered) = prerender_client_component(path.to_str().unwrap_or("")) {
+                        if let Some(prerendered) =
+                            prerender_client_component(path.to_str().unwrap_or(""))
+                        {
                             components.insert(prerendered.component_id.clone(), prerendered);
                         }
                     }
@@ -253,8 +272,15 @@ pub fn prerender_all_client_components(app_dir: &str) -> HashMap<String, Prerend
             }
         }
     }
-    
+
     scan_dir(Path::new(app_dir), &mut components);
+    for root in super::scanner::discover_project_client_roots(cwd) {
+        let root_path = Path::new(&root.dir);
+        if root_path == Path::new(app_dir) {
+            continue;
+        }
+        scan_dir(root_path, &mut components);
+    }
     components
 }
 

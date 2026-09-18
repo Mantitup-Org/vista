@@ -75,10 +75,21 @@ export interface NapiServerManifest {
   routes: NapiRouteEntry[];
 }
 
+export interface NapiClientScanRoot {
+  dir: string;
+  prefix: string;
+}
+
 // Native module interface
 interface VistaNative {
   rscScanApp(appDir: string): NapiScanResult;
   rscGenerateClientManifest(appDir: string, buildId: string): NapiClientManifest;
+  rscGenerateClientManifestForProject?(
+    cwd: string,
+    appDir: string,
+    buildId: string
+  ): NapiClientManifest;
+  rscDiscoverProjectClientRoots?(cwd: string): NapiClientScanRoot[];
   rscGenerateServerManifest(appDir: string, buildId: string): NapiServerManifest;
   rscGenerateMountId(): string;
   rscResetMountCounter(): void;
@@ -169,6 +180,42 @@ export function generateClientManifestNative(
     return native.rscGenerateClientManifest(appDir, buildId);
   } catch (e) {
     console.error('Native client manifest generation failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Generate client manifest from an explicit project root plus `app/`
+ */
+export function generateClientManifestForProjectNative(
+  cwd: string,
+  appDir: string,
+  buildId: string
+): NapiClientManifest | null {
+  const native = loadNativeModule();
+  if (!native || typeof native.rscGenerateClientManifestForProject !== 'function') {
+    return null;
+  }
+
+  try {
+    return native.rscGenerateClientManifestForProject(cwd, appDir, buildId);
+  } catch (e) {
+    console.error('Native project client manifest generation failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Discover project-level client scan roots using Rust native code
+ */
+export function discoverProjectClientRootsNative(cwd: string): NapiClientScanRoot[] | null {
+  const native = loadNativeModule();
+  if (!native?.rscDiscoverProjectClientRoots) return null;
+
+  try {
+    return native.rscDiscoverProjectClientRoots(cwd);
+  } catch (e) {
+    console.error('Native client-root discovery failed:', e);
     return null;
   }
 }

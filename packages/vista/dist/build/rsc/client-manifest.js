@@ -21,6 +21,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const component_identity_1 = require("./component-identity");
 const constants_1 = require("../../constants");
+const native_scanner_1 = require("./native-scanner");
 const PROJECT_CLIENT_SCAN_SKIP = new Set([
     'node_modules',
     '.vista',
@@ -173,7 +174,53 @@ function generateClientManifest(cwd, appDir) {
     const additionalRoots = discoverProjectClientRoots(cwd).filter((root) => path_1.default.resolve(root.dir) !== path_1.default.resolve(appDir));
     return generateClientManifestWithRoots(cwd, appDir, additionalRoots);
 }
+function readBuildId(cwd) {
+    const buildIdPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'BUILD_ID');
+    try {
+        if (fs_1.default.existsSync(buildIdPath)) {
+            return fs_1.default.readFileSync(buildIdPath, 'utf-8').trim();
+        }
+    }
+    catch {
+        // Use dev
+    }
+    return 'dev';
+}
+function nativeClientManifestToJs(native) {
+    const clientModules = {};
+    const pathToId = {};
+    const ssrModuleMapping = {};
+    for (const component of native.clientModules) {
+        const entry = {
+            id: component.id,
+            path: component.path,
+            absolutePath: component.absolutePath,
+            chunkName: component.chunkName,
+            exports: component.exports,
+            async: component.asyncLoad,
+        };
+        clientModules[component.id] = entry;
+        const normalizedRelativePath = (0, component_identity_1.normalizeComponentPath)(component.path);
+        const normalizedAbsolutePath = (0, component_identity_1.normalizeComponentPath)(component.absolutePath);
+        pathToId[component.path] = component.id;
+        pathToId[normalizedRelativePath] = component.id;
+        pathToId[component.absolutePath] = component.id;
+        pathToId[normalizedAbsolutePath] = component.id;
+        ssrModuleMapping[component.absolutePath] = `${constants_1.STATIC_CHUNKS_PATH}${component.chunkName}.js`;
+        ssrModuleMapping[normalizedAbsolutePath] = `${constants_1.STATIC_CHUNKS_PATH}${component.chunkName}.js`;
+    }
+    return {
+        buildId: native.buildId,
+        clientModules,
+        pathToId,
+        ssrModuleMapping,
+    };
+}
 function generateClientManifestWithRoots(cwd, appDir, additionalRoots = []) {
+    const native = (0, native_scanner_1.generateClientManifestForProjectNative)(cwd, appDir, readBuildId(cwd));
+    if (native && Array.isArray(native.clientModules)) {
+        return nativeClientManifestToJs(native);
+    }
     const components = [];
     scanForClientComponents(appDir, appDir, components);
     for (const root of additionalRoots) {
@@ -192,23 +239,11 @@ function generateClientManifestWithRoots(cwd, appDir, additionalRoots = []) {
         pathToId[normalizedRelativePath] = component.id;
         pathToId[component.absolutePath] = component.id;
         pathToId[normalizedAbsolutePath] = component.id;
-        // Map server path to client chunk for SSR
         ssrModuleMapping[component.absolutePath] = `${constants_1.STATIC_CHUNKS_PATH}${component.chunkName}.js`;
         ssrModuleMapping[normalizedAbsolutePath] = `${constants_1.STATIC_CHUNKS_PATH}${component.chunkName}.js`;
     }
-    // Get or generate build ID
-    const buildIdPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'BUILD_ID');
-    let buildId = 'dev';
-    try {
-        if (fs_1.default.existsSync(buildIdPath)) {
-            buildId = fs_1.default.readFileSync(buildIdPath, 'utf-8').trim();
-        }
-    }
-    catch (e) {
-        // Use dev
-    }
     return {
-        buildId,
+        buildId: readBuildId(cwd),
         clientModules,
         pathToId,
         ssrModuleMapping,
