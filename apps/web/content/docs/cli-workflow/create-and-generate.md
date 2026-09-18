@@ -49,6 +49,18 @@ Generated apps always keep the same scripts:
 
 The selected engine is stored in `vista.config.ts`, so switching engines later is a config change instead of a script rename.
 
+## Generate commands
+
+```bash
+vista g api-init
+vista g router <name>
+vista g procedure <name> [get|post]
+vista g agent <name>
+vista g auth
+```
+
+`vista g auth` writes `auth.ts` and `app/api/auth/[...vista]/route.ts`. Set `AUTH_SECRET` before signing in.
+
 ## Typed Starter
 
 Typed starter scaffolds `app/api/typed.ts`, `app/api/routers`, and `app/api/procedures` so your API contract starts strongly typed from day one.
@@ -61,6 +73,7 @@ Typed starter scaffolds `app/api/typed.ts`, `app/api/routers`, and `app/api/proc
 - Keep release scripts in `package.json` so CI and local run identical commands.
 
 ## Related
+- [Authentication](/docs/auth/overview)
 - [Project Structure](/docs/getting-started/project-structure)
 - [Engine Variants: Default vs Flashpack](/docs/reference/engine-variants-default-vs-flashpack)
 - [Render Deployment (Recommended)](/docs/deployment/render-deployment)

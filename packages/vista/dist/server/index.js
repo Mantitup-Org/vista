@@ -6,7 +6,7 @@
  * These functions only work on the server side.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.shouldRunMiddleware = exports.patternToRegExp = exports.buildNextRequest = exports.clearMiddlewareCaches = exports.discoverRouteMiddlewares = exports.discoverGlobalMiddleware = exports.applyMiddlewareResult = exports.runMiddleware = exports.unstable_cache = exports.revalidateTag = exports.revalidatePath = exports.cacheTag = exports.cacheLife = exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
+exports.sanitizeRequestHeaderMap = exports.isSafeRedirectLocation = exports.securityHeaders = exports.rateLimit = exports.cors = exports.chain = exports.shouldRunMiddleware = exports.patternToRegExp = exports.buildNextRequest = exports.clearMiddlewareCaches = exports.discoverRouteMiddlewares = exports.discoverGlobalMiddleware = exports.applyMiddlewareResult = exports.runMiddleware = exports.unstable_cache = exports.revalidateTag = exports.revalidatePath = exports.cacheTag = exports.cacheLife = exports.NextResponse = exports.NotFoundError = exports.RedirectError = void 0;
 exports.cookies = cookies;
 exports.headers = headers;
 exports.draftMode = draftMode;
@@ -306,3 +306,10 @@ Object.defineProperty(exports, "clearMiddlewareCaches", { enumerable: true, get:
 Object.defineProperty(exports, "buildNextRequest", { enumerable: true, get: function () { return middleware_runner_1.buildNextRequest; } });
 Object.defineProperty(exports, "patternToRegExp", { enumerable: true, get: function () { return middleware_runner_1.patternToRegExp; } });
 Object.defineProperty(exports, "shouldRunMiddleware", { enumerable: true, get: function () { return middleware_runner_1.shouldRunMiddleware; } });
+var middleware_security_1 = require("./middleware-security");
+Object.defineProperty(exports, "chain", { enumerable: true, get: function () { return middleware_security_1.chain; } });
+Object.defineProperty(exports, "cors", { enumerable: true, get: function () { return middleware_security_1.cors; } });
+Object.defineProperty(exports, "rateLimit", { enumerable: true, get: function () { return middleware_security_1.rateLimit; } });
+Object.defineProperty(exports, "securityHeaders", { enumerable: true, get: function () { return middleware_security_1.securityHeaders; } });
+Object.defineProperty(exports, "isSafeRedirectLocation", { enumerable: true, get: function () { return middleware_security_1.isSafeRedirectLocation; } });
+Object.defineProperty(exports, "sanitizeRequestHeaderMap", { enumerable: true, get: function () { return middleware_security_1.sanitizeRequestHeaderMap; } });

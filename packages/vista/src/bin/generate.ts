@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent';
+type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent' | 'auth';
 type ProcedureMethod = 'get' | 'post';
 
 interface RunGenerateOptions {
@@ -231,12 +231,42 @@ function renderRouter(name: string): string {
   ].join('\n');
 }
 
+function renderAuthConfig(): string {
+  return [
+    "import VistaAuth, { Credentials, GitHub, Google } from 'vista/auth';",
+    '',
+    'export const { handlers, auth, signIn, signOut, authMiddleware } = VistaAuth({',
+    '  providers: [',
+    '    GitHub({}),',
+    '    Google({}),',
+    '    Credentials({',
+    '      authorize: async (credentials) => {',
+    "        if (!credentials.email || !credentials.password) return null;",
+    '        return { id: credentials.email, email: credentials.email, name: credentials.email };',
+    '      },',
+    '    }),',
+    '  ],',
+    '});',
+    '',
+  ].join('\n');
+}
+
+function renderAuthRoute(): string {
+  return [
+    "import { handlers } from '../../../../auth';",
+    '',
+    'export const { GET, POST } = handlers;',
+    '',
+  ].join('\n');
+}
+
 function printGenerateUsage(log: (message: string) => void): void {
   log('Vista generator usage:');
   log('  vista g api-init');
   log('  vista g router <name>');
   log('  vista g procedure <name> [get|post]');
   log('  vista g agent <name>');
+  log('  vista g auth');
 }
 
 export async function runGenerateCommand(
@@ -248,7 +278,7 @@ export async function runGenerateCommand(
   const error = options.error ?? console.error;
 
   const command = (args[0] || '').toLowerCase() as GenerateCommand;
-  if (!command || !['api-init', 'router', 'procedure', 'agent'].includes(command)) {
+  if (!command || !['api-init', 'router', 'procedure', 'agent', 'auth'].includes(command)) {
     printGenerateUsage(log);
     return 1;
   }
@@ -366,6 +396,23 @@ export async function runGenerateCommand(
       const relativePath = path.relative(cwd, res.path).replace(/\\/g, '/');
       log(`${res.created ? 'created' : 'skipped'} ${relativePath}`);
     });
+    return 0;
+  }
+
+  if (command === 'auth') {
+    const writes = [
+      writeFileIfMissing(cwd, 'auth.ts', renderAuthConfig()),
+      writeFileIfMissing(
+        cwd,
+        path.join('app', 'api', 'auth', '[...vista]', 'route.ts'),
+        renderAuthRoute()
+      ),
+    ];
+    writes.forEach((result) => {
+      const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
+      log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
+    });
+    log('Set AUTH_SECRET, AUTH_GITHUB_ID/SECRET, AUTH_GOOGLE_ID/SECRET in your environment.');
     return 0;
   }
 

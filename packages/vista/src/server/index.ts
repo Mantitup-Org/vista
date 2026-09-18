@@ -395,12 +395,22 @@ export {
     shouldRunMiddleware,
 } from './middleware-runner';
 
+export {
+    chain,
+    cors,
+    rateLimit,
+    securityHeaders,
+    isSafeRedirectLocation,
+    sanitizeRequestHeaderMap,
+} from './middleware-security';
+
 export type {
     MiddlewareResult,
     VistaMiddlewareRequest,
     VistaMiddlewareContext,
     MiddlewareFunction,
     MiddlewareConfig,
+    MiddlewareMatcher,
     MiddlewareModule,
     NextFunction,
 } from './middleware-runner';

@@ -43,4 +43,10 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
     description: 'Native AI agents, multi-agent workflows, tools, memory, and streaming.',
     order: 7,
   },
+  {
+    id: 'auth',
+    title: 'Authentication',
+    description: 'Sessions, OAuth, credentials, and middleware guards.',
+    order: 8,
+  },
 ];

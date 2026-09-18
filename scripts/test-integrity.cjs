@@ -196,6 +196,8 @@ test('package.json has bin.vista', () => {
     pkg.exports && pkg.exports['./server/runtime-actions'],
     'Missing ./server/runtime-actions export in vista package'
   );
+  assert(pkg.exports && pkg.exports['./auth'], 'Missing ./auth export in vista package');
+  assert(pkg.exports && pkg.exports['./auth/react'], 'Missing ./auth/react export in vista package');
 });
 
 // ============================================================================

@@ -76,6 +76,8 @@ function resolveSourceCandidates(packageRoot, subpath) {
         theme: [path_1.default.join(packageRoot, 'theme', 'react-server'), path_1.default.join(packageRoot, 'theme', 'index')],
         head: [path_1.default.join(packageRoot, 'client', 'head.react-server'), path_1.default.join(packageRoot, 'client', 'head')],
         config: [path_1.default.join(packageRoot, 'config')],
+        auth: [path_1.default.join(packageRoot, 'auth', 'index')],
+        'auth/react': [path_1.default.join(packageRoot, 'auth', 'react-server'), path_1.default.join(packageRoot, 'auth', 'react')],
         ai: [path_1.default.join(packageRoot, 'ai', 'index')],
         'ai/react': [path_1.default.join(packageRoot, 'ai', 'react', 'react-server'), path_1.default.join(packageRoot, 'ai', 'react', 'index')],
         stack: [path_1.default.join(packageRoot, 'stack', 'index')],

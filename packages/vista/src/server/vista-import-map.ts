@@ -97,6 +97,8 @@ function resolveSourceCandidates(packageRoot: string, subpath: string): string[]
     theme: [path.join(packageRoot, 'theme', 'react-server'), path.join(packageRoot, 'theme', 'index')],
     head: [path.join(packageRoot, 'client', 'head.react-server'), path.join(packageRoot, 'client', 'head')],
     config: [path.join(packageRoot, 'config')],
+    auth: [path.join(packageRoot, 'auth', 'index')],
+    'auth/react': [path.join(packageRoot, 'auth', 'react-server'), path.join(packageRoot, 'auth', 'react')],
     ai: [path.join(packageRoot, 'ai', 'index')],
     'ai/react': [path.join(packageRoot, 'ai', 'react', 'react-server'), path.join(packageRoot, 'ai', 'react', 'index')],
     stack: [path.join(packageRoot, 'stack', 'index')],

@@ -319,6 +319,9 @@ These are the most important scripts to know:
 - `scripts/test-inline-server-actions.cjs`
 - `scripts/test-api-routes.cjs`
 - `scripts/test-rsc-ssr-hardening.cjs`
+- `scripts/test-middleware.cjs`
+- `scripts/test-middleware-security.cjs`
+- `scripts/test-auth.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`

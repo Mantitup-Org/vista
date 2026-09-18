@@ -276,6 +276,7 @@ function checkReactServerExports() {
     './dynamic',
     './script',
     './ai/react',
+    './auth/react',
     './client/rsc-router',
   ];
   for (const subpath of required) {

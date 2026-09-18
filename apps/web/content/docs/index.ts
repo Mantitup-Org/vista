@@ -57,6 +57,7 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./deployment/render-deployment.md'),
   loadMarkdownDoc('./deployment/vercel-deployment.md'),
   loadMarkdownDoc('./deployment/cloudflare-deployment.md'),
+  loadMarkdownDoc('./auth/overview.md'),
 ];
 
 export const allDocs: CollectedDoc[] = docsSource.map((doc) => ({

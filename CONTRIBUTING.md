@@ -195,6 +195,14 @@ If you change the React Client Manifest scan roots, `vista/theme` react-server
 exports, route streaming/`Response` status handling, or `NextResponse.next({ request })`,
 run `pnpm test:rsc-ssr-hardening`.
 
+### If you change middleware or auth
+
+```bash
+pnpm test:middleware
+pnpm test:middleware-security
+pnpm test:auth
+```
+
 ### If you change Flashpack behavior
 
 ```bash

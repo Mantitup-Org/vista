@@ -16,6 +16,12 @@ import path from 'path';
 import fs from 'fs';
 import type { Request, Response as ExpressResponse } from 'express';
 import { safeDecodeURIComponent } from './cookie-parse';
+import {
+  isSafeRedirectLocation,
+  isSafeRewriteLocation,
+  sanitizeRequestHeaderMap,
+  securityHeaders,
+} from './middleware-security';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,8 +84,17 @@ export type MiddlewareFunction = (
   nextFn?: NextFunction
 ) => Promise<Response | MiddlewareResult | void> | Response | MiddlewareResult | void;
 
+export type MiddlewareMatcher =
+  | string
+  | {
+      source: string;
+      missing?: Array<{ type: 'header' | 'cookie' | 'query'; key: string; value?: string }>;
+      has?: Array<{ type: 'header' | 'cookie' | 'query'; key: string; value?: string }>;
+    };
+
 export interface MiddlewareConfig {
-  matcher?: string | string[];
+  matcher?: MiddlewareMatcher | MiddlewareMatcher[];
+  allowedRedirectHosts?: string[];
 }
 
 export interface MiddlewareModule {
@@ -268,20 +283,58 @@ export function patternToRegExp(pattern: string): RegExp {
   return new RegExp(`^${re}/?$`);
 }
 
-export function shouldRunMiddleware(middlewareModule: MiddlewareModule, pathname: string): boolean {
+export function shouldRunMiddleware(
+  middlewareModule: MiddlewareModule,
+  pathname: string,
+  request?: VistaMiddlewareRequest
+): boolean {
   const config = middlewareModule.config;
   if (!config?.matcher) return true;
 
-  const matchers: string[] = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
+  const matchers: MiddlewareMatcher[] = Array.isArray(config.matcher)
+    ? config.matcher
+    : [config.matcher];
 
-  return matchers.some((pattern) => {
+  return matchers.some((matcher) => {
     try {
-      const re = patternToRegExp(pattern);
-      return re.test(pathname);
+      const source = typeof matcher === 'string' ? matcher : matcher.source;
+      const re = patternToRegExp(source);
+      if (!re.test(pathname)) {
+        return false;
+      }
+      if (typeof matcher === 'string' || !request) {
+        return true;
+      }
+      if (matcher.has && !matcher.has.every((rule) => matchRequestRule(request, rule))) {
+        return false;
+      }
+      if (matcher.missing && !matcher.missing.every((rule) => !matchRequestRule(request, rule))) {
+        return false;
+      }
+      return true;
     } catch {
+      // Fail closed: a broken matcher must not skip auth middleware.
       return true;
     }
   });
+}
+
+function matchRequestRule(
+  request: VistaMiddlewareRequest,
+  rule: { type: 'header' | 'cookie' | 'query'; key: string; value?: string }
+): boolean {
+  let actual: string | undefined;
+  if (rule.type === 'header') {
+    actual = request.headers.get(rule.key) || undefined;
+  } else if (rule.type === 'cookie') {
+    actual = request.cookies.get(rule.key)?.value;
+  } else {
+    actual = request.nextUrl.searchParams.get(rule.key) || undefined;
+  }
+  if (rule.value === undefined) {
+    return Boolean(actual);
+  }
+  return actual === rule.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,13 +494,25 @@ export async function runMiddleware(
     filePath: string;
     source: string;
     fn: MiddlewareFunction;
+    allowedRedirectHosts?: string[];
   }
 
   const activeChain: ActiveMiddleware[] = [];
 
   for (const entry of entries) {
     const mod = loadModule(entry.filePath, isDev);
-    if (!mod) continue;
+    if (!mod) {
+      // Dedicated middleware files must fail closed. Skipping them would
+      // silently bypass auth. Route files may fail for unrelated reasons.
+      if (entry.source !== 'route') {
+        return {
+          kind: 'short-circuit',
+          status: 500,
+          body: 'Middleware Error',
+        };
+      }
+      continue;
+    }
 
     // In a route file (e.g. page.tsx, route.ts), we ONLY accept an explicit `export const middleware`
     // or `export function middleware` (not `export default`, which is the page component)
@@ -468,7 +533,7 @@ export async function runMiddleware(
     if (!fn) continue;
 
     // Check optional matcher config
-    if (!shouldRunMiddleware(mod, pathname)) {
+    if (!shouldRunMiddleware(mod, pathname, buildNextRequest(req))) {
       continue;
     }
 
@@ -476,6 +541,7 @@ export async function runMiddleware(
       filePath: entry.filePath,
       source: entry.source,
       fn,
+      allowedRedirectHosts: mod.config?.allowedRedirectHosts,
     });
   }
 
@@ -506,15 +572,13 @@ export async function runMiddleware(
     const nextFn: NextFunction = async (options) => {
       nextCalled = true;
       if (options?.request?.headers) {
-        nextRequestObj = cloneRequestWithHeaders(requestObj, options.request.headers);
-        // Track modified request headers
-        if (options.request.headers instanceof Headers) {
-          options.request.headers.forEach((v, k) => modifiedRequestHeaders.set(k.toLowerCase(), v));
-        } else {
-          for (const [k, v] of Object.entries(options.request.headers)) {
-            modifiedRequestHeaders.set(k.toLowerCase(), String(v));
-          }
-        }
+        const sanitized = sanitizeRequestHeaderMap(options.request.headers);
+        const headerRecord: Record<string, string> = {};
+        sanitized.forEach((value, key) => {
+          headerRecord[key] = value;
+          modifiedRequestHeaders.set(key, value);
+        });
+        nextRequestObj = cloneRequestWithHeaders(requestObj, headerRecord);
       }
       return dispatch(index + 1, nextRequestObj);
     };
@@ -558,7 +622,9 @@ export async function runMiddleware(
         `[vista:middleware] Error in middleware at ${currentItem.filePath}:`,
         (err as Error)?.message ?? String(err)
       );
-      // On error, let request continue rather than completely hanging
+      if (process.env.NODE_ENV === 'production') {
+        return new Response('Middleware Error', { status: 500 });
+      }
       return dispatch(index + 1, requestObj);
     }
   }
@@ -571,16 +637,40 @@ export async function runMiddleware(
     finalResponse.headers.forEach((val, key) => {
       const lower = key.toLowerCase();
       if (lower.startsWith('x-middleware-request-')) {
-        modifiedRequestHeaders.set(lower.slice('x-middleware-request-'.length), val);
+        const name = lower.slice('x-middleware-request-'.length);
+        if (!name || name === 'host' || name === 'cookie' || name.startsWith('x-forwarded-') || name.startsWith('x-middleware-')) {
+          return;
+        }
+        modifiedRequestHeaders.set(name, val);
         return;
       }
       aggregatedResponseHeaders.set(key, val);
     });
   }
 
+  if (process.env.NODE_ENV === 'production') {
+    securityHeaders().forEach((value, key) => {
+      if (!aggregatedResponseHeaders.has(key) && !aggregatedResponseHeaders.has(key.toLowerCase())) {
+        aggregatedResponseHeaders.set(key, value);
+      }
+    });
+  }
+
+  const allowedRedirectHosts = activeChain.flatMap((item) => item.allowedRedirectHosts || []);
+  const requestUrl = currentRequest.url;
+
   // 5a. Redirect
   const location = finalResponse.headers?.get?.('Location') || finalResponse.headers?.get?.('location');
   if (location) {
+    if (!isSafeRedirectLocation(location, requestUrl, allowedRedirectHosts)) {
+      return {
+        kind: 'short-circuit',
+        status: 400,
+        responseHeaders: aggregatedResponseHeaders,
+        requestHeaders: modifiedRequestHeaders,
+        body: 'Invalid redirect',
+      };
+    }
     return {
       kind: 'redirect',
       status: finalResponse.status || 307,
@@ -593,6 +683,15 @@ export async function runMiddleware(
   // 5b. Rewrite
   const rewrite = finalResponse.headers?.get?.('x-middleware-rewrite');
   if (rewrite) {
+    if (!isSafeRewriteLocation(rewrite)) {
+      return {
+        kind: 'short-circuit',
+        status: 400,
+        responseHeaders: aggregatedResponseHeaders,
+        requestHeaders: modifiedRequestHeaders,
+        body: 'Invalid rewrite',
+      };
+    }
     return {
       kind: 'rewrite',
       location: rewrite,
@@ -642,8 +741,9 @@ export function applyMiddlewareResult(
 ): boolean {
   // 1. Forward any modified request headers to req.headers
   if (result.requestHeaders && req.headers) {
-    result.requestHeaders.forEach((value, key) => {
-      req.headers[key.toLowerCase()] = value;
+    const sanitized = sanitizeRequestHeaderMap(result.requestHeaders);
+    sanitized.forEach((value, key) => {
+      req.headers[key] = value;
     });
   }
 

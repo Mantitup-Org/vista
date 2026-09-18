@@ -87,6 +87,15 @@
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
     },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./auth/react": {
+      "react-server": "./dist/auth/react-server.js",
+      "types": "./dist/auth/react.d.ts",
+      "default": "./dist/auth/react.js"
+    },
     "./ai": {
       "types": "./dist/ai/index.d.ts",
       "default": "./dist/ai/index.js"
