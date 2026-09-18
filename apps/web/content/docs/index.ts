@@ -40,6 +40,8 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./getting-started/first-steps.md'),
   loadMarkdownDoc('./getting-started/project-structure.md'),
   loadMarkdownDoc('./getting-started/typed-api-quickstart.md'),
+  loadMarkdownDoc('./getting-started/react-app.md'),
+  loadMarkdownDoc('./getting-started/fullstack-app.md'),
   loadMarkdownDoc('./core-concepts/routing-overview.md'),
   loadMarkdownDoc('./core-concepts/dynamic-routes-and-slugs.md'),
   loadMarkdownDoc('./core-concepts/api-routes-vs-typed-api.md'),
@@ -57,6 +59,12 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./deployment/render-deployment.md'),
   loadMarkdownDoc('./deployment/vercel-deployment.md'),
   loadMarkdownDoc('./deployment/cloudflare-deployment.md'),
+  loadMarkdownDoc('./auth/overview.md'),
+  loadMarkdownDoc('./ai/overview.md'),
+  loadMarkdownDoc('./ai/agents.md'),
+  loadMarkdownDoc('./ai/providers.md'),
+  loadMarkdownDoc('./ai/streaming.md'),
+  loadMarkdownDoc('./ai/rag.md'),
 ];
 
 export const allDocs: CollectedDoc[] = docsSource.map((doc) => ({

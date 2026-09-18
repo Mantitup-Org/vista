@@ -1,42 +1,28 @@
 # Vista.js
 
-Vista.js is a React 19 framework with App Router conventions, React Server Components, standalone `.vista` output, and a dual-engine model:
+Vista.js is a React 19 framework for building apps the way you already think about Next.js: file-based routes under `app/`, React Server Components by default, and one CLI for `dev` / `build` / `start`.
 
-- `default`: the main webpack-backed RSC/SSR engine
-- `flashpack`: a Rust-backed engine path that records graph/runtime state in `.flash`
+Official site: https://vista-js.vercel.app · Repo: https://github.com/Mantitup-Org/vista
 
-Official site: https://vista-js.vercel.app
+## Which guide do you need?
 
-Repository: https://github.com/Mantitup-Org/vista
+| I want to… | Read this |
+| --- | --- |
+| Build a normal React site (pages, layouts, client UI) | [1. React app](#1-build-a-normal-react-app) |
+| Add APIs, typed procedures, auth, middleware | [2. Fullstack app](#2-build-a-fullstack-app) |
+| Chat with an LLM / tools / streaming UI | [3. AI agents](#3-use-ai-agents) |
+| Ground answers in my own docs (RAG) | [4. RAG](#4-use-rag-retrieval-augmented-generation) |
 
-## Packages
+Docs site mirrors these paths:
 
-| Package             | Purpose                                                                      |
-| ------------------- | ---------------------------------------------------------------------------- |
-| `@vistagenic/vista` | Framework runtime, CLI, server/client exports, cache APIs, fonts, theme APIs |
-| `create-vista-app`  | Scaffolds Vista apps with engine selection and package-manager prompts       |
-| `vista-native`      | Internal Rust/NAPI bridge used by the repo                                   |
+- [React app](https://vista-js.vercel.app/docs/getting-started/react-app)
+- [Fullstack app](https://vista-js.vercel.app/docs/getting-started/fullstack-app)
+- [AI overview](https://vista-js.vercel.app/docs/ai/overview)
+- [RAG](https://vista-js.vercel.app/docs/ai/rag)
 
-## Current Capabilities
+---
 
-Vista currently ships the following core surface:
-
-- App Router-style file conventions under `app/`
-- React Server Components and streaming SSR
-- Server Actions and runtime action manifests
-- File-based API routes: `app/**/route.ts` handlers with dynamic segments, on both engines
-- Cache APIs: `unstable_cache`, `revalidateTag`, `revalidatePath`, `cacheTag`, `cacheLife`
-- Route groups, parallel routes, interception routes, slot defaults, loading/error/not-found boundaries
-- Segment config support (`dynamic`, `revalidate`, `runtime`, `preferredRegion`, `maxDuration`, `fetchCache`)
-- Standalone `.vista` output with manifests, file tracing, PPR shell artifacts, and runtime metadata
-- Flashpack `.flash` runtime state for `dev`, `build`, and `start`
-- Metadata route support through app files like `app/(seo)/sitemap.ts`, `robots.ts`, and `manifest.ts`
-- Package-level theme primitives via `vista/theme`
-- Experimental typed API package surface via `vista/stack` and `vista/stack/client`
-
-## Quick Start
-
-Create a default app:
+## Quick start
 
 ```bash
 npx create-vista-app@latest my-app
@@ -44,328 +30,309 @@ cd my-app
 npm run dev
 ```
 
-Create a Flashpack app:
+Open http://localhost:3003. Same scripts on every engine:
 
 ```bash
-npx create-vista-app@latest my-app --engine flashpack
-cd my-app
-npm run dev
+npm run dev      # develop
+npm run build    # production build → .vista/
+npm run start    # serve production
 ```
 
-Create a typed API starter:
+Optional flags:
 
 ```bash
-npx create-vista-app@latest my-app --typed-api
+npx create-vista-app@latest my-app --engine flashpack   # Rust-backed engine
+npx create-vista-app@latest my-app --typed-api          # scaffold typed API files
 ```
 
-By default, generated apps use the same commands regardless of engine:
+Package name in apps: `vista/...`. In this monorepo the published name is `@vistagenic/vista`.
 
-```bash
-npm run dev
-npm run build
-npm run start
-```
+---
 
-The selected engine is stored in `vista.config.ts`.
+## 1. Build a normal React app
 
-## API Routes
-
-Add a `route.ts` file anywhere under `app/` and that directory becomes an HTTP
-endpoint. No config, no separate backend, no server wiring:
+Vista apps are React apps. Folders under `app/` are routes. Components are **Server Components** by default (less JS in the browser). Mark interactive pieces with `'use client'`.
 
 ```
-src/
-└── app/
-    ├── page.tsx            ->  /
-    └── api/
-        ├── users/
-        │   ├── route.ts    ->  /api/users
-        │   └── [id]/
-        │       └── route.ts ->  /api/users/:id
-        └── health/
-            └── route.ts    ->  /api/health
+my-app/
+├── app/
+│   ├── root.tsx          # <html>, <body>, fonts, shared layout
+│   ├── index.tsx         # home page → /
+│   ├── about/page.tsx    # → /about
+│   └── globals.css
+├── components/           # shared UI
+├── public/
+└── vista.config.ts
 ```
 
-Export one function per HTTP method. `GET`, `HEAD`, `POST`, `PUT`, `PATCH`,
-`DELETE`, and `OPTIONS` are supported:
+**Page (Server Component):**
+
+```tsx
+// app/about/page.tsx
+export default function AboutPage() {
+  return <h1>About</h1>;
+}
+```
+
+**Interactive UI (Client Component):**
+
+```tsx
+// components/counter.tsx
+'use client';
+
+import { useState } from 'react';
+
+export function Counter() {
+  const [n, setN] = useState(0);
+  return <button onClick={() => setN(n + 1)}>{n}</button>;
+}
+```
+
+**Theme / fonts / links** (same mental model as Next):
+
+```tsx
+import { ThemeProvider, ThemeScript } from 'vista/theme';
+import Link from 'vista/link';
+```
+
+That is enough for marketing sites, dashboards UI shells, and content apps. No API required.
+
+---
+
+## 2. Build a fullstack app
+
+Add a backend **in the same repo**. Three layers you can mix:
+
+### A. File-based API routes (`route.ts`)
+
+Any `app/**/route.ts` is an HTTP endpoint:
 
 ```ts
 // app/api/users/route.ts
-import { listUsers, createUser } from './user-store';
-
 export async function GET() {
-  return Response.json({ users: await listUsers() });
+  return Response.json({ users: [] });
 }
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const user = await createUser(body);
-
-  return Response.json({ user }, { status: 201 });
+  return Response.json({ ok: true, body }, { status: 201 });
 }
 ```
 
-Dynamic segments follow the same `[param]` conventions as pages, and their values
-arrive on the second argument:
+Dynamic params work like pages: `app/api/users/[id]/route.ts` → `/api/users/42`.
+
+### B. Typed API (`vista/stack`) — end-to-end types
+
+```bash
+vista g api-init
+```
 
 ```ts
-// app/api/users/[id]/route.ts
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  return Response.json({ id: params.id });
-}
+// app/api/typed.ts
+import { vstack } from 'vista/stack';
+import { createRootRouter } from './routers';
+
+const v = vstack.init();
+export const router = createRootRouter(v);
 ```
 
-| File | URL | `params` |
-| --- | --- | --- |
-| `app/api/users/route.ts` | `/api/users` | `{}` |
-| `app/api/users/[id]/route.ts` | `/api/users/42` | `{ id: '42' }` |
-| `app/api/files/[...path]/route.ts` | `/api/files/a/b.txt` | `{ path: ['a', 'b.txt'] }` |
-| `app/api/docs/[[...slug]]/route.ts` | `/api/docs` | `{ slug: [] }` |
-| `app/(internal)/metrics/route.ts` | `/metrics` | `{}` |
-
-A more specific route always wins, so `app/api/users/me/route.ts` is matched before
-`app/api/users/[id]/route.ts`.
-
-Route handlers are server-only by construction. They are never entered into the
-client graph, so anything they import - database clients, secrets, private helpers -
-stays out of the browser bundle:
+Call from a Server Component **without HTTP**:
 
 ```ts
-// app/api/users/user-store.ts  (never shipped to the client)
-import { db } from '@/lib/db';
+import { vstack } from 'vista/stack';
+import { router } from '@/app/api/typed';
 
-export function listUsers() {
-  return db.user.findMany();
-}
+const v = vstack.init();
+const caller = v.createCaller(router, { ctx: {}, env: {} });
+const health = await caller.health();
 ```
 
-Two things happen automatically:
+Or from the browser with `createVistaClient` from `vista/stack/client`.
 
-- **Method handling.** A method with no export returns `405` with an `Allow` header,
-  `HEAD` falls back to the `GET` handler, and an unhandled `OPTIONS` is answered from
-  the exported method list so CORS preflight works out of the box.
-- **Registration.** Route files are discovered at build time and recorded in
-  `.vista/routes-manifest.json` and `.vista/app-path-routes-manifest.json`, so
-  deployment adapters can see them without re-scanning your source.
+### C. Auth + middleware
 
-Opt a handler into the edge runtime with the usual segment config:
+```bash
+vista g auth
+```
+
+That writes `auth.ts`, `/signin`, `/account`, fail-closed `middleware.ts`, and a `SessionProvider` wrapper. Credentials `signIn` POSTs; OAuth keeps `callbackUrl`.
 
 ```ts
-export const runtime = 'edge';
+import VistaAuth, { GitHub, Credentials } from 'vista/auth';
+
+export const { handlers, auth, authMiddleware } = VistaAuth({
+  pages: { signIn: '/signin' },
+  providers: [GitHub({}), Credentials({ authorize: async () => null })],
+});
 ```
-
-A runnable example lives in [`sample-app/app/api/notes`](sample-app/app/api/notes).
-
-## Package Examples
-
-Theme provider from the package:
-
-```tsx
-import { ThemeProvider, ThemeScript } from 'vista/theme';
-```
-
-Cache APIs from the package:
 
 ```ts
-import { unstable_cache, revalidateTag, revalidatePath } from 'vista/cache';
+// middleware.ts (generated)
+import { authMiddleware } from './auth';
+
+export default authMiddleware(({ auth, request }) => {
+  const pathname = new URL(request.url).pathname;
+  if (pathname.startsWith('/account') && !auth) return false;
+  return true;
+});
 ```
 
-Server helpers from the package:
+Set `AUTH_SECRET` in the environment before using credentials/OAuth.
 
-```ts
-import { cookies, headers, draftMode, NextResponse } from 'vista/server';
+---
+
+## 3. Use AI agents
+
+Agents live next to your UI. Generate one:
+
+```bash
+vista g agent support
 ```
 
-## Middleware
+Creates:
 
-Vista.js includes a built-in middleware system that intercepts and processes requests before they reach a page or API route.
+- `app/agents/support/agent.ts`
+- `app/api/agents/support/route.ts`
+- `app/AGENTS.md` (app-level convention notes)
 
-### 1. Global Middleware
-
-Create a `middleware.ts` (or `.js`) file at the project root or inside `src/`:
-
-```ts
-// middleware.ts
-import { NextResponse } from 'vista/server';
-
-export async function middleware({ request, next }) {
-  // Authentication, logging, validation, etc.
-  if (request.nextUrl.pathname.startsWith('/admin') && !request.cookies.get('token')) {
-    return NextResponse.redirect(new URL('/login', request.url));
-  }
-
-  const res = await next();
-  res.headers.set('x-framework', 'vista');
-  return res;
-}
-
-export const config = {
-  matcher: ['/((?!_vista|static|favicon.ico).*)'],
-};
-```
-
-### 2. Route-Specific Middleware
-
-Vista.js supports route-level middleware in two ways:
-
-- **Co-located segment middleware**: Place a `middleware.ts` inside any `app/` subfolder (e.g. `app/api/auth/middleware.ts` or `app/dashboard/middleware.ts`).
-- **Exported route middleware**: Export a `middleware` function directly from a segment file (e.g. `export const middleware = ...` in `app/api/users/route.ts` or `app/dashboard/page.tsx`).
-
-```ts
-// app/dashboard/middleware.ts
-export async function middleware({ request, next }) {
-  const user = request.headers.get('x-user-role');
-  if (user !== 'admin') {
-    return new Response(JSON.stringify({ error: 'Forbidden' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-  return next();
-}
-```
-
-### 3. Execution Order
-
-When multiple middlewares apply to a route, they execute in a deterministic outer-to-inner hierarchy:
-
-1. **Global Middleware**: `<root>/middleware.ts` or `<root>/src/middleware.ts`
-2. **Parent Segment Middleware**: `<root>/app/<segment>/middleware.ts`
-3. **Child Segment Middleware**: `<root>/app/<segment>/<subsegment>/middleware.ts`
-4. **Route File Middleware**: `export const middleware` in `page.tsx` or `route.ts`
-5. **Target Route Handler**: Page component rendering or API route handler
-
-Each middleware can wrap downstream execution using `await next()`, allowing post-processing on the response in reverse order (onion model). If any middleware returns a response without calling `next()`, execution short-circuits immediately and downstream handlers are bypassed.
-
-### 4. Modifying Requests and Responses
-
-- **Modify Request Headers**: Pass updated headers to `next({ request: { headers } })` to forward them to downstream middlewares and route handlers.
-- **Modify Response Headers**: Inspect or add headers on the response returned by `await next()`.
-- **Short-Circuit / Rejection**: Return a standard Fetch `Response`, `NextResponse.json(...)`, or custom error to reject unauthorized requests with full status and body support.
-- **Redirects**: Return `Response.redirect(...)` or `NextResponse.redirect(...)`.
-
-### 5. Interaction with Page & API Routes
-
-Middleware runs before both page routes and API routes (`app/**/route.ts` or `app/api/`). Any rejection or redirect stops execution before page SSR/RSC rendering or API handler invocation occurs.
-
-AI agent primitives from the package:
+**Define the agent:**
 
 ```ts
 import { agent, tool } from 'vista/ai';
-import { useAgent } from 'vista/ai/react';
-```
 
-## AI-Native Application Framework
-
-Vista.js provides first-class primitives for building AI applications, autonomous agents, and multi-agent workflows:
-
-- **Unified Agent Loop**: Define autonomous agents with `agent({ name, model, tools, memory })`.
-- **Multi-Step Tool Reasoning**: Define type-safe tools with `tool({ name, description, parameters, execute })`.
-- **Multi-Agent Composition**: Delegate tasks from one agent to another using `agent.asTool()`.
-- **Multi-Provider Support**: Switch seamlessly between OpenAI (`openai:gpt-4o`), Anthropic (`anthropic:claude-3-5-sonnet`), Google Gemini (`gemini:gemini-1.5-flash`), Ollama (`ollama:llama3`), and local models.
-- **Streaming & SSE**: Stream real-time agent output directly from API routes via `stream.toDataStreamResponse()`.
-- **React UI Hook**: Connect client components to streaming agents with zero boilerplate using `useAgent()`.
-- **CLI Scaffolding**: Generate agents and companion streaming route handlers via `vista g agent <name>`.
-
-```ts
-// Define an agent with tools and memory
 export const supportAgent = agent({
   name: 'support',
-  model: 'openai:gpt-4o',
-  systemPrompt: 'You are a helpful customer support agent.',
-  tools: [searchKnowledgeBase, lookupUserOrder],
+  model: process.env.VISTA_AI_MODEL || 'openai:gpt-4o',
+  systemPrompt: 'You are a helpful support agent.',
+  tools: [
+    tool({
+      name: 'ping',
+      description: 'Health check',
+      execute: async () => ({ ok: true }),
+    }),
+  ],
   memory: true,
 });
 ```
 
-## Monorepo Layout
+**Stream from a route:**
 
+```ts
+import { supportAgent } from '../../agents/support/agent';
 
-```text
-vista/
-├── apps/
-│   └── web/                    # Official website and docs at vista.xyz
-├── bench/                      # Vista-first benchmark fixtures
-├── crates/                     # Top-level Rust crates and NAPI surface
-├── flashpack/                  # Rust-backed Flashpack engine crates
-├── packages/
-│   ├── vista/                  # Framework package
-│   └── create-vista-app/       # Scaffolding CLI
-├── scripts/                    # Test, guard, and benchmark helpers
-├── task.md                     # Execution ledger / milestone history
-├── CONTRIBUTING.md
-└── developer.md
+export async function POST(req: Request) {
+  const { prompt, messages, sessionId } = await req.json();
+  return supportAgent.stream({ prompt, messages, sessionId }).toDataStreamResponse();
+}
 ```
 
-## Local Development
+**Consume in React:**
 
-Install workspace dependencies:
+```tsx
+'use client';
+import { useAgent } from 'vista/ai/react';
+
+export function Chat() {
+  const { messages, input, setInput, handleSubmit, isLoading } = useAgent({
+    api: '/api/agents/support',
+  });
+  // render messages + form…
+}
+```
+
+### Model strings (`provider:model`)
+
+| Provider | Example | Env |
+| --- | --- | --- |
+| OpenAI | `openai:gpt-4o` | `OPENAI_API_KEY` |
+| Anthropic | `anthropic:claude-3-5-sonnet` | `ANTHROPIC_API_KEY` |
+| Gemini | `gemini:gemini-1.5-flash` | `GEMINI_API_KEY` |
+| Ollama | `ollama:llama3` | local Ollama |
+| Groq | `groq:llama-3.1-8b-instant` | `GROQ_API_KEY` |
+| NVIDIA NIM | `nvidia:meta/llama-3.1-8b-instruct` | `NVIDIA_API_KEY` or `NIM_API_KEY` |
+| Tests | `mock:echo` | none |
+
+Override the default with `VISTA_AI_MODEL=groq:llama-3.1-8b-instant`.
+
+---
+
+## 4. Use RAG (retrieval-augmented generation)
+
+RAG = store your docs as vectors (or keywords) → retrieve the best chunks → give them to the agent as a tool.
+
+```ts
+import {
+  agent,
+  InMemoryVectorStore,
+  createRetrieverTool,
+  embedText,
+} from 'vista/ai';
+
+const store = new InMemoryVectorStore();
+
+// Index once (startup or build script)
+store.addDocument({
+  id: 'intro',
+  text: 'Vista is a React framework with App Router and RSC.',
+  vector: await embedText('Vista is a React framework with App Router and RSC.', {
+    model: 'openai:text-embedding-3-small',
+  }),
+});
+
+const search = createRetrieverTool({
+  store,
+  embed: (query) =>
+    embedText(query, { model: 'openai:text-embedding-3-small' }),
+  topK: 3,
+});
+
+export const docsAgent = agent({
+  name: 'docs',
+  model: 'groq:llama-3.1-8b-instant',
+  systemPrompt: 'Answer only from search_knowledge_base results.',
+  tools: [search],
+  memory: true,
+});
+```
+
+No embedding API yet? Omit `embed` — the retriever falls back to keyword search (what [`apps/vista-rag-demo`](apps/vista-rag-demo) does out of the box, no API key required).
+
+Run the demo:
+
+```bash
+pnpm --filter vista-rag-demo dev
+# or: cd apps/vista-rag-demo && npm run dev
+```
+
+---
+
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `@vistagenic/vista` | Framework runtime, CLI, RSC/SSR, auth, AI, stack |
+| `create-vista-app` | Scaffold new apps |
+| `vista-native` | Internal Rust/NAPI bridge |
+
+## Engines
+
+- **default** — webpack-backed RSC/SSR (output in `.vista/`)
+- **flashpack** — Rust-backed path (runtime state in `.flash/`)
+
+Pick at scaffold time or set `engine.variant` in `vista.config.ts`. Commands stay the same.
+
+## Local monorepo development
 
 ```bash
 pnpm install
-```
-
-Build the framework package after touching `packages/vista/src`:
-
-```bash
 npm --prefix packages/vista run build
+pnpm test:integrity
 ```
 
-Build the website:
+After editing `packages/vista/src`, rebuild `packages/vista/dist` (committed).
 
-```bash
-npm --prefix apps/web run build
-```
+## Learn more
 
-Build the native binding when you change `crates/vista-napi`:
-
-```bash
-npm --prefix crates/vista-napi run build
-```
-
-## Common Commands
-
-| Command                     | Purpose                                      |
-| --------------------------- | -------------------------------------------- |
-| `pnpm build`                | Build the workspace through `flash-run.cjs`  |
-| `pnpm dev`                  | Run workspace dev tasks                      |
-| `pnpm test`                 | Full repo test chain                         |
-| `pnpm test:integrity`       | Framework integrity guard                    |
-| `pnpm test:rsc-conformance` | RSC and route conformance suite              |
-| `pnpm test:vista-output`    | `.vista` standalone/output verification      |
-| `pnpm test:flashpack-dev`   | Flashpack dev/restart verification           |
-| `pnpm test:flashpack-state` | Flashpack state reuse / cleanup verification |
-| `pnpm bench`                | Full benchmark run                           |
-| `pnpm bench:quick`          | Quick benchmark smoke run                    |
-
-## Deployment Notes
-
-The repo includes first-party deployment config for the official site:
-
-- `render.yaml`
-- `vercel.json`
-
-`apps/web` is the deployment target. Its SEO route files live in `app/(seo)/`, not `public/`.
-
-## Release Flow
-
-Maintainers publish from the `development` branch.
-
-Typical sequence:
-
-```bash
-git add -A
-git commit -m "release: x.y.z"
-git push origin development
-npx lerna publish from-package --yes
-git tag vx.y.z
-git push origin vx.y.z
-```
-
-## Learn More
-
-- Repository: https://github.com/Mantitup-Org/vista
-- Official site: https://vista-js.vercel.app
-- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Internal contributor guide: [developer.md](developer.md)
-- Benchmark guide: [bench/README.md](bench/README.md)
+- Docs: https://vista-js.vercel.app/docs/getting-started/first-steps
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [developer.md](developer.md) · [AGENTS.md](AGENTS.md)
+- Contribution / CI notes for maintainers stay in those files; app authors start with the four paths above.

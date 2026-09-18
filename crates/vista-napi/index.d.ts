@@ -124,8 +124,21 @@ export interface NapiClientManifest {
   buildId: string
   clientModules: Array<NapiClientModuleEntry>
 }
-/** Generate client manifest (Rust-powered) */
+/** Project-root directory that may contain `'use client'` modules */
+export interface NapiClientScanRoot {
+  dir: string
+  prefix: string
+}
+/** Discover top-level directories to scan for client components (Rust-powered) */
+export declare function rscDiscoverProjectClientRoots(cwd: string): Array<NapiClientScanRoot>
+/**
+ * Generate client manifest (Rust-powered).
+ * Treats the parent of `app_dir` as the project root so sibling folders
+ * such as `utils/` and `lib/` enter the React Client Manifest.
+ */
 export declare function rscGenerateClientManifest(appDir: string, buildId: string): NapiClientManifest
+/** Generate client manifest from an explicit project root plus `app/` (Rust-powered) */
+export declare function rscGenerateClientManifestForProject(cwd: string, appDir: string, buildId: string): NapiClientManifest
 /** Route entry for NAPI */
 export interface NapiRouteEntry {
   pattern: string
@@ -179,3 +192,5 @@ export declare function rscPrerenderComponent(filePath: string): NapiPrerendered
  * Returns a map of component_id -> placeholder_html
  */
 export declare function rscPrerenderAllComponents(appDir: string): Record<string, NapiPrerenderedComponent>
+/** Pre-render client components from `app/` plus sibling project roots */
+export declare function rscPrerenderAllComponentsForProject(cwd: string, appDir: string): Record<string, NapiPrerenderedComponent>

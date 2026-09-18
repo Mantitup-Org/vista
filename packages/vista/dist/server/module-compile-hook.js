@@ -59,8 +59,17 @@ function readOriginalSource(filename, fallback) {
 function createDirectiveError(filename, message) {
     return new Error(`[vista:cache] ${path_1.default.basename(filename)}: ${message}`);
 }
+function isVistaFrameworkModule(filename) {
+    const normalized = normalizeModulePath(filename);
+    return (/\/packages\/vista\/(src|dist)\//.test(normalized) ||
+        /\/node_modules\/vista\//.test(normalized) ||
+        /\/node_modules\/@vistagenic\/vista\//.test(normalized));
+}
 function isProjectModule(filename, roots) {
     const normalized = normalizeModulePath(filename);
+    if (!/\.[cm]?[jt]sx?$/i.test(normalized)) {
+        return false;
+    }
     const matchesRoot = roots.some((root) => {
         const rootPrefix = normalizeModulePath(`${root}${path_1.default.sep}`);
         return normalized.startsWith(rootPrefix);
@@ -70,7 +79,10 @@ function isProjectModule(filename, roots) {
         return (normalizedRoot.includes('/.vista/standalone/') &&
             (normalized === normalizedRoot || normalized.startsWith(`${normalizedRoot}/`)));
     });
-    if (!matchesRoot)
+    if (isVistaFrameworkModule(filename)) {
+        return true;
+    }
+    if (!matchesRoot && !isStandaloneProjectModule)
         return false;
     if (normalized.includes('/node_modules/'))
         return false;
@@ -78,7 +90,7 @@ function isProjectModule(filename, roots) {
         return false;
     if (normalized.includes('/.flash/'))
         return false;
-    return /\.[cm]?[jt]sx?$/i.test(normalized);
+    return true;
 }
 function isStringDirectiveStatement(statement, directive) {
     return (statement?.type === 'ExpressionStatement' &&
@@ -630,7 +642,15 @@ function transpileProjectSource(source, filename, fallback) {
     }
 }
 function installModuleCompileHook(options) {
-    activeCompileRoots = Array.from(new Set([options.cwd, path_1.default.resolve(__dirname, '..')].map((entry) => path_1.default.resolve(entry))));
+    const vistaRuntimeDir = path_1.default.resolve(__dirname, '..');
+    const vistaPackageRoot = path_1.default.resolve(__dirname, '..', '..');
+    activeCompileRoots = Array.from(new Set([
+        options.cwd,
+        vistaRuntimeDir,
+        vistaPackageRoot,
+        path_1.default.join(vistaPackageRoot, 'src'),
+        path_1.default.join(vistaPackageRoot, 'dist'),
+    ].map((entry) => path_1.default.resolve(entry))));
     activeRuntimeActionsSpecifier = require.resolve('./runtime-actions');
     activeCacheRuntimeSpecifier = require.resolve('./cache');
     activeCacheComponentsEnabled = Boolean(options.cacheComponentsEnabled);

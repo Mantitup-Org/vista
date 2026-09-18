@@ -1,6 +1,6 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.2.16",
+  "version": "0.3.0",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -32,6 +32,7 @@
       "default": "./dist/index.js"
     },
     "./link": {
+      "react-server": "./dist/client/link.react-server.js",
       "types": "./dist/client/link.d.ts",
       "default": "./dist/client/link.js"
     },
@@ -41,18 +42,22 @@
       "default": "./dist/image/index.js"
     },
     "./router": {
+      "react-server": "./dist/client/router.react-server.js",
       "types": "./dist/client/router.d.ts",
       "default": "./dist/client/router.js"
     },
     "./navigation": {
+      "react-server": "./dist/client/navigation.react-server.js",
       "types": "./dist/client/navigation.d.ts",
       "default": "./dist/client/navigation.js"
     },
     "./dynamic": {
+      "react-server": "./dist/client/dynamic.react-server.js",
       "types": "./dist/client/dynamic.d.ts",
       "default": "./dist/client/dynamic.js"
     },
     "./script": {
+      "react-server": "./dist/client/script.react-server.js",
       "types": "./dist/client/script.d.ts",
       "default": "./dist/client/script.js"
     },
@@ -69,6 +74,7 @@
       "default": "./dist/font/local.js"
     },
     "./theme": {
+      "react-server": "./dist/theme/react-server.js",
       "types": "./dist/theme/index.d.ts",
       "default": "./dist/theme/index.js"
     },
@@ -81,11 +87,21 @@
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
     },
+    "./auth": {
+      "types": "./dist/auth/index.d.ts",
+      "default": "./dist/auth/index.js"
+    },
+    "./auth/react": {
+      "react-server": "./dist/auth/react-server.js",
+      "types": "./dist/auth/react.d.ts",
+      "default": "./dist/auth/react.js"
+    },
     "./ai": {
       "types": "./dist/ai/index.d.ts",
       "default": "./dist/ai/index.js"
     },
     "./ai/react": {
+      "react-server": "./dist/ai/react/react-server.js",
       "types": "./dist/ai/react/index.d.ts",
       "default": "./dist/ai/react/index.js"
     },
@@ -98,6 +114,7 @@
       "default": "./dist/stack/client/index.js"
     },
     "./client/rsc-router": {
+      "react-server": "./dist/client/rsc-router.react-server.js",
       "types": "./dist/client/rsc-router.d.ts",
       "default": "./dist/client/rsc-router.js"
     },

@@ -4,9 +4,9 @@ import Link from 'vista/link';
 export default function DocsPage() {
   const navigation = getDocsNavigation();
   const firstStepsDoc = getDocBySlugParts(['getting-started', 'first-steps']);
-  const typedApiDoc = getDocBySlugParts(['getting-started', 'typed-api-quickstart']);
-  const fileStructureDoc = getDocBySlugParts(['reference', 'project-file-structure']);
-  const dynamicRoutesDoc = getDocBySlugParts(['core-concepts', 'dynamic-routes-and-slugs']);
+  const reactAppDoc = getDocBySlugParts(['getting-started', 'react-app']);
+  const fullstackDoc = getDocBySlugParts(['getting-started', 'fullstack-app']);
+  const aiOverviewDoc = getDocBySlugParts(['ai', 'overview']);
   const primaryCtaHref = firstStepsDoc
     ? getDocPath(firstStepsDoc)
     : navigation[0]?.docs[0]?.href || '/docs/introduction/the-beginning-of-vista';
@@ -18,12 +18,12 @@ export default function DocsPage() {
           Official Documentation
         </p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
-          Build Fast. Write Less. Ship with Control.
+          Build a React app. Grow it into fullstack, auth, and AI.
         </h1>
         <p className="mt-4 max-w-3xl text-lg leading-8 text-foreground/74">
-          Vista docs are organized using dynamic category-slug routes:{' '}
-          <code>/docs/&lt;category&gt;/&lt;slug&gt;</code>. This keeps URLs stable while your
-          content grows from basics to advanced runtime
+          Start with pages under <code>app/</code>. Add <code>route.ts</code> or{' '}
+          <code>vista g api-init</code> for APIs, <code>vista g auth</code> for sessions, and{' '}
+          <code>vista g agent</code> for chat and RAG. Same project, no second server.
         </p>
 
         <div className="mt-7 flex flex-wrap gap-3">
@@ -33,12 +33,12 @@ export default function DocsPage() {
           >
             Start with First Steps
           </Link>
-          {typedApiDoc ? (
+          {fullstackDoc ? (
             <Link
-              href={getDocPath(typedApiDoc)}
+              href={getDocPath(fullstackDoc)}
               className="rounded-full border border-foreground/12 bg-background/80 px-5 py-2 text-sm font-medium text-foreground/86 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.04]"
             >
-              Typed API Quickstart
+              Fullstack App
             </Link>
           ) : null}
         </div>
@@ -47,44 +47,44 @@ export default function DocsPage() {
       <section className="mb-10 grid gap-4 md:grid-cols-3">
         <Link
           href={
-            dynamicRoutesDoc
-              ? getDocPath(dynamicRoutesDoc)
-              : '/docs/core-concepts/dynamic-routes-and-slugs'
+            reactAppDoc
+              ? getDocPath(reactAppDoc)
+              : '/docs/getting-started/react-app'
           }
           className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">Routing</p>
-          <h2 className="mt-2 text-lg font-semibold text-foreground">Dynamic Slug Architecture</h2>
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">React</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">Build a React App</h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/64">
-            Catch-all routes, slug normalization, and scalable docs URL contracts.
+            Pages, layouts, Server Components, and client UI under app/ — no backend required.
           </p>
         </Link>
 
         <Link
           href={
-            typedApiDoc ? getDocPath(typedApiDoc) : '/docs/getting-started/typed-api-quickstart'
+            fullstackDoc ? getDocPath(fullstackDoc) : '/docs/getting-started/fullstack-app'
           }
           className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">APIs</p>
-          <h2 className="mt-2 text-lg font-semibold text-foreground">How Vista APIs Work</h2>
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">Fullstack</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">APIs, auth, middleware</h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/64">
-            Legacy route handlers + typed routers with middleware, validation, and serializers.
+            route.ts, typed procedures, vista g auth, and fail-closed middleware in the same app.
           </p>
         </Link>
 
         <Link
           href={
-            fileStructureDoc
-              ? getDocPath(fileStructureDoc)
-              : '/docs/reference/project-file-structure'
+            aiOverviewDoc
+              ? getDocPath(aiOverviewDoc)
+              : '/docs/ai/overview'
           }
           className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-5 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] dark:bg-white/[0.02]"
         >
-          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">Structure</p>
-          <h2 className="mt-2 text-lg font-semibold text-foreground">File Maps and Conventions</h2>
+          <p className="text-xs uppercase tracking-[0.16em] text-foreground/45">AI</p>
+          <h2 className="mt-2 text-lg font-semibold text-foreground">Agents and RAG</h2>
           <p className="mt-2 text-sm leading-relaxed text-foreground/64">
-            Folder-by-folder responsibilities and production-safe project organization.
+            vista g agent, Groq and NVIDIA models, embeddings, and retrieval over your docs.
           </p>
         </Link>
       </section>

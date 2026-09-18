@@ -1,113 +1,60 @@
 # My Vista App
 
-Built with [Vista.js](https://github.com/Mantitup-Org/vista) — the React framework for visionaries.
+Built with [Vista.js](https://github.com/Mantitup-Org/vista).
 
-Selected engine for this app: `__VISTA_ENGINE__`
+Selected engine: `__VISTA_ENGINE__` · Typed API starter: `__VISTA_TYPED_API__`
 
-Typed API starter: `__VISTA_TYPED_API__`
-
-## Getting Started
-
-Run the development server:
+## Run
 
 ```bash
 npm run dev
-# or
-pnpm dev
 ```
 
-Open [http://localhost:3003](http://localhost:3003) in your browser.
+Open [http://localhost:3003](http://localhost:3003).
 
-If you want typed API starter files in a fresh app:
+## What can you build?
 
-```bash
-npx create-vista-app@latest my-vista-app --typed-api
-```
+| Goal | How |
+| --- | --- |
+| Normal React UI | Add pages under `app/`. Use `'use client'` for interactive components. |
+| Fullstack APIs | Add `app/api/**/route.ts`, or run `vista g api-init` for typed procedures. |
+| Auth | `vista g auth` then set `AUTH_SECRET`. Opens `/signin` (POST credentials + OAuth) and gates `/account`. |
+| AI chat agent | `vista g agent support` → edit `app/agents/support/agent.ts`. |
+| RAG over your docs | Use `InMemoryVectorStore` + `createRetrieverTool` + optional `embedText` from `vista/ai`. |
 
-## Project Structure
+## Project structure
 
 ```
 app/
-├── root.tsx        # Root layout (<html>, <body>, fonts)
-├── index.tsx       # Home page
-├── globals.css     # Global styles (Tailwind CSS v4)
-└── about/
-    └── page.tsx    # Example nested route → /about
+├── root.tsx        # Root layout
+├── index.tsx       # Home → /
+├── globals.css
+└── about/page.tsx  # → /about
+components/
 public/
-├── vista.svg       # Static assets
-vista.config.ts     # Framework configuration
+vista.config.ts
 ```
 
-## Key Concepts
+## Commands
 
-- **`app/root.tsx`** — Root layout that wraps every page. Defines `<html>`, fonts, and metadata.
-- **`app/index.tsx`** or **`app/page.tsx`** — Page components. Each folder = a route.
-- **`'use client'`** — Add this directive to make a component interactive (client-side).
-- **Server Components** — All components are server components by default (zero JS sent to browser).
+| Command | Description |
+| --- | --- |
+| `npm run dev` / `build` / `start` | Develop, build (`.vista/`), serve |
+| `vista g api-init` | Typed API starter |
+| `vista g auth` | Auth config, `/signin`, `/account`, middleware, SessionProvider |
+| `vista g agent <name>` | Agent + streaming route + `app/AGENTS.md` |
+| `npm run deploy` | Deploy helpers (Render, Vercel, Cloudflare, …) |
 
-## Available Commands
+## Models (AI)
 
-| Command       | Description                       |
-| ------------- | --------------------------------- |
-| `vista dev`   | Start dev server with the engine selected in `vista.config.ts` |
-| `vista build` | Create production build with the engine selected in `vista.config.ts` |
-| `vista start` | Start production server with the engine selected in `vista.config.ts` |
-| `npm run deploy` | Build and deploy to a hosting platform (Render, Vercel, Cloudflare, Netlify, Docker) |
-| `vista g api-init` | Generate typed API starter files |
-| `vista g router <name>` | Generate a typed router file |
-| `vista g procedure <name> [get\|post]` | Generate a typed procedure file |
+Set `VISTA_AI_MODEL`, for example:
 
-## Engine Selection
+- `openai:gpt-4o` · `groq:llama-3.1-8b-instant` · `nvidia:meta/llama-3.1-8b-instruct` · `ollama:llama3`
 
-`create-vista-app` supports both engine variants:
+## Learn more
 
-- `default` (webpack path)
-- `flashpack` (Rust-first path)
-
-You can choose at scaffold time, but the generated app still uses the same `npm run dev`, `npm run build`, and `npm run start` scripts. Vista reads the selected engine from `vista.config.ts`.
-
-Example:
-
-```bash
-npx create-vista-app@latest my-vista-app --engine flashpack
-```
-
-The generated config looks like:
-
-```ts
-engine: {
-  variant: 'flashpack'
-}
-```
-
-Flashpack engine runtime/cache artifacts are stored in `.flash/`.
-
-## Deploy
-
-Deploy to a supported platform:
-
-```bash
-npm run deploy
-npm run deploy -- --target render --prod
-npm run deploy -- --target vercel --dry-run
-```
-
-Supported targets: `render`, `vercel`, `cloudflare`, `netlify`, `docker`.
-
-## Typed API Rollback
-
-Typed API is experimental and can be disabled anytime from `vista.config.ts`:
-
-```ts
-experimental: {
-  typedApi: {
-    enabled: false
-  }
-}
-```
-
-## Learn More
-
-- [Vista.js GitHub](https://github.com/Mantitup-Org/vista)
-- [React Server Components](https://react.dev/reference/rsc/server-components)
-- [Tailwind CSS v4](https://tailwindcss.com)
+- [React app guide](https://vista-js.vercel.app/docs/getting-started/react-app)
+- [Fullstack guide](https://vista-js.vercel.app/docs/getting-started/fullstack-app)
+- [AI overview](https://vista-js.vercel.app/docs/ai/overview)
+- [RAG guide](https://vista-js.vercel.app/docs/ai/rag)
+- [GitHub](https://github.com/Mantitup-Org/vista)

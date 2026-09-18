@@ -26,11 +26,14 @@ test('agent generator creates agent file and streaming route handler', async () 
 
     const agentPath = path.join(cwd, 'app', 'agents', 'support', 'agent.ts');
     const routePath = path.join(cwd, 'app', 'api', 'agents', 'support', 'route.ts');
+    const guidePath = path.join(cwd, 'app', 'AGENTS.md');
 
     assert.equal(fs.existsSync(agentPath), true);
     assert.equal(fs.existsSync(routePath), true);
+    assert.equal(fs.existsSync(guidePath), true);
 
     const agentSource = fs.readFileSync(agentPath, 'utf8');
+    assert.match(agentSource, /from 'vista\/ai'/);
     assert.match(agentSource, /agent\(\{/);
     assert.match(agentSource, /supportAgent = agent/);
 

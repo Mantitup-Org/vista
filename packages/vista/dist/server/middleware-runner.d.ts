@@ -67,8 +67,22 @@ export interface VistaMiddlewareContext {
     [key: string]: any;
 }
 export type MiddlewareFunction = (contextOrRequest: VistaMiddlewareContext | VistaMiddlewareRequest, nextFn?: NextFunction) => Promise<Response | MiddlewareResult | void> | Response | MiddlewareResult | void;
+export type MiddlewareMatcher = string | {
+    source: string;
+    missing?: Array<{
+        type: 'header' | 'cookie' | 'query';
+        key: string;
+        value?: string;
+    }>;
+    has?: Array<{
+        type: 'header' | 'cookie' | 'query';
+        key: string;
+        value?: string;
+    }>;
+};
 export interface MiddlewareConfig {
-    matcher?: string | string[];
+    matcher?: MiddlewareMatcher | MiddlewareMatcher[];
+    allowedRedirectHosts?: string[];
 }
 export interface MiddlewareModule {
     default?: MiddlewareFunction;
@@ -88,7 +102,7 @@ export declare function discoverGlobalMiddleware(cwd: string, bustCache: boolean
  */
 export declare function discoverRouteMiddlewares(cwd: string, pathname: string, bustCache: boolean): string[];
 export declare function patternToRegExp(pattern: string): RegExp;
-export declare function shouldRunMiddleware(middlewareModule: MiddlewareModule, pathname: string): boolean;
+export declare function shouldRunMiddleware(middlewareModule: MiddlewareModule, pathname: string, request?: VistaMiddlewareRequest): boolean;
 export declare function buildNextRequest(req: Request): VistaMiddlewareRequest;
 /**
  * Run user-defined middleware chain (global + route-specific) for the given request.

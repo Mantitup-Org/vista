@@ -16,6 +16,55 @@ import {
   relativeComponentPath,
 } from './component-identity';
 import { STATIC_CHUNKS_PATH, BUILD_DIR } from '../../constants';
+import {
+  generateClientManifestForProjectNative,
+  type NapiClientManifest,
+} from './native-scanner';
+
+const PROJECT_CLIENT_SCAN_SKIP = new Set([
+  'node_modules',
+  '.vista',
+  '.flash',
+  'dist',
+  'public',
+  'coverage',
+  'build',
+  'out',
+]);
+
+/**
+ * Top-level app directories that may contain `'use client'` modules.
+ * Discovery is directory membership, not the import graph, so `utils/`,
+ * `lib/`, and `src/` have to be scanned explicitly or they never enter
+ * the React Client Manifest.
+ */
+export function discoverProjectClientRoots(
+  cwd: string
+): Array<{ dir: string; prefix: string }> {
+  const roots: Array<{ dir: string; prefix: string }> = [];
+  if (!fs.existsSync(cwd)) {
+    return roots;
+  }
+
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(cwd, { withFileTypes: true });
+  } catch {
+    return roots;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+    if (PROJECT_CLIENT_SCAN_SKIP.has(entry.name)) continue;
+    roots.push({
+      dir: path.join(cwd, entry.name),
+      prefix: `${entry.name.replace(/\\/g, '/')}/`,
+    });
+  }
+
+  return roots;
+}
 
 // Try to load Rust NAPI bindings
 let rustNative: any = null;
@@ -117,6 +166,29 @@ function extractExports(source: string): string[] {
   return [...new Set(exports)];
 }
 
+function isSameOrInside(target: string, ancestor: string): boolean {
+  const resolvedTarget = path.resolve(target);
+  const resolvedAncestor = path.resolve(ancestor);
+  if (resolvedTarget === resolvedAncestor) return true;
+  const prefix = resolvedAncestor.endsWith(path.sep)
+    ? resolvedAncestor
+    : `${resolvedAncestor}${path.sep}`;
+  return resolvedTarget.startsWith(prefix);
+}
+
+function additionalRootsMatchDiscovery(
+  cwd: string,
+  appDir: string,
+  additionalRoots: Array<{ dir: string; prefix?: string }>
+): boolean {
+  const discovered = discoverProjectClientRoots(cwd).filter(
+    (root) => path.resolve(root.dir) !== path.resolve(appDir)
+  );
+  if (additionalRoots.length !== discovered.length) return false;
+  const extra = new Set(additionalRoots.map((root) => path.resolve(root.dir)));
+  return discovered.every((root) => extra.has(path.resolve(root.dir)));
+}
+
 /**
  * Scan directory recursively for client components
  */
@@ -124,9 +196,11 @@ function scanForClientComponents(
   dir: string,
   scanRoot: string,
   components: ClientComponentEntry[],
-  pathPrefix: string = ''
+  pathPrefix: string = '',
+  skipInside?: string
 ): void {
   if (!fs.existsSync(dir)) return;
+  if (skipInside && isSameOrInside(dir, skipInside)) return;
 
   const items = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -135,9 +209,10 @@ function scanForClientComponents(
 
     if (item.isDirectory()) {
       if (!item.name.startsWith('.') && item.name !== 'node_modules') {
-        scanForClientComponents(fullPath, scanRoot, components, pathPrefix);
+        scanForClientComponents(fullPath, scanRoot, components, pathPrefix, skipInside);
       }
     } else if (item.isFile()) {
+      if (skipInside && isSameOrInside(fullPath, skipInside)) continue;
       const ext = path.extname(item.name);
       if (!['.tsx', '.ts', '.jsx', '.js'].includes(ext)) continue;
 
@@ -169,7 +244,57 @@ function scanForClientComponents(
  * Generate the client component manifest
  */
 export function generateClientManifest(cwd: string, appDir: string): ClientManifest {
-  return generateClientManifestWithRoots(cwd, appDir);
+  const additionalRoots = discoverProjectClientRoots(cwd).filter(
+    (root) => path.resolve(root.dir) !== path.resolve(appDir)
+  );
+  return generateClientManifestWithRoots(cwd, appDir, additionalRoots);
+}
+
+function readBuildId(cwd: string): string {
+  const buildIdPath = path.join(cwd, BUILD_DIR, 'BUILD_ID');
+  try {
+    if (fs.existsSync(buildIdPath)) {
+      return fs.readFileSync(buildIdPath, 'utf-8').trim();
+    }
+  } catch {
+    // Use dev
+  }
+  return 'dev';
+}
+
+function nativeClientManifestToJs(native: NapiClientManifest): ClientManifest {
+  const clientModules: Record<string, ClientComponentEntry> = {};
+  const pathToId: Record<string, string> = {};
+  const ssrModuleMapping: Record<string, string> = {};
+
+  for (const component of native.clientModules) {
+    const entry: ClientComponentEntry = {
+      id: component.id,
+      path: component.path,
+      absolutePath: component.absolutePath,
+      chunkName: component.chunkName,
+      exports: component.exports,
+      async: component.asyncLoad,
+    };
+    clientModules[component.id] = entry;
+    const normalizedRelativePath = normalizeComponentPath(component.path);
+    const normalizedAbsolutePath = normalizeComponentPath(component.absolutePath);
+
+    pathToId[component.path] = component.id;
+    pathToId[normalizedRelativePath] = component.id;
+    pathToId[component.absolutePath] = component.id;
+    pathToId[normalizedAbsolutePath] = component.id;
+
+    ssrModuleMapping[component.absolutePath] = `${STATIC_CHUNKS_PATH}${component.chunkName}.js`;
+    ssrModuleMapping[normalizedAbsolutePath] = `${STATIC_CHUNKS_PATH}${component.chunkName}.js`;
+  }
+
+  return {
+    buildId: native.buildId,
+    clientModules,
+    pathToId,
+    ssrModuleMapping,
+  };
 }
 
 export function generateClientManifestWithRoots(
@@ -177,13 +302,20 @@ export function generateClientManifestWithRoots(
   appDir: string,
   additionalRoots: Array<{ dir: string; prefix?: string }> = []
 ): ClientManifest {
+  if (additionalRootsMatchDiscovery(cwd, appDir, additionalRoots)) {
+    const native = generateClientManifestForProjectNative(cwd, appDir, readBuildId(cwd));
+    if (native && Array.isArray(native.clientModules)) {
+      return nativeClientManifestToJs(native);
+    }
+  }
+
   const components: ClientComponentEntry[] = [];
 
   scanForClientComponents(appDir, appDir, components);
 
   for (const root of additionalRoots) {
     if (!fs.existsSync(root.dir)) continue;
-    scanForClientComponents(root.dir, root.dir, components, root.prefix || '');
+    scanForClientComponents(root.dir, root.dir, components, root.prefix || '', appDir);
   }
 
   const clientModules: Record<string, ClientComponentEntry> = {};
@@ -200,24 +332,12 @@ export function generateClientManifestWithRoots(
     pathToId[component.absolutePath] = component.id;
     pathToId[normalizedAbsolutePath] = component.id;
 
-    // Map server path to client chunk for SSR
     ssrModuleMapping[component.absolutePath] = `${STATIC_CHUNKS_PATH}${component.chunkName}.js`;
     ssrModuleMapping[normalizedAbsolutePath] = `${STATIC_CHUNKS_PATH}${component.chunkName}.js`;
   }
 
-  // Get or generate build ID
-  const buildIdPath = path.join(cwd, BUILD_DIR, 'BUILD_ID');
-  let buildId = 'dev';
-  try {
-    if (fs.existsSync(buildIdPath)) {
-      buildId = fs.readFileSync(buildIdPath, 'utf-8').trim();
-    }
-  } catch (e) {
-    // Use dev
-  }
-
   return {
-    buildId,
+    buildId: readBuildId(cwd),
     clientModules,
     pathToId,
     ssrModuleMapping,

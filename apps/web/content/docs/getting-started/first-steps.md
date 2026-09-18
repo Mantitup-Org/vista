@@ -2,30 +2,40 @@
 category: "getting-started"
 slug: "first-steps"
 title: "First Steps"
-summary: "Bootstrap a new app, run local dev, and understand the minimum project structure in minutes."
+summary: "Bootstrap a Vista app, then pick React-only, fullstack, AI, or RAG depending on what you are building."
 order: 1
-updatedAt: "2026-03-04"
+updatedAt: "2026-09-18"
 ---
 
-## Create an App
+## Create an app
 
 ```bash title="Terminal"
-npx create-vista-app@latest
+npx create-vista-app@latest my-vista-app
 cd my-vista-app
 npm run dev
 ```
 
-## Project Shape
+Open `http://localhost:3003`.
 
-- `app/` contains pages and layouts.
-- `components/` stores reusable UI.
-- `data/` and `lib/` keep content + helpers clean.
+## Pick a path
 
-## What to Build First
+| Goal | Guide |
+| --- | --- |
+| Pages, layouts, client UI only | [Build a React App](/docs/getting-started/react-app) |
+| APIs, typed procedures, auth, middleware | [Build a Fullstack App](/docs/getting-started/fullstack-app) |
+| Chat agents, tools, streaming | [AI Overview](/docs/ai/overview) |
+| Answers grounded in your docs | [RAG](/docs/ai/rag) |
 
-Start with one route, one layout, and one data source. Keep scope tight until your core loop is stable.
+## Project shape
 
-## First API Implementation
+- `app/` — routes and layouts
+- `components/` — reusable UI
+- `lib/` — helpers
+- `app/api/` — HTTP APIs and typed API entry
+- `app/agents/` — runtime AI agents (optional)
+- `auth.ts` / `middleware.ts` / `/signin` — after `vista g auth`
+
+## Tiny API smoke test
 
 ```ts title="app/api/health/route.ts"
 export async function GET() {
@@ -37,7 +47,10 @@ export async function GET() {
 }
 ```
 
+Visit `/api/health` while `npm run dev` is running.
+
 ## Continue
-- [Routing Overview](/docs/core-concepts/routing-overview)
+- [Build a React App](/docs/getting-started/react-app)
+- [Build a Fullstack App](/docs/getting-started/fullstack-app)
 - [Project Structure](/docs/getting-started/project-structure)
 - [Typed API Quickstart](/docs/getting-started/typed-api-quickstart)

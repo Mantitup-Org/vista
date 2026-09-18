@@ -63,6 +63,10 @@ export interface NapiServerManifest {
     serverModules: NapiServerModuleEntry[];
     routes: NapiRouteEntry[];
 }
+export interface NapiClientScanRoot {
+    dir: string;
+    prefix: string;
+}
 /**
  * Check if native module is available
  */
@@ -76,6 +80,14 @@ export declare function scanAppNative(appDir: string): NapiScanResult | null;
  * Generate client manifest using Rust native code
  */
 export declare function generateClientManifestNative(appDir: string, buildId: string): NapiClientManifest | null;
+/**
+ * Generate client manifest from an explicit project root plus `app/`
+ */
+export declare function generateClientManifestForProjectNative(cwd: string, appDir: string, buildId: string): NapiClientManifest | null;
+/**
+ * Discover project-level client scan roots using Rust native code
+ */
+export declare function discoverProjectClientRootsNative(cwd: string): NapiClientScanRoot[] | null;
 /**
  * Generate server manifest using Rust native code
  */

@@ -1,4 +1,5 @@
 import { mergeRouters as mergeStackRouters } from './server/merge-routers';
+import { createCaller as createStackCaller, type CreateCallerOptions, type InferCaller } from './server/caller';
 import { createProcedureBuilder, type ProcedureBuilder } from './server/procedure';
 import { createRouter, type CreateRouterOptions } from './server/router';
 import { createSerializer, type StackSerializer } from './server/serialization';
@@ -30,6 +31,10 @@ export interface VStackInstance<TCtx, TEnv> {
     options?: CreateRouterOptions<TEnv>
   ): StackRouter<TProcedures, TCtx, TEnv>;
   mergeRouters: typeof mergeStackRouters;
+  createCaller<TProcedures extends ProcedureRecord>(
+    router: StackRouter<TProcedures, TCtx, TEnv>,
+    options: CreateCallerOptions<TCtx, TEnv>
+  ): InferCaller<TProcedures>;
   serializer: StackSerializer;
   options: Required<VStackInitOptions>;
 }
@@ -51,6 +56,9 @@ export function initStack<TCtx extends Record<string, unknown> = {}, TEnv = unkn
     },
     mergeRouters(...routers) {
       return mergeStackRouters(...routers);
+    },
+    createCaller(router, callerOptions) {
+      return createStackCaller(router, callerOptions);
     },
     serializer: createSerializer(normalizedOptions.serialization),
     options: normalizedOptions,

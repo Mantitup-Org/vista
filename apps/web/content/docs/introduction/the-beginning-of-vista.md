@@ -4,7 +4,7 @@ slug: "the-beginning-of-vista"
 title: "The Beginning of Vista"
 summary: "Vista started from one idea: keep the power of modern frameworks, cut the noise, and let developers ship with less code."
 order: 1
-updatedAt: "2026-03-04"
+updatedAt: "2026-09-18"
 signatureQuote: "Vista was started to remove repeated setup friction from product teams. The vision is simple: fewer files to think about, less boilerplate to maintain, and a runtime that still gives you full control when your app grows."
 ---
 
@@ -14,13 +14,13 @@ If you have used Next.js, Vista will feel familiar by design. It follows practic
 
 ## Core Promise
 
-- Write less code for common product workflows.
+- Write less code for common product workflows: UI, APIs, auth, and AI in one `app/` tree.
 - Keep server-first performance defaults.
 - Retain flexibility when apps grow beyond starter templates.
 
 ## Current Stage
 
-Vista is moving fast. APIs that reduce boilerplate are prioritized first, then ecosystem depth follows.
+Vista is moving fast. `vista g auth`, `vista g api-init`, and `vista g agent` are the main ways to add fullstack, sessions, and chat without extra packages.
 
 ## Next
 - [The Architecture of Simplicity](/docs/introduction/architecture-of-simplicity)

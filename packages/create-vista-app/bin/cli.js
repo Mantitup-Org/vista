@@ -379,21 +379,21 @@ async function main() {
       'react-dom': '^19.0.0',
       'react-server-dom-webpack': '^19.0.0',
       vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@latest',
+      'lucide-react': '^0.468.0',
       // CSS build (needed in production for vista build)
       postcss: '^8.0.0',
-      'postcss-cli': '^11.0.0',
       tailwindcss: '^4.0.0',
       '@tailwindcss/postcss': '^4.0.0',
-      webpack: '^5.90.0',
-      // Node 20+ SSR compatibility
       '@swc-node/register': '^1.9.0',
       '@swc/core': '^1.4.0',
-      tsx: '^4.7.0',
     },
     devDependencies: {
       typescript: '^5.0.0',
       '@types/react': '^19.0.0',
       '@types/react-dom': '^19.0.0',
+      webpack: '^5.90.0',
+      'postcss-cli': '^11.0.0',
+      tsx: '^4.7.0',
     },
   };
 

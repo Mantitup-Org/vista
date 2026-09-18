@@ -10,10 +10,12 @@ exports.runLegacyApiRoute = runLegacyApiRoute;
 exports.runTypedApiRoute = runTypedApiRoute;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const node_stream_1 = require("node:stream");
 const server_1 = require("../stack/server");
 const segment_config_1 = require("./segment-config");
 const request_context_1 = require("./request-context");
 const route_handler_registry_1 = require("./route-handler-registry");
+const cookie_parse_1 = require("./cookie-parse");
 const TYPED_API_ENTRYPOINTS = [
     path_1.default.join('app', 'api', 'typed.ts'),
     path_1.default.join('app', 'api', 'typed.tsx'),
@@ -33,7 +35,7 @@ const ROUTE_FILE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 class BodyLimitError extends Error {
     status = 413;
     constructor(limitBytes) {
-        super(`Typed API body exceeds configured limit (${limitBytes} bytes)`);
+        super(`Request body exceeds configured limit (${limitBytes} bytes)`);
         this.name = 'BodyLimitError';
     }
 }
@@ -43,6 +45,10 @@ class BodyParseError extends Error {
         super(message);
         this.name = 'BodyParseError';
     }
+}
+const DEFAULT_ROUTE_BODY_LIMIT_BYTES = 1024 * 1024;
+function isWebResponse(value) {
+    return typeof Response !== 'undefined' && value instanceof Response;
 }
 function isStackRouterLike(value) {
     if (!value || typeof value !== 'object') {
@@ -177,9 +183,39 @@ async function sendFetchResponse(res, response) {
     response.headers.forEach((value, key) => {
         res.setHeader(key, value);
     });
-    const arrayBuffer = await response.arrayBuffer();
+    const method = String(res.req?.method || '').toUpperCase();
+    res.status(response.status);
+    if (method === 'HEAD' || !response.body) {
+        res.end();
+        return;
+    }
+    const canPipe = typeof res.once === 'function' &&
+        typeof res.on === 'function' &&
+        typeof res.write === 'function' &&
+        typeof res.end === 'function';
+    if (canPipe && typeof node_stream_1.Readable.fromWeb === 'function') {
+        try {
+            const nodeStream = node_stream_1.Readable.fromWeb(response.body);
+            await new Promise((resolve, reject) => {
+                const fail = (error) => reject(error);
+                nodeStream.once('error', fail);
+                res.once('error', fail);
+                res.once('finish', () => resolve());
+                nodeStream.pipe(res);
+            });
+            return;
+        }
+        catch {
+            // Fall through to buffering when the web stream cannot be piped.
+        }
+    }
+    const arrayBuffer = await new Response(response.body).arrayBuffer();
     const body = Buffer.from(arrayBuffer);
-    res.status(response.status).send(body);
+    if (typeof res.send === 'function') {
+        res.send(body);
+        return;
+    }
+    res.end(body);
 }
 function applyRuntimeTraceHeaders(res, segmentConfig, mode) {
     res.setHeader('X-Vista-Route-Runtime', segmentConfig.runtime);
@@ -193,7 +229,7 @@ function createReadonlyCookieStore(header) {
             const name = rawName?.trim();
             if (!name)
                 continue;
-            cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+            cookieMap.set(name, (0, cookie_parse_1.safeDecodeURIComponent)(valueParts.join('=').trim()));
         }
     }
     return {
@@ -209,15 +245,52 @@ function createReadonlyCookieStore(header) {
         },
     };
 }
-async function readRouteRequestBody(req) {
+function bufferFromParsedBody(body) {
+    if (body === undefined || body === null) {
+        return undefined;
+    }
+    if (Buffer.isBuffer(body)) {
+        return body;
+    }
+    if (typeof body === 'string') {
+        return Buffer.from(body);
+    }
+    if (typeof body === 'object') {
+        return Buffer.from(JSON.stringify(body));
+    }
+    return Buffer.from(String(body));
+}
+async function readRouteRequestBody(req, bodySizeLimitBytes = DEFAULT_ROUTE_BODY_LIMIT_BYTES) {
     if (req.method === 'GET' || req.method === 'HEAD') {
         return undefined;
     }
+    const hasParsedBody = Object.prototype.hasOwnProperty.call(req, 'body') && req.body !== undefined;
+    const streamEnded = req.readableEnded === true || req.complete === true;
+    if (hasParsedBody && streamEnded) {
+        const parsed = bufferFromParsedBody(req.body);
+        if (parsed && parsed.length > bodySizeLimitBytes) {
+            throw new BodyLimitError(bodySizeLimitBytes);
+        }
+        return parsed;
+    }
     const chunks = [];
+    let size = 0;
     for await (const chunk of req) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        size += buffer.length;
+        if (size > bodySizeLimitBytes) {
+            throw new BodyLimitError(bodySizeLimitBytes);
+        }
+        chunks.push(buffer);
     }
     if (chunks.length === 0) {
+        if (hasParsedBody) {
+            const parsed = bufferFromParsedBody(req.body);
+            if (parsed && parsed.length > bodySizeLimitBytes) {
+                throw new BodyLimitError(bodySizeLimitBytes);
+            }
+            return parsed;
+        }
         return undefined;
     }
     return Buffer.concat(chunks);
@@ -333,6 +406,7 @@ async function executeTypedRoute(router, options) {
             headers: options.req.headers,
             originalUrl: options.req.originalUrl,
             url: options.req.url,
+            cookies: createReadonlyCookieStore(typeof options.req.headers?.cookie === 'string' ? options.req.headers.cookie : null),
         },
         ctx: options.context,
         env: options.env,
@@ -340,8 +414,8 @@ async function executeTypedRoute(router, options) {
     });
     return {
         kind: 'handled',
-        status: 200,
-        payload: result.serializedData,
+        status: isWebResponse(result.data) ? result.data.status : 200,
+        payload: isWebResponse(result.data) ? result.data : result.serializedData,
     };
 }
 function resolveLegacyApiRoutePath(cwd, requestPath) {
@@ -419,19 +493,29 @@ async function runLegacyApiRoute(options) {
         return;
     }
     if (typeof methodHandler === 'function') {
-        const requestBody = await readRouteRequestBody(req);
-        const request = createRouteRequest(req, requestBody);
-        const result = await methodHandler(request, { params });
-        if (result instanceof Response) {
-            await sendFetchResponse(res, result);
+        try {
+            const requestBody = await readRouteRequestBody(req);
+            const request = createRouteRequest(req, requestBody);
+            const result = await methodHandler(request, { params });
+            if (result instanceof Response) {
+                res.req = res.req || req;
+                await sendFetchResponse(res, result);
+                return;
+            }
+            if (result !== undefined) {
+                res.status(200).json(result);
+                return;
+            }
+            res.status(204).end();
             return;
         }
-        if (result !== undefined) {
-            res.status(200).json(result);
-            return;
+        catch (error) {
+            if (error instanceof BodyLimitError) {
+                res.status(error.status).json({ error: error.message });
+                return;
+            }
+            throw error;
         }
-        res.status(204).end();
-        return;
     }
     if (isEdgeRuntime(runtime) && typeof apiModule.default === 'function') {
         res.status(500).json({
@@ -493,6 +577,11 @@ async function runTypedApiRoute(options) {
         }
         if (routeResult.kind === 'method-not-allowed') {
             res.status(routeResult.status).json({ error: routeResult.error });
+            return true;
+        }
+        if (isWebResponse(routeResult.payload)) {
+            res.req = res.req || req;
+            await sendFetchResponse(res, routeResult.payload);
             return true;
         }
         res.status(routeResult.status).json(routeResult.payload);

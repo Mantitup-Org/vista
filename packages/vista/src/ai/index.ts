@@ -4,6 +4,7 @@ export * from './agent';
 export * from './memory';
 export * from './stream';
 export * from './rag';
+export * from './embeddings';
 export * from './observability';
 export * from './providers';
 export * from './react';

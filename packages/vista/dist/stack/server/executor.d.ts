@@ -12,6 +12,10 @@ export declare class StackValidationError extends Error {
     cause: unknown;
     constructor(message: string, cause?: unknown);
 }
+export declare class StackOutputValidationError extends StackValidationError {
+    status: number;
+    constructor(message: string, cause?: unknown);
+}
 export declare function createResponseToolkit(mode?: StackSerializationMode): StackResponseToolkit;
 export declare function runMiddlewareChain<TCtx, TEnv>(middlewares: MiddlewareFunction<any, any, TEnv>[], context: TCtx, env: TEnv, req: StackRequestLike, c: StackResponseToolkit): Promise<TCtx>;
 export interface ExecuteOperationOptions<TCtx, TEnv> extends StackExecutionContext<TCtx, TEnv> {

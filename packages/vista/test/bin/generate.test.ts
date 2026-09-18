@@ -81,3 +81,34 @@ test('router and procedure generators create expected templates safely', async (
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('auth generator scaffolds config and catch-all route', async () => {
+  const cwd = makeTempWorkspace();
+  const logs: string[] = [];
+
+  try {
+    const exitCode = await runGenerateCommand(['auth'], {
+      cwd,
+      log: (message) => logs.push(message),
+    });
+    assert.equal(exitCode, 0);
+
+    const configPath = path.join(cwd, 'auth.ts');
+    const routePath = path.join(cwd, 'app', 'api', 'auth', '[...vista]', 'route.ts');
+    assert.equal(fs.existsSync(configPath), true);
+    assert.equal(fs.existsSync(routePath), true);
+
+    const configSource = fs.readFileSync(configPath, 'utf8');
+    assert.match(configSource, /from 'vista\/auth'/);
+    assert.match(configSource, /VistaAuth\(/);
+
+    const routeSource = fs.readFileSync(routePath, 'utf8');
+    assert.match(routeSource, /export const \{ GET, POST \} = handlers/);
+
+    const secondCode = await runGenerateCommand(['auth'], { cwd });
+    assert.equal(secondCode, 0);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), configSource);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

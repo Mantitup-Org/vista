@@ -182,10 +182,103 @@ fn is_reserved_internal_route(relative_path: &str) -> bool {
         .any(|segment| segment == "[not-found]")
 }
 
+/// Top-level directories that never contain app `'use client'` modules.
+/// Mirrors `PROJECT_CLIENT_SCAN_SKIP` in packages/vista/src/build/rsc/client-manifest.ts.
+const PROJECT_CLIENT_SCAN_SKIP: &[&str] = &[
+    "node_modules",
+    ".vista",
+    ".flash",
+    "dist",
+    "public",
+    "coverage",
+    "build",
+    "out",
+];
+
+/// A project-root directory that may contain `'use client'` modules.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientScanRoot {
+    pub dir: String,
+    pub prefix: String,
+}
+
+fn should_skip_scan_dir(name: &str) -> bool {
+    name.starts_with('.') || name == "node_modules"
+}
+
+pub(crate) fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => {
+            let normalize = |p: &Path| {
+                p.to_string_lossy()
+                    .replace('\\', "/")
+                    .trim_end_matches('/')
+                    .to_lowercase()
+            };
+            normalize(left) == normalize(right)
+        }
+    }
+}
+
+pub(crate) fn is_same_or_inside(path: &Path, ancestor: &Path) -> bool {
+    if same_path(path, ancestor) {
+        return true;
+    }
+    match (fs::canonicalize(path), fs::canonicalize(ancestor)) {
+        (Ok(resolved), Ok(root)) => resolved.starts_with(&root),
+        _ => {
+            let normalize = |p: &Path| {
+                p.to_string_lossy()
+                    .replace('\\', "/")
+                    .trim_end_matches('/')
+                    .to_lowercase()
+            };
+            let child = normalize(path);
+            let parent = normalize(ancestor);
+            child == parent || child.starts_with(&format!("{parent}/"))
+        }
+    }
+}
+
+/// Top-level app directories that may contain `'use client'` modules.
+/// Discovery is directory membership, not the import graph, so `utils/`,
+/// `lib/`, and `src/` have to be scanned explicitly or they never enter
+/// the React Client Manifest.
+pub fn discover_project_client_roots(cwd: &str) -> Vec<ClientScanRoot> {
+    let cwd_path = Path::new(cwd);
+    let entries = match fs::read_dir(cwd_path) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut roots = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || PROJECT_CLIENT_SCAN_SKIP.contains(&name.as_str()) {
+            continue;
+        }
+        roots.push(ClientScanRoot {
+            dir: path.to_string_lossy().to_string(),
+            prefix: format!("{}/", name.replace('\\', "/")),
+        });
+    }
+    roots
+}
+
 /// Scan a single file
-fn scan_file(path: &Path, app_dir: &Path) -> Option<ScannedComponent> {
+fn scan_file(path: &Path, scan_root: &Path, path_prefix: &str) -> Option<ScannedComponent> {
     let source = fs::read_to_string(path).ok()?;
-    let relative_path = path.strip_prefix(app_dir).ok()?;
+    let relative_base = path.strip_prefix(scan_root).ok()?;
+    let relative_base = relative_base.to_string_lossy().replace('\\', "/");
+    let relative_path = format!("{path_prefix}{relative_base}");
     
     let file_stem = path.file_stem()?.to_str()?;
     let component_type = ComponentType::from_filename(file_stem);
@@ -206,7 +299,7 @@ fn scan_file(path: &Path, app_dir: &Path) -> Option<ScannedComponent> {
     
     Some(ScannedComponent {
         absolute_path: path.to_string_lossy().to_string(),
-        relative_path: relative_path.to_string_lossy().to_string().replace('\\', "/"),
+        relative_path,
         is_client,
         directive_line,
         component_type,
@@ -220,10 +313,19 @@ fn scan_file(path: &Path, app_dir: &Path) -> Option<ScannedComponent> {
 /// Scan directory recursively
 fn scan_directory_recursive(
     dir: &Path,
-    app_dir: &Path,
+    scan_root: &Path,
+    path_prefix: &str,
     components: &mut Vec<ScannedComponent>,
     errors: &mut Vec<ServerComponentError>,
+    collect_server_errors: bool,
+    skip_inside: Option<&Path>,
 ) {
+    if let Some(skip) = skip_inside {
+        if is_same_or_inside(dir, skip) {
+            return;
+        }
+    }
+
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -234,20 +336,33 @@ fn scan_directory_recursive(
         let file_name = entry.file_name().to_string_lossy().to_string();
         
         if path.is_dir() {
-            // Skip hidden directories and node_modules
-            if !file_name.starts_with('.') && file_name != "node_modules" {
-                scan_directory_recursive(&path, app_dir, components, errors);
+            if !should_skip_scan_dir(&file_name) {
+                scan_directory_recursive(
+                    &path,
+                    scan_root,
+                    path_prefix,
+                    components,
+                    errors,
+                    collect_server_errors,
+                    skip_inside,
+                );
             }
         } else if path.is_file() {
-            // Only process TypeScript/JavaScript files
+            if let Some(skip) = skip_inside {
+                if is_same_or_inside(&path, skip) {
+                    continue;
+                }
+            }
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if !["ts", "tsx", "js", "jsx"].contains(&ext) {
                 continue;
             }
             
-            if let Some(component) = scan_file(&path, app_dir) {
-                // Check for server component errors
-                if !component.is_client && !component.client_hooks_used.is_empty() {
+            if let Some(component) = scan_file(&path, scan_root, path_prefix) {
+                if collect_server_errors
+                    && !component.is_client
+                    && !component.client_hooks_used.is_empty()
+                {
                     errors.push(ServerComponentError {
                         file: component.relative_path.clone(),
                         message: format!(
@@ -264,6 +379,54 @@ fn scan_directory_recursive(
     }
 }
 
+/// Scan a directory for `'use client'` modules, prefixing relative paths.
+pub fn scan_client_components_in_dir(dir: &str, path_prefix: &str) -> Vec<ScannedComponent> {
+    scan_client_components_in_dir_skipping(dir, path_prefix, Path::new(""))
+}
+
+fn scan_client_components_in_dir_skipping(
+    dir: &str,
+    path_prefix: &str,
+    skip_inside: &Path,
+) -> Vec<ScannedComponent> {
+    let scan_root = Path::new(dir);
+    let mut components = Vec::new();
+    let mut errors = Vec::new();
+    let skip = if skip_inside.as_os_str().is_empty() {
+        None
+    } else {
+        Some(skip_inside)
+    };
+    scan_directory_recursive(
+        scan_root,
+        scan_root,
+        path_prefix,
+        &mut components,
+        &mut errors,
+        false,
+        skip,
+    );
+    components.into_iter().filter(|c| c.is_client).collect()
+}
+
+/// Scan project-level extra roots (siblings of `app/`) for client components.
+pub fn scan_project_client_components(cwd: &str, app_dir: &str) -> Vec<ScannedComponent> {
+    let app_path = Path::new(app_dir);
+    let mut client_components = Vec::new();
+    for root in discover_project_client_roots(cwd) {
+        let root_path = Path::new(&root.dir);
+        if same_path(root_path, app_path) {
+            continue;
+        }
+        client_components.extend(scan_client_components_in_dir_skipping(
+            &root.dir,
+            &root.prefix,
+            app_path,
+        ));
+    }
+    client_components
+}
+
 /// Scan the app directory and classify all components
 pub fn scan_app_directory(app_dir: &str) -> ScanResult {
     let start = std::time::Instant::now();
@@ -272,7 +435,7 @@ pub fn scan_app_directory(app_dir: &str) -> ScanResult {
     let mut components = Vec::new();
     let mut errors = Vec::new();
     
-    scan_directory_recursive(app_path, app_path, &mut components, &mut errors);
+    scan_directory_recursive(app_path, app_path, "", &mut components, &mut errors, true, None);
     
     let total_files = components.len();
     
@@ -364,5 +527,122 @@ mod tests {
     fn test_reserved_internal_route_detection() {
         assert!(is_reserved_internal_route("docs/[not-found]/page.tsx"));
         assert!(!is_reserved_internal_route("docs/[slug]/page.tsx"));
+    }
+
+    #[test]
+    fn test_discover_project_client_roots_skips_build_artifacts() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-client-roots-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("app")).unwrap();
+        fs::create_dir_all(root.join("utils")).unwrap();
+        fs::create_dir_all(root.join("node_modules")).unwrap();
+        fs::create_dir_all(root.join("dist")).unwrap();
+        fs::create_dir_all(root.join(".vista")).unwrap();
+
+        let names: Vec<String> = discover_project_client_roots(root.to_str().unwrap())
+            .into_iter()
+            .map(|entry| entry.prefix)
+            .collect();
+
+        fs::remove_dir_all(&root).ok();
+
+        assert!(names.contains(&"app/".to_string()));
+        assert!(names.contains(&"utils/".to_string()));
+        assert!(!names.iter().any(|name| name.starts_with("node_modules")));
+        assert!(!names.iter().any(|name| name.starts_with("dist")));
+        assert!(!names.iter().any(|name| name.starts_with(".vista")));
+    }
+
+    #[test]
+    fn test_scan_project_client_components_outside_app() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-client-scan-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app_dir = root.join("app");
+        fs::create_dir_all(app_dir.join("docs")).unwrap();
+        fs::create_dir_all(root.join("utils")).unwrap();
+        fs::write(
+            app_dir.join("page.tsx"),
+            "export default function Page() { return null; }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("utils").join("theme-toggle.tsx"),
+            "'use client';\nexport function ThemeToggle() { return null; }\n",
+        )
+        .unwrap();
+
+        let extra = scan_project_client_components(
+            root.to_str().unwrap(),
+            app_dir.to_str().unwrap(),
+        );
+        let app_scan = scan_app_directory(app_dir.to_str().unwrap());
+        fs::remove_dir_all(&root).ok();
+
+        assert!(
+            extra.iter().any(|c| c.relative_path.contains("theme-toggle")),
+            "expected utils/theme-toggle in extra client scan, got {:?}",
+            extra.iter().map(|c| c.relative_path.clone()).collect::<Vec<_>>()
+        );
+        assert!(
+            !app_scan
+                .client_components
+                .iter()
+                .any(|c| c.relative_path.contains("theme-toggle")),
+            "app scan should stay app-only"
+        );
+    }
+
+    #[test]
+    fn test_src_app_layout_does_not_duplicate_app_client_modules() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-src-app-scan-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app_dir = root.join("src").join("app");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(root.join("src").join("components")).unwrap();
+        fs::write(
+            app_dir.join("button.tsx"),
+            "'use client';\nexport default function Button() { return null; }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("src").join("components").join("toggle.tsx"),
+            "'use client';\nexport function Toggle() { return null; }\n",
+        )
+        .unwrap();
+
+        let extra = scan_project_client_components(
+            root.to_str().unwrap(),
+            app_dir.to_str().unwrap(),
+        );
+        fs::remove_dir_all(&root).ok();
+
+        assert!(
+            extra.iter().any(|c| c.relative_path.contains("toggle")),
+            "expected src/components/toggle in extra scan, got {:?}",
+            extra.iter().map(|c| c.relative_path.clone()).collect::<Vec<_>>()
+        );
+        assert!(
+            !extra.iter().any(|c| c.relative_path.contains("button")),
+            "src/app/button must not be rescanned via the src/ extra root, got {:?}",
+            extra.iter().map(|c| c.relative_path.clone()).collect::<Vec<_>>()
+        );
     }
 }

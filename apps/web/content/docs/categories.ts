@@ -10,7 +10,7 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
   {
     id: 'getting-started',
     title: 'Getting Started',
-    description: 'Install, bootstrap, and build your first production path.',
+    description: 'Install, bootstrap, then pick React-only, fullstack, auth, or AI.',
     order: 2,
   },
   {
@@ -22,7 +22,7 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
   {
     id: 'cli-workflow',
     title: 'CLI Workflow',
-    description: 'Scaffold, generate, and standardize team workflows.',
+    description: 'Scaffold with create-vista-app, then vista g auth, api-init, or agent.',
     order: 4,
   },
   {
@@ -40,7 +40,13 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
   {
     id: 'ai',
     title: 'AI Framework',
-    description: 'Native AI agents, multi-agent workflows, tools, memory, and streaming.',
+    description: 'Agents, Groq/NVIDIA models, streaming, embeddings, and RAG.',
     order: 7,
+  },
+  {
+    id: 'auth',
+    title: 'Authentication',
+    description: 'vista g auth, credentials POST, OAuth callbackUrl, fail-closed middleware.',
+    order: 8,
   },
 ];

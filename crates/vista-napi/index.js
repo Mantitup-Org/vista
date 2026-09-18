@@ -310,7 +310,7 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { getFrameworkIdentity, verifyIntegrity, isClientComponent, analyzeClientDirective, getRouteTree, version, hasMetadataExport, hasGenerateMetadata, resolveVistaSourceImport, analyzeMetadata, rscScanApp, rscGenerateClientManifest, rscGenerateServerManifest, rscGenerateMountId, rscResetMountCounter, rscPrerenderComponent, rscPrerenderAllComponents } = nativeBinding
+const { getFrameworkIdentity, verifyIntegrity, isClientComponent, analyzeClientDirective, getRouteTree, version, hasMetadataExport, hasGenerateMetadata, resolveVistaSourceImport, analyzeMetadata, rscScanApp, rscDiscoverProjectClientRoots, rscGenerateClientManifest, rscGenerateClientManifestForProject, rscGenerateServerManifest, rscGenerateMountId, rscResetMountCounter, rscPrerenderComponent, rscPrerenderAllComponents, rscPrerenderAllComponentsForProject } = nativeBinding
 
 module.exports.getFrameworkIdentity = getFrameworkIdentity
 module.exports.verifyIntegrity = verifyIntegrity
@@ -323,9 +323,12 @@ module.exports.hasGenerateMetadata = hasGenerateMetadata
 module.exports.resolveVistaSourceImport = resolveVistaSourceImport
 module.exports.analyzeMetadata = analyzeMetadata
 module.exports.rscScanApp = rscScanApp
+module.exports.rscDiscoverProjectClientRoots = rscDiscoverProjectClientRoots
 module.exports.rscGenerateClientManifest = rscGenerateClientManifest
+module.exports.rscGenerateClientManifestForProject = rscGenerateClientManifestForProject
 module.exports.rscGenerateServerManifest = rscGenerateServerManifest
 module.exports.rscGenerateMountId = rscGenerateMountId
 module.exports.rscResetMountCounter = rscResetMountCounter
 module.exports.rscPrerenderComponent = rscPrerenderComponent
 module.exports.rscPrerenderAllComponents = rscPrerenderAllComponents
+module.exports.rscPrerenderAllComponentsForProject = rscPrerenderAllComponentsForProject

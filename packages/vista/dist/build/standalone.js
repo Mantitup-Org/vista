@@ -317,6 +317,7 @@ function generateStandaloneOutput(options) {
     };
     writeJsonFile(runtimeManifestPath, runtimeManifest);
     writeJsonFile(fileTracePath, fileTrace);
+    (0, manifest_1.writeVistaTrace)(vistaDir, fileTrace);
     (0, manifest_1.generateRequiredServerFilesManifest)(cwd, vistaDir, [
         `${path_1.default.basename(vistaDir)}/server/runtime-manifest.json`,
         `${path_1.default.basename(vistaDir)}/server/file-trace.json`,
@@ -327,6 +328,8 @@ function generateStandaloneOutput(options) {
         runtimeManifest: 'server/runtime-manifest.json',
         fileTrace: 'server/file-trace.json',
         standaloneServer: 'standalone/server.js',
+        types: 'types/routes.d.ts',
+        trace: 'trace',
     });
     if (debug) {
         console.log(`[vista:build] Standalone output ready (${snapshotTrace.copiedFiles.length} files, ${snapshotTrace.copiedDirectories.length} directories)`);

@@ -5,6 +5,7 @@ exports.isOperation = isOperation;
 function cloneState(state) {
     return {
         schema: state?.schema,
+        outputSchema: state?.outputSchema,
         middlewares: [...(state?.middlewares ?? [])],
         outputFormat: state?.outputFormat ?? 'json',
     };
@@ -13,6 +14,7 @@ function createOperation(type, state, handler) {
     return {
         type,
         schema: state.schema,
+        outputSchema: state.outputSchema,
         handler,
         middlewares: [...state.middlewares],
         outputFormat: state.outputFormat,
@@ -31,6 +33,12 @@ function createProcedureBuilder(state) {
             return createProcedureBuilder({
                 ...currentState,
                 schema,
+            });
+        },
+        output(schema) {
+            return createProcedureBuilder({
+                ...currentState,
+                outputSchema: schema,
             });
         },
         query(handler) {

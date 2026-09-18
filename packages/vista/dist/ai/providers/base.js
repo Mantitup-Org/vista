@@ -28,6 +28,9 @@ function parseModelIdentifier(model) {
     if (lower.startsWith('mock')) {
         return { provider: 'mock', modelName: trimmed };
     }
+    if (lower.startsWith('llama-') || lower.startsWith('mixtral-') || lower.startsWith('gemma2-')) {
+        return { provider: 'groq', modelName: trimmed };
+    }
     // Default fallback
     return { provider: 'openai', modelName: trimmed };
 }
@@ -56,11 +59,27 @@ function resolveModel(model, options = {}) {
                 baseURL: options.baseURL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
                 apiKey: options.apiKey || 'ollama',
             });
+        case 'nvidia':
+        case 'nim':
+            return (0, openai_1.createOpenAIModel)({
+                ...modelOptions,
+                baseURL: options.baseURL ||
+                    process.env.NVIDIA_BASE_URL ||
+                    process.env.NIM_BASE_URL ||
+                    'https://integrate.api.nvidia.com/v1',
+                apiKey: options.apiKey || process.env.NVIDIA_API_KEY || process.env.NIM_API_KEY || '',
+            });
+        case 'groq':
+            return (0, openai_1.createOpenAIModel)({
+                ...modelOptions,
+                baseURL: options.baseURL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+                apiKey: options.apiKey || process.env.GROQ_API_KEY || '',
+            });
         case 'mock':
             return (0, mock_1.createMockModel)({
                 modelName,
             });
         default:
-            throw new Error(`Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, mock.`);
+            throw new Error(`Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, nvidia, groq, mock.`);
     }
 }

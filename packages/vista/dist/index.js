@@ -20,7 +20,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.NextResponse = exports.callServer = exports.useRSCRouter = exports.RSCRouterContext = exports.RSCRouter = exports.Client = exports.initializeHydration = exports.hydrateClientComponents = exports.generateMetadataHead = exports.Head = exports.Script = exports.dynamic = exports.useSelectedLayoutSegments = exports.useSelectedLayoutSegment = exports.useParams = exports.useSearchParams = exports.usePathname = exports.useRouter = void 0;
 __exportStar(require("./router"), exports);
 __exportStar(require("./components"), exports);
-__exportStar(require("./auth"), exports);
 __exportStar(require("./types"), exports);
 __exportStar(require("./dev-error"), exports);
 // Client-side features

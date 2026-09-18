@@ -75,17 +75,13 @@ pub fn prerender_client_component(file_path: &str) -> Option<PrerenderedComponen
         return None;
     }
     
-    let component_id = Path::new(file_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
+    let component_id = prerender_component_id(file_path, None);
     
     // Extract the return statement's JSX
     let (root_styles, placeholder_html, height, width) = extract_jsx_structure(&content);
     
     Some(PrerenderedComponent {
-        component_id: format!("client:{}", component_id),
+        component_id,
         root_tag: "div".to_string(),
         root_styles,
         placeholder_html,
@@ -233,19 +229,80 @@ fn generate_placeholder_html(
     html
 }
 
+fn prerender_component_id(file_path: &str, id_root: Option<&Path>) -> String {
+    let path = Path::new(file_path);
+    let relative = id_root
+        .and_then(|root| path.strip_prefix(root).ok())
+        .map(|value| value.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| path.to_string_lossy().replace('\\', "/"));
+    let normalized = relative
+        .trim_end_matches(".tsx")
+        .trim_end_matches(".ts")
+        .trim_end_matches(".jsx")
+        .trim_end_matches(".js")
+        .trim_start_matches("./");
+    format!("client:{normalized}")
+}
+
+fn prerender_client_component_from(
+    file_path: &str,
+    id_root: Option<&Path>,
+) -> Option<PrerenderedComponent> {
+    let mut prerendered = prerender_client_component(file_path)?;
+    prerendered.component_id = prerender_component_id(file_path, id_root);
+    Some(prerendered)
+}
+
 /// Batch pre-render all client components in a directory
 pub fn prerender_all_client_components(app_dir: &str) -> HashMap<String, PrerenderedComponent> {
+    let app_path = Path::new(app_dir);
+    let cwd = app_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(app_path);
+    prerender_all_client_components_for_project(&cwd.to_string_lossy(), app_dir)
+}
+
+/// Batch pre-render client components from `app/` plus sibling project roots.
+pub fn prerender_all_client_components_for_project(
+    cwd: &str,
+    app_dir: &str,
+) -> HashMap<String, PrerenderedComponent> {
     let mut components = HashMap::new();
-    
-    fn scan_dir(dir: &Path, components: &mut HashMap<String, PrerenderedComponent>) {
+    let cwd_path = Path::new(cwd);
+    let app_path = Path::new(app_dir);
+
+    fn scan_dir(
+        dir: &Path,
+        cwd_path: &Path,
+        skip_inside: Option<&Path>,
+        components: &mut HashMap<String, PrerenderedComponent>,
+    ) {
+        if let Some(skip) = skip_inside {
+            if super::scanner::is_same_or_inside(dir, skip) {
+                return;
+            }
+        }
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
                 if path.is_dir() {
-                    scan_dir(&path, components);
+                    if name.starts_with('.') || name == "node_modules" {
+                        continue;
+                    }
+                    scan_dir(&path, cwd_path, skip_inside, components);
                 } else if let Some(ext) = path.extension() {
                     if ext == "tsx" || ext == "jsx" {
-                        if let Some(prerendered) = prerender_client_component(path.to_str().unwrap_or("")) {
+                        if let Some(skip) = skip_inside {
+                            if super::scanner::is_same_or_inside(&path, skip) {
+                                continue;
+                            }
+                        }
+                        if let Some(prerendered) = prerender_client_component_from(
+                            path.to_str().unwrap_or(""),
+                            Some(cwd_path),
+                        ) {
                             components.insert(prerendered.component_id.clone(), prerendered);
                         }
                     }
@@ -253,8 +310,15 @@ pub fn prerender_all_client_components(app_dir: &str) -> HashMap<String, Prerend
             }
         }
     }
-    
-    scan_dir(Path::new(app_dir), &mut components);
+
+    scan_dir(app_path, cwd_path, None, &mut components);
+    for root in super::scanner::discover_project_client_roots(cwd) {
+        let root_path = Path::new(&root.dir);
+        if super::scanner::same_path(root_path, app_path) {
+            continue;
+        }
+        scan_dir(root_path, cwd_path, Some(app_path), &mut components);
+    }
     components
 }
 
@@ -273,5 +337,40 @@ mod tests {
         let parsed = parse_style_object(style);
         assert_eq!(parsed.padding, Some("20px".to_string()));
         assert_eq!(parsed.background_color, Some("#1a1a2e".to_string()));
+    }
+
+    #[test]
+    fn test_prerender_ids_are_unique_across_roots() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-prerender-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app_dir = root.join("app");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::create_dir_all(root.join("utils")).unwrap();
+        std::fs::write(
+            app_dir.join("Button.tsx"),
+            "'use client'\nexport default function Button() { return <div>app</div>; }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("utils").join("Button.tsx"),
+            "'use client'\nexport default function Button() { return <div>utils</div>; }\n",
+        )
+        .unwrap();
+
+        let rendered = prerender_all_client_components_for_project(
+            root.to_str().unwrap(),
+            app_dir.to_str().unwrap(),
+        );
+        std::fs::remove_dir_all(&root).ok();
+
+        assert_eq!(rendered.len(), 2, "expected both Button.tsx files, got {:?}", rendered.keys().collect::<Vec<_>>());
+        assert!(rendered.keys().any(|id| id.contains("app") && id.contains("Button")));
+        assert!(rendered.keys().any(|id| id.contains("utils") && id.contains("Button")));
     }
 }

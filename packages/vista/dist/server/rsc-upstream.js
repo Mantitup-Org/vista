@@ -472,6 +472,10 @@ async function parseMultipartFormData(req, rawBody) {
 function getSearchParamsFromRequest(req) {
     return Object.fromEntries(new URLSearchParams(req.query).entries());
 }
+function loadFlightManifest(flightManifestPath) {
+    const raw = JSON.parse(fs_1.default.readFileSync(flightManifestPath, 'utf-8'));
+    return (0, react_client_reference_manifest_1.createGuardedReactClientManifest)((0, react_client_reference_manifest_1.normalizeReactClientReferenceManifest)(raw));
+}
 function startUpstream() {
     const cwd = path_1.default.resolve(process.env.VISTA_ARTIFACT_ROOT || process.cwd());
     const runtimeRoot = (0, runtime_artifacts_1.resolveRuntimeProjectRoot)(cwd, process.env.VISTA_RUNTIME_ROOT);
@@ -501,7 +505,7 @@ function startUpstream() {
         }
     }
     let serverManifest = JSON.parse(fs_1.default.readFileSync(serverManifestPath, 'utf-8'));
-    let flightManifest = (0, react_client_reference_manifest_1.normalizeReactClientReferenceManifest)(JSON.parse(fs_1.default.readFileSync(flightManifestPath, 'utf-8')));
+    let flightManifest = loadFlightManifest(flightManifestPath);
     const app = (0, express_1.default)();
     const pipeFlightModel = async (res, model, status) => {
         let capturedError = null;
@@ -669,7 +673,7 @@ function startUpstream() {
                 if (isDev) {
                     try {
                         serverManifest = JSON.parse(fs_1.default.readFileSync(serverManifestPath, 'utf-8'));
-                        flightManifest = (0, react_client_reference_manifest_1.normalizeReactClientReferenceManifest)(JSON.parse(fs_1.default.readFileSync(flightManifestPath, 'utf-8')));
+                        flightManifest = loadFlightManifest(flightManifestPath);
                     }
                     catch {
                         // Manifests may be mid-write; use whatever we have cached.
@@ -803,7 +807,7 @@ function startUpstream() {
                 if (isDev) {
                     try {
                         serverManifest = JSON.parse(fs_1.default.readFileSync(serverManifestPath, 'utf-8'));
-                        flightManifest = JSON.parse(fs_1.default.readFileSync(flightManifestPath, 'utf-8'));
+                        flightManifest = loadFlightManifest(flightManifestPath);
                     }
                     catch {
                         // Keep cached manifests if they're being rewritten.

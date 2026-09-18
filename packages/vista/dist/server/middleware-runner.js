@@ -26,6 +26,8 @@ exports.runMiddleware = runMiddleware;
 exports.applyMiddlewareResult = applyMiddlewareResult;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const cookie_parse_1 = require("./cookie-parse");
+const middleware_security_1 = require("./middleware-security");
 // ---------------------------------------------------------------------------
 // Discovery Caches
 // ---------------------------------------------------------------------------
@@ -168,20 +170,52 @@ function patternToRegExp(pattern) {
         .replace(/\*/g, '(.*)'); // bare *
     return new RegExp(`^${re}/?$`);
 }
-function shouldRunMiddleware(middlewareModule, pathname) {
+function shouldRunMiddleware(middlewareModule, pathname, request) {
     const config = middlewareModule.config;
     if (!config?.matcher)
         return true;
-    const matchers = Array.isArray(config.matcher) ? config.matcher : [config.matcher];
-    return matchers.some((pattern) => {
+    const matchers = Array.isArray(config.matcher)
+        ? config.matcher
+        : [config.matcher];
+    return matchers.some((matcher) => {
         try {
-            const re = patternToRegExp(pattern);
-            return re.test(pathname);
+            const source = typeof matcher === 'string' ? matcher : matcher.source;
+            const re = patternToRegExp(source);
+            if (!re.test(pathname)) {
+                return false;
+            }
+            if (typeof matcher === 'string' || !request) {
+                return true;
+            }
+            if (matcher.has && !matcher.has.every((rule) => matchRequestRule(request, rule))) {
+                return false;
+            }
+            if (matcher.missing && !matcher.missing.every((rule) => !matchRequestRule(request, rule))) {
+                return false;
+            }
+            return true;
         }
         catch {
+            // Fail closed: a broken matcher must not skip auth middleware.
             return true;
         }
     });
+}
+function matchRequestRule(request, rule) {
+    let actual;
+    if (rule.type === 'header') {
+        actual = request.headers.get(rule.key) || undefined;
+    }
+    else if (rule.type === 'cookie') {
+        actual = request.cookies.get(rule.key)?.value;
+    }
+    else {
+        actual = request.nextUrl.searchParams.get(rule.key) || undefined;
+    }
+    if (rule.value === undefined) {
+        return Boolean(actual);
+    }
+    return actual === rule.value;
 }
 // ---------------------------------------------------------------------------
 // Build NextRequest-like Object
@@ -216,7 +250,7 @@ function buildNextRequest(req) {
             const [k, ...v] = pair.split('=');
             const name = k?.trim();
             if (name) {
-                rawCookies[name] = decodeURIComponent(v.join('=').trim());
+                rawCookies[name] = (0, cookie_parse_1.safeDecodeURIComponent)(v.join('=').trim());
             }
         }
     }
@@ -316,8 +350,18 @@ async function runMiddleware(req, cwd, isDev = false) {
     const activeChain = [];
     for (const entry of entries) {
         const mod = loadModule(entry.filePath, isDev);
-        if (!mod)
+        if (!mod) {
+            // Dedicated middleware files must fail closed. Skipping them would
+            // silently bypass auth. Route files may fail for unrelated reasons.
+            if (entry.source !== 'route') {
+                return {
+                    kind: 'short-circuit',
+                    status: 500,
+                    body: 'Middleware Error',
+                };
+            }
             continue;
+        }
         // In a route file (e.g. page.tsx, route.ts), we ONLY accept an explicit `export const middleware`
         // or `export function middleware` (not `export default`, which is the page component)
         let fn;
@@ -335,16 +379,25 @@ async function runMiddleware(req, cwd, isDev = false) {
                 fn = mod.default;
             }
         }
-        if (!fn)
+        if (!fn) {
+            if (entry.source !== 'route') {
+                return {
+                    kind: 'short-circuit',
+                    status: 500,
+                    body: 'Middleware Error',
+                };
+            }
             continue;
+        }
         // Check optional matcher config
-        if (!shouldRunMiddleware(mod, pathname)) {
+        if (!shouldRunMiddleware(mod, pathname, buildNextRequest(req))) {
             continue;
         }
         activeChain.push({
             filePath: entry.filePath,
             source: entry.source,
             fn,
+            allowedRedirectHosts: mod.config?.allowedRedirectHosts,
         });
     }
     if (activeChain.length === 0) {
@@ -370,16 +423,13 @@ async function runMiddleware(req, cwd, isDev = false) {
         const nextFn = async (options) => {
             nextCalled = true;
             if (options?.request?.headers) {
-                nextRequestObj = cloneRequestWithHeaders(requestObj, options.request.headers);
-                // Track modified request headers
-                if (options.request.headers instanceof Headers) {
-                    options.request.headers.forEach((v, k) => modifiedRequestHeaders.set(k.toLowerCase(), v));
-                }
-                else {
-                    for (const [k, v] of Object.entries(options.request.headers)) {
-                        modifiedRequestHeaders.set(k.toLowerCase(), String(v));
-                    }
-                }
+                const sanitized = (0, middleware_security_1.sanitizeRequestHeaderMap)(options.request.headers);
+                const headerRecord = {};
+                sanitized.forEach((value, key) => {
+                    headerRecord[key] = value;
+                    modifiedRequestHeaders.set(key, value);
+                });
+                nextRequestObj = cloneRequestWithHeaders(requestObj, headerRecord);
             }
             return dispatch(index + 1, nextRequestObj);
         };
@@ -416,7 +466,9 @@ async function runMiddleware(req, cwd, isDev = false) {
         }
         catch (err) {
             console.error(`[vista:middleware] Error in middleware at ${currentItem.filePath}:`, err?.message ?? String(err));
-            // On error, let request continue rather than completely hanging
+            if (process.env.NODE_ENV === 'production') {
+                return new Response('Middleware Error', { status: 500 });
+            }
             return dispatch(index + 1, requestObj);
         }
     }
@@ -425,12 +477,39 @@ async function runMiddleware(req, cwd, isDev = false) {
     // Collect all response headers
     if (finalResponse.headers && typeof finalResponse.headers.forEach === 'function') {
         finalResponse.headers.forEach((val, key) => {
+            const lower = key.toLowerCase();
+            if (lower.startsWith('x-middleware-request-')) {
+                const name = lower.slice('x-middleware-request-'.length);
+                if (!name || name === 'host' || name === 'cookie' || name.startsWith('x-forwarded-') || name.startsWith('x-middleware-')) {
+                    return;
+                }
+                modifiedRequestHeaders.set(name, val);
+                return;
+            }
             aggregatedResponseHeaders.set(key, val);
         });
     }
+    if (process.env.NODE_ENV === 'production') {
+        (0, middleware_security_1.securityHeaders)().forEach((value, key) => {
+            if (!aggregatedResponseHeaders.has(key) && !aggregatedResponseHeaders.has(key.toLowerCase())) {
+                aggregatedResponseHeaders.set(key, value);
+            }
+        });
+    }
+    const allowedRedirectHosts = activeChain.flatMap((item) => item.allowedRedirectHosts || []);
+    const requestUrl = currentRequest.url;
     // 5a. Redirect
     const location = finalResponse.headers?.get?.('Location') || finalResponse.headers?.get?.('location');
     if (location) {
+        if (!(0, middleware_security_1.isSafeRedirectLocation)(location, requestUrl, allowedRedirectHosts)) {
+            return {
+                kind: 'short-circuit',
+                status: 400,
+                responseHeaders: aggregatedResponseHeaders,
+                requestHeaders: modifiedRequestHeaders,
+                body: 'Invalid redirect',
+            };
+        }
         return {
             kind: 'redirect',
             status: finalResponse.status || 307,
@@ -442,6 +521,15 @@ async function runMiddleware(req, cwd, isDev = false) {
     // 5b. Rewrite
     const rewrite = finalResponse.headers?.get?.('x-middleware-rewrite');
     if (rewrite) {
+        if (!(0, middleware_security_1.isSafeRewriteLocation)(rewrite)) {
+            return {
+                kind: 'short-circuit',
+                status: 400,
+                responseHeaders: aggregatedResponseHeaders,
+                requestHeaders: modifiedRequestHeaders,
+                body: 'Invalid rewrite',
+            };
+        }
         return {
             kind: 'rewrite',
             location: rewrite,
@@ -483,8 +571,9 @@ async function runMiddleware(req, cwd, isDev = false) {
 function applyMiddlewareResult(result, req, res) {
     // 1. Forward any modified request headers to req.headers
     if (result.requestHeaders && req.headers) {
-        result.requestHeaders.forEach((value, key) => {
-            req.headers[key.toLowerCase()] = value;
+        const sanitized = (0, middleware_security_1.sanitizeRequestHeaderMap)(result.requestHeaders);
+        sanitized.forEach((value, key) => {
+            req.headers[key] = value;
         });
     }
     // 2. Forward any response headers the middleware set
@@ -492,7 +581,10 @@ function applyMiddlewareResult(result, req, res) {
         result.responseHeaders.forEach((value, key) => {
             const lower = key.toLowerCase();
             // Skip internal transport headers
-            if (lower === 'x-middleware-next' || lower === 'x-middleware-rewrite' || lower === 'location') {
+            if (lower === 'x-middleware-next' ||
+                lower === 'x-middleware-rewrite' ||
+                lower === 'location' ||
+                lower.startsWith('x-middleware-request-')) {
                 return;
             }
             res.setHeader(key, value);

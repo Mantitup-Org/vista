@@ -37,6 +37,15 @@ export function createEnv() {
 }
 ```
 
+Procedure `req.cookies` is a read-only cookie store. Procedures may use `.output(schema)` to validate handler results, and Server Components can call the same router without HTTP:
+
+```ts
+const caller = v.createCaller(router, { ctx, env });
+const health = await caller.health();
+```
+
+Middleware that returns a `Response` without calling `next()` short-circuits the procedure.
+
 ## Error Mapping
 
 - Validation and method errors map to 4xx responses with message.

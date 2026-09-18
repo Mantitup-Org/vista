@@ -7,9 +7,9 @@ export const heroContent = {
         suffix: "."
     },
     description: {
-        prefix: "Built for the",
-        highlight: "creators of tomorrow",
-        suffix: ", Vista provides a modern, optimized foundation for your ideas. Perfect for learning, experimenting, and shipping."
+        prefix: "One React app for",
+        highlight: "UI, APIs, auth, and AI",
+        suffix: ". Start with pages. Add route handlers, vista g auth, or vista g agent when you need them."
     },
     cli: {
         command: CREATE_VISTA_APP_COMMAND

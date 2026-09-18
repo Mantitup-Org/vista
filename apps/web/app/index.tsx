@@ -15,7 +15,7 @@ export default function Index() {
                     The React Framework for <span className="text-foreground">Visionaries</span>.
                 </h1>
                 <p className="mx-auto max-w-2xl text-lg text-foreground/72 md:text-xl">
-                    Built for the <span className="text-primary">creators of tomorrow</span>, Vista provides a modern, optimized foundation for your ideas. Perfect for learning, experimenting, and shipping.
+                    One React app for <span className="text-primary">UI, APIs, auth, and AI</span>. Start with pages. Add route handlers, <code>vista g auth</code>, or <code>vista g agent</code> when you need them.
                 </p>
 
                 {/* CLI Command Copy - Trigger HMR */}

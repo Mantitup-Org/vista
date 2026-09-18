@@ -51,6 +51,27 @@ export class StackValidationError extends Error {
   }
 }
 
+export class StackOutputValidationError extends StackValidationError {
+  status = 500;
+
+  constructor(message: string, cause?: unknown) {
+    super(message, cause);
+    this.name = 'StackOutputValidationError';
+  }
+}
+
+class StackMiddlewareResponse {
+  readonly response: Response;
+
+  constructor(response: Response) {
+    this.response = response;
+  }
+}
+
+function isWebResponse(value: unknown): value is Response {
+  return typeof Response !== 'undefined' && value instanceof Response;
+}
+
 export function createResponseToolkit(mode: StackSerializationMode = 'json'): StackResponseToolkit {
   return {
     json<T>(data: T, init?: number | ResponseInit) {
@@ -108,6 +129,10 @@ export async function runMiddlewareChain<TCtx, TEnv>(
       next,
     });
 
+    if (isWebResponse(result) && !nextCalled) {
+      throw new StackMiddlewareResponse(result);
+    }
+
     if (nextCalled) {
       const downstreamContext = await nextContextPromise;
       if (isObjectRecord(result) && isObjectRecord(downstreamContext)) {
@@ -160,6 +185,18 @@ function resolveInput(
   }
 }
 
+function resolveOutput<TOutput>(operation: OperationType<any, TOutput, any, any>, output: TOutput): TOutput {
+  if (!operation.outputSchema || isWebResponse(output)) {
+    return output;
+  }
+
+  try {
+    return operation.outputSchema.parse(output);
+  } catch (error) {
+    throw new StackOutputValidationError('Invalid typed API output', error);
+  }
+}
+
 export interface ExecuteOperationOptions<TCtx, TEnv> extends StackExecutionContext<TCtx, TEnv> {
   middlewares?: MiddlewareFunction<any, any, TEnv>[];
   serialization?: StackSerializationMode;
@@ -169,23 +206,31 @@ export async function executeOperation<TCtx, TInput, TOutput, TEnv>(
   operation: OperationType<TInput, TOutput, TCtx, TEnv>,
   options: ExecuteOperationOptions<TCtx, TEnv>
 ): Promise<TOutput> {
-  const middlewareChain = [...(options.middlewares ?? []), ...operation.middlewares];
-  const finalContext = await runMiddlewareChain(
-    middlewareChain,
-    options.ctx,
-    options.env,
-    options.req,
-    options.c
-  );
-  const input = resolveInput(operation, options.req, options.serialization ?? 'json') as TInput;
+  try {
+    const middlewareChain = [...(options.middlewares ?? []), ...operation.middlewares];
+    const finalContext = await runMiddlewareChain(
+      middlewareChain,
+      options.ctx,
+      options.env,
+      options.req,
+      options.c
+    );
+    const input = resolveInput(operation, options.req, options.serialization ?? 'json') as TInput;
 
-  return operation.handler({
-    ctx: finalContext,
-    input,
-    env: options.env,
-    req: options.req,
-    c: options.c,
-  });
+    const output = await operation.handler({
+      ctx: finalContext,
+      input,
+      env: options.env,
+      req: options.req,
+      c: options.c,
+    });
+    return resolveOutput(operation, output);
+  } catch (error) {
+    if (error instanceof StackMiddlewareResponse) {
+      return error.response as TOutput;
+    }
+    throw error;
+  }
 }
 
 export interface ExecuteRouteOptions<TCtx, TEnv> {
@@ -238,6 +283,15 @@ export async function executeRoute<TProcedures extends ProcedureRecord, TCtx, TE
     middlewares: router.metadata.globalMiddlewares as MiddlewareFunction<any, any, TEnv>[],
     serialization,
   });
+
+  if (isWebResponse(payload)) {
+    return {
+      path: normalizedPath,
+      method: normalizedMethod,
+      data: payload,
+      serializedData: payload,
+    };
+  }
 
   const serializedData = serializeWithMode(payload, serialization);
 

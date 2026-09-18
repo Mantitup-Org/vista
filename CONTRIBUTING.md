@@ -176,6 +176,7 @@ npm --prefix packages/vista run build
 pnpm test:server-runtime
 pnpm test:inline-server-actions
 pnpm test:api-routes
+pnpm test:rsc-ssr-hardening
 pnpm test:rsc-conformance
 pnpm test:vista-output
 ```
@@ -189,6 +190,31 @@ See section 13.4 of `developer.md` for the background.
 If you change file-based API routes (`app/**/route.ts` discovery, matching, or method
 dispatch), `pnpm test:api-routes` is the fast guard - it needs no dev server and no
 Rust toolchain. See section 5.4 of `developer.md` for which file owns what.
+
+If you change the React Client Manifest scan roots, `vista/theme` react-server
+exports, route streaming/`Response` status handling, or `NextResponse.next({ request })`,
+run `pnpm test:rsc-ssr-hardening`.
+
+### If you change middleware or auth
+
+```bash
+pnpm test:middleware
+pnpm test:middleware-security
+pnpm test:auth
+```
+
+### If you change vstack or `.vista` output
+
+```bash
+pnpm test:vstack
+pnpm test:vista-output
+```
+
+### If you change agents or model providers
+
+```bash
+pnpm test:agents
+```
 
 ### If you change Flashpack behavior
 

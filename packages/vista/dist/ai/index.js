@@ -20,6 +20,7 @@ __exportStar(require("./agent"), exports);
 __exportStar(require("./memory"), exports);
 __exportStar(require("./stream"), exports);
 __exportStar(require("./rag"), exports);
+__exportStar(require("./embeddings"), exports);
 __exportStar(require("./observability"), exports);
 __exportStar(require("./providers"), exports);
 __exportStar(require("./react"), exports);

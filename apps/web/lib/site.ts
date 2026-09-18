@@ -2,9 +2,9 @@ import { allDocs } from 'content-collections';
 import { getDocPath } from './docs';
 
 export const siteName = 'Vista';
-export const siteTitle = 'Vista | The React Framework for Visionaries';
+export const siteTitle = 'Vista | React, fullstack, auth, and AI';
 export const siteDescription =
-  'Vista is the React framework for visionaries, built for fast iteration, server rendering, typed APIs, and real production control.';
+  'Vista is a React framework: pages and Server Components for UI, route.ts and typed APIs for fullstack, vista g auth for sessions, and vista g agent for chat and RAG.';
 export const siteUrl = 'https://vista.xyz';
 export const siteLocale = 'en_US';
 export const siteOgImage = '/vista.svg';
@@ -15,6 +15,9 @@ export const siteKeywords = [
   'SSR',
   'RSC',
   'typed APIs',
+  'authentication',
+  'AI agents',
+  'RAG',
   'Flashpack',
   'full-stack React',
 ];

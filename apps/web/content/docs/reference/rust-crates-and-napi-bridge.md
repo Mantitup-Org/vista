@@ -4,7 +4,7 @@ slug: "rust-crates-and-napi-bridge"
 title: "Rust Crates and NAPI Bridge"
 summary: "How Vista's Rust crates and `vista-napi` bridge are organized today, and how that differs from the larger Next.js Rust surface."
 order: 77
-updatedAt: "2026-03-27"
+updatedAt: "2026-09-18"
 ---
 
 ## Why Next.js Has More Rust Files
@@ -18,8 +18,8 @@ Vista is on the same direction of travel, but it is earlier in that migration. S
 - `crates/vista-core`: shared runtime contracts such as engine, route, manifest, and platform types.
 - `crates/vista-api`: Rust-facing app, route, project, and server-action descriptors.
 - `crates/vista-build`: pipeline, output, engine, and standalone build planning contracts.
-- `crates/vista-transforms`: client-directive detection, RSC scanning/manifest generation, lint helpers, and the new React compiler module surface.
-- `crates/vista-napi`: the Node bridge that exposes Rust functionality into the JS runtime.
+- `crates/vista-transforms`: client-directive detection, RSC scanning (including extra project roots such as `utils/` and `lib/`), manifest generation, prerender IDs from relative paths, lint helpers, and the React compiler module surface.
+- `crates/vista-napi`: the Node bridge that exposes Rust functionality into the JS runtime, including `rscGenerateClientManifestForProject` and `react-server` import-map resolution for `vista/theme`, `vista/auth/react`, and `vista/ai/react`.
 
 ## What `vista-napi` Already Does
 
@@ -30,9 +30,10 @@ The current bridge is not fake. It exports working Rust functions that Vista alr
 - route-tree extraction
 - metadata detection
 - RSC app scanning
-- client and server manifest generation
+- client and server manifest generation, including sibling `'use client'` roots outside `app/`
+- `vista/` import-map resolution with `react-server` entries
 - client mount-id generation
-- client-component prerender helpers
+- client-component prerender helpers (IDs are relative paths, so `app/Button.tsx` and `utils/Button.tsx` do not collide)
 
 ## Where The Bridge Is Used
 

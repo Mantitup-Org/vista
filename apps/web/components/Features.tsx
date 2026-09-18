@@ -5,7 +5,7 @@ export default function Features() {
         <section className="flex min-h-screen w-full flex-col justify-center bg-background px-4 py-24 text-foreground">
             <div className="max-w-7xl mx-auto w-full">
                 <h2 className="text-3xl md:text-5xl font-normal mb-16 text-center tracking-tight">
-                    What ships in Vista now
+                    What you can build in one app
                 </h2>
 
                 <div className="grid grid-cols-1 border-l border-t border-dashed border-foreground/12 bg-foreground/[0.02] md:grid-cols-2 lg:grid-cols-4 dark:bg-white/[0.03]">

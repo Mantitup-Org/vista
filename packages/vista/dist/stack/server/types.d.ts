@@ -9,12 +9,24 @@ export type Prettify<T> = {
 } & {};
 export type UnionToIntersection<TUnion> = (TUnion extends unknown ? (value: TUnion) => void : never) extends (value: infer TIntersection) => void ? TIntersection : never;
 type JoinPath<TLeft extends string, TRight extends string> = TLeft extends '' ? TRight : `${TLeft}/${TRight}`;
+export interface StackCookieStore {
+    get(name: string): {
+        name: string;
+        value: string;
+    } | undefined;
+    getAll(): Array<{
+        name: string;
+        value: string;
+    }>;
+    has(name: string): boolean;
+}
 export interface StackRequestLike {
     method?: string;
     path?: string;
     query?: Record<string, unknown>;
     body?: unknown;
     headers?: Record<string, string | string[] | undefined>;
+    cookies?: StackCookieStore;
     [key: string]: unknown;
 }
 export interface StackResponseToolkit {
@@ -41,6 +53,7 @@ export type MiddlewareFunction<TCtx = {}, TReturn = void, TEnv = unknown> = (par
 export type NormalizeMiddlewareResult<TValue> = TValue extends void | undefined ? {} : TValue extends Record<string, unknown> ? TValue : {};
 export interface OperationBase<TInput, TOutput, TCtx, TEnv> {
     schema?: SchemaLike<TInput>;
+    outputSchema?: SchemaLike<TOutput>;
     handler: ProcedureHandler<TCtx, TInput, TEnv, TOutput>;
     middlewares: MiddlewareFunction<any, any, TEnv>[];
     outputFormat: 'json';

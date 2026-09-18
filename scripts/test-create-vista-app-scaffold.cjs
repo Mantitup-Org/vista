@@ -37,7 +37,8 @@ function assertCommonScripts(packageJson) {
   assert.equal(packageJson.scripts.build, 'vista build');
   assert.equal(packageJson.scripts.start, 'vista start');
   assert.equal(packageJson.scripts.deploy, 'vista deploy');
-  assert.equal(packageJson.dependencies.webpack, '^5.90.0');
+  assert.equal(packageJson.devDependencies.webpack, '^5.90.0');
+  assert.equal(packageJson.dependencies['lucide-react'], '^0.468.0');
 }
 
 function assertEngineConfig(projectDir, expectedVariant) {
@@ -62,7 +63,7 @@ function assertNoTemplateTokens(projectDir) {
 }
 
 function assertThemeFiles(projectDir) {
-  assert(fs.existsSync(path.join(projectDir, 'utils', 'theme-toggle.tsx')));
+  assert(fs.existsSync(path.join(projectDir, 'components', 'theme-toggle.tsx')));
 }
 
 async function main() {

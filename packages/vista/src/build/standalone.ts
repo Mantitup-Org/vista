@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import {
   generateRequiredServerFilesManifest,
   writeArtifactManifest,
+  writeVistaTrace,
 } from './manifest';
 import type { ServerManifest } from './rsc/server-manifest';
 
@@ -409,6 +410,7 @@ export function generateStandaloneOutput(options: StandaloneOutputOptions): void
 
   writeJsonFile(runtimeManifestPath, runtimeManifest);
   writeJsonFile(fileTracePath, fileTrace);
+  writeVistaTrace(vistaDir, fileTrace);
 
   generateRequiredServerFilesManifest(
     cwd,
@@ -426,6 +428,8 @@ export function generateStandaloneOutput(options: StandaloneOutputOptions): void
     runtimeManifest: 'server/runtime-manifest.json',
     fileTrace: 'server/file-trace.json',
     standaloneServer: 'standalone/server.js',
+    types: 'types/routes.d.ts',
+    trace: 'trace',
   });
 
   if (debug) {

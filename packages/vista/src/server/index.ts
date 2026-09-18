@@ -6,6 +6,7 @@
  */
 
 import { getRequestContext } from './request-context';
+import { safeDecodeURIComponent } from './cookie-parse';
 
 function parseCookieHeader(header: string | undefined): Map<string, string> {
     const cookieMap = new Map<string, string>();
@@ -18,7 +19,7 @@ function parseCookieHeader(header: string | undefined): Map<string, string> {
         const [rawName, ...valueParts] = segment.split('=');
         const name = rawName?.trim();
         if (!name) continue;
-        cookieMap.set(name, decodeURIComponent(valueParts.join('=').trim()));
+        cookieMap.set(name, safeDecodeURIComponent(valueParts.join('=').trim()));
     }
 
     return cookieMap;
@@ -347,6 +348,15 @@ export class NextResponse extends Response {
     static next(options?: { request?: { headers?: Headers | Record<string, string> } }): NextResponse {
         const responseHeaders = new Headers();
         responseHeaders.set('x-middleware-next', '1');
+        const incoming = options?.request?.headers;
+        if (incoming) {
+            const entries =
+                incoming instanceof Headers ? Array.from(incoming.entries()) : Object.entries(incoming);
+            for (const [key, value] of entries) {
+                if (value == null) continue;
+                responseHeaders.set(`x-middleware-request-${key}`, String(value));
+            }
+        }
         return new NextResponse(null, {
             headers: responseHeaders,
         });
@@ -385,12 +395,22 @@ export {
     shouldRunMiddleware,
 } from './middleware-runner';
 
+export {
+    chain,
+    cors,
+    rateLimit,
+    securityHeaders,
+    isSafeRedirectLocation,
+    sanitizeRequestHeaderMap,
+} from './middleware-security';
+
 export type {
     MiddlewareResult,
     VistaMiddlewareRequest,
     VistaMiddlewareContext,
     MiddlewareFunction,
     MiddlewareConfig,
+    MiddlewareMatcher,
     MiddlewareModule,
     NextFunction,
 } from './middleware-runner';

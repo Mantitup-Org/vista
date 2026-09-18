@@ -6,7 +6,7 @@ import { PassThrough } from 'stream';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 import type { RouteEntry, ServerManifest } from '../build/rsc/server-manifest';
-import { normalizeReactClientReferenceManifest } from '../build/rsc/react-client-reference-manifest';
+import { createGuardedReactClientManifest, normalizeReactClientReferenceManifest } from '../build/rsc/react-client-reference-manifest';
 import { resolveNotFoundComponent, resolveRootLayout } from './root-resolver';
 import { BUILD_DIR } from '../constants';
 import { installModuleCompileHook } from './module-compile-hook';
@@ -590,6 +590,11 @@ function getSearchParamsFromRequest(req: express.Request): Record<string, string
   return Object.fromEntries(new URLSearchParams(req.query as any).entries());
 }
 
+function loadFlightManifest(flightManifestPath: string) {
+  const raw = JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'));
+  return createGuardedReactClientManifest(normalizeReactClientReferenceManifest(raw));
+}
+
 function startUpstream(): void {
   const cwd = path.resolve(process.env.VISTA_ARTIFACT_ROOT || process.cwd());
   const runtimeRoot = resolveRuntimeProjectRoot(cwd, process.env.VISTA_RUNTIME_ROOT);
@@ -623,9 +628,7 @@ function startUpstream(): void {
   }
 
   let serverManifest = JSON.parse(fs.readFileSync(serverManifestPath, 'utf-8')) as ServerManifest;
-  let flightManifest = normalizeReactClientReferenceManifest(
-    JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'))
-  );
+  let flightManifest = loadFlightManifest(flightManifestPath);
 
   const app = express();
 
@@ -842,9 +845,7 @@ function startUpstream(): void {
               serverManifest = JSON.parse(
                 fs.readFileSync(serverManifestPath, 'utf-8')
               ) as ServerManifest;
-              flightManifest = normalizeReactClientReferenceManifest(
-                JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'))
-              );
+              flightManifest = loadFlightManifest(flightManifestPath);
             } catch {
               // Manifests may be mid-write; use whatever we have cached.
             }
@@ -1026,7 +1027,7 @@ function startUpstream(): void {
               serverManifest = JSON.parse(
                 fs.readFileSync(serverManifestPath, 'utf-8')
               ) as ServerManifest;
-              flightManifest = JSON.parse(fs.readFileSync(flightManifestPath, 'utf-8'));
+              flightManifest = loadFlightManifest(flightManifestPath);
             } catch {
               // Keep cached manifests if they're being rewritten.
             }

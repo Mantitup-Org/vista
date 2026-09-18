@@ -57,6 +57,13 @@ const client = createVistaClient<AppRouter>({ baseUrl: 'http://localhost:3000/ap
 const response = await client.$get('/hello');
 ```
 
+Server Components can skip HTTP with `createCaller`:
+
+```ts
+const caller = v.createCaller(router, { ctx: {}, env: {} });
+const hello = await caller.hello();
+```
+
 ## Deep Dive
 - [API Routes vs Typed API](/docs/core-concepts/api-routes-vs-typed-api)
 - [Typed API Runtime Flow](/docs/core-concepts/typed-api-runtime-flow)

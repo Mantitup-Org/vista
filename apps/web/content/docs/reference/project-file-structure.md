@@ -4,10 +4,21 @@ slug: "project-file-structure"
 title: "Project File Structure"
 summary: "Detailed map of important Vista folders and how runtime, routes, and docs content connect to each other."
 order: 2
-updatedAt: "2026-03-04"
+updatedAt: "2026-09-18"
 ---
 
-## Runtime-Facing Files
+## Generated app files (after CLI)
+
+```txt
+auth.ts                              -> VistaAuth config (vista g auth)
+middleware.ts                        -> fail-closed /account guard
+app/signin/page.tsx                  -> credentials POST + OAuth
+app/account/page.tsx                 -> gated session page
+app/agents/<name>/agent.ts           -> vista g agent
+.env.example                         -> AUTH_SECRET and provider keys
+```
+
+## Runtime-Facing Files (this docs site)
 
 ```txt
 app/root.tsx                -> global shell

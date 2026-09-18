@@ -22,12 +22,19 @@ type JoinPath<TLeft extends string, TRight extends string> = TLeft extends ''
   ? TRight
   : `${TLeft}/${TRight}`;
 
+export interface StackCookieStore {
+  get(name: string): { name: string; value: string } | undefined;
+  getAll(): Array<{ name: string; value: string }>;
+  has(name: string): boolean;
+}
+
 export interface StackRequestLike {
   method?: string;
   path?: string;
   query?: Record<string, unknown>;
   body?: unknown;
   headers?: Record<string, string | string[] | undefined>;
+  cookies?: StackCookieStore;
   [key: string]: unknown;
 }
 
@@ -71,6 +78,7 @@ export type NormalizeMiddlewareResult<TValue> = TValue extends void | undefined
 
 export interface OperationBase<TInput, TOutput, TCtx, TEnv> {
   schema?: SchemaLike<TInput>;
+  outputSchema?: SchemaLike<TOutput>;
   handler: ProcedureHandler<TCtx, TInput, TEnv, TOutput>;
   middlewares: MiddlewareFunction<any, any, TEnv>[];
   outputFormat: 'json';

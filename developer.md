@@ -196,14 +196,14 @@ Legacy SSR still exists behind `--legacy`, but most current parity work is on th
 
 ### 7.1 `.vista`
 
-Production builds emit `.vista/`, which now contains real non-empty artifacts:
+Production builds emit `.vista/`, aligned to Next.js `.next/`:
 
-- server manifests
-- runtime manifests
-- file-trace metadata
-- standalone server output
-- static pages and PPR shell artifacts
-- cache/image/media manifests
+- `server/` manifests, runtime, and file-trace
+- `static/` chunks, media, and PPR shells
+- `cache/` plus image/media manifests
+- `types/routes.d.ts` (App Router path unions, like `.next/types`)
+- top-level `trace` (summary of `server/file-trace.json`, like `.next/trace`)
+- `standalone/` server output
 
 If `.vista` ends up empty or missing critical manifests, treat that as a framework bug.
 
@@ -318,6 +318,12 @@ These are the most important scripts to know:
 - `scripts/test-server-runtime.cjs`
 - `scripts/test-inline-server-actions.cjs`
 - `scripts/test-api-routes.cjs`
+- `scripts/test-rsc-ssr-hardening.cjs`
+- `scripts/test-middleware.cjs`
+- `scripts/test-middleware-security.cjs`
+- `scripts/test-auth.cjs`
+- `scripts/test-vstack.cjs`
+- `scripts/test-agents.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`
@@ -352,7 +358,10 @@ If you add a new client export under `packages/vista/src` and it compiles into `
 - first paint to appear
 - then client hydration/runtime to break with missing manifest references
 
-Current fix lives in `packages/vista/src/bin/build-rsc.ts`, which scans the full `dist` tree for framework client references.
+Current fix lives in `packages/vista/src/bin/build-rsc.ts`, which scans the full
+`dist` and `src` trees for framework client references, plus every top-level
+project directory (`components/`, `utils/`, `lib/`, `src/`, ...) so `'use client'`
+modules outside `app/` still enter the React Client Manifest.
 
 ### 13.2 Alias resolution must work in both prerender and runtime
 
@@ -473,7 +482,7 @@ pnpm bench:quick
 ## 15. If You Touch These Areas, Also Check These
 
 - `packages/vista/src/server/*`
-  - run `pnpm test:server-runtime`, `pnpm test:inline-server-actions`, `pnpm test:api-routes`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
+  - run `pnpm test:server-runtime`, `pnpm test:inline-server-actions`, `pnpm test:api-routes`, `pnpm test:rsc-ssr-hardening`, `pnpm test:rsc-conformance`, `pnpm test:vista-output`
 - `packages/vista/src/flashpack/*`
   - run `pnpm test:flashpack-dev`, `pnpm test:flashpack-state`
 - `packages/vista/src/theme/*`

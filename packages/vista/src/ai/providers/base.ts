@@ -34,6 +34,10 @@ export function parseModelIdentifier(model: string): ParsedModel {
     return { provider: 'mock', modelName: trimmed };
   }
 
+  if (lower.startsWith('llama-') || lower.startsWith('mixtral-') || lower.startsWith('gemma2-')) {
+    return { provider: 'groq', modelName: trimmed };
+  }
+
   // Default fallback
   return { provider: 'openai', modelName: trimmed };
 }
@@ -73,6 +77,25 @@ export function resolveModel(
         apiKey: options.apiKey || 'ollama',
       });
 
+    case 'nvidia':
+    case 'nim':
+      return createOpenAIModel({
+        ...modelOptions,
+        baseURL:
+          options.baseURL ||
+          process.env.NVIDIA_BASE_URL ||
+          process.env.NIM_BASE_URL ||
+          'https://integrate.api.nvidia.com/v1',
+        apiKey: options.apiKey || process.env.NVIDIA_API_KEY || process.env.NIM_API_KEY || '',
+      });
+
+    case 'groq':
+      return createOpenAIModel({
+        ...modelOptions,
+        baseURL: options.baseURL || process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
+        apiKey: options.apiKey || process.env.GROQ_API_KEY || '',
+      });
+
     case 'mock':
       return createMockModel({
         modelName,
@@ -80,7 +103,7 @@ export function resolveModel(
 
     default:
       throw new Error(
-        `Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, mock.`
+        `Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, nvidia, groq, mock.`
       );
   }
 }

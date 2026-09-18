@@ -105,4 +105,5 @@ export interface NextRequest extends Request {
 }
 export { cacheLife, cacheTag, revalidatePath, revalidateTag, unstable_cache } from './cache';
 export { runMiddleware, applyMiddlewareResult, discoverGlobalMiddleware, discoverRouteMiddlewares, clearMiddlewareCaches, buildNextRequest, patternToRegExp, shouldRunMiddleware, } from './middleware-runner';
-export type { MiddlewareResult, VistaMiddlewareRequest, VistaMiddlewareContext, MiddlewareFunction, MiddlewareConfig, MiddlewareModule, NextFunction, } from './middleware-runner';
+export { chain, cors, rateLimit, securityHeaders, isSafeRedirectLocation, sanitizeRequestHeaderMap, } from './middleware-security';
+export type { MiddlewareResult, VistaMiddlewareRequest, VistaMiddlewareContext, MiddlewareFunction, MiddlewareConfig, MiddlewareMatcher, MiddlewareModule, NextFunction, } from './middleware-runner';
