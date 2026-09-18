@@ -406,6 +406,7 @@ async function executeTypedRoute(router, options) {
             headers: options.req.headers,
             originalUrl: options.req.originalUrl,
             url: options.req.url,
+            cookies: createReadonlyCookieStore(typeof options.req.headers?.cookie === 'string' ? options.req.headers.cookie : null),
         },
         ctx: options.context,
         env: options.env,

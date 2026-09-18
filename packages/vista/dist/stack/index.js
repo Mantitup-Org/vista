@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.vstack = void 0;
 exports.initStack = initStack;
 const merge_routers_1 = require("./server/merge-routers");
+const caller_1 = require("./server/caller");
 const procedure_1 = require("./server/procedure");
 const router_1 = require("./server/router");
 const serialization_1 = require("./server/serialization");
@@ -34,6 +35,9 @@ function initStack(options = {}) {
         },
         mergeRouters(...routers) {
             return (0, merge_routers_1.mergeRouters)(...routers);
+        },
+        createCaller(router, callerOptions) {
+            return (0, caller_1.createCaller)(router, callerOptions);
         },
         serializer: (0, serialization_1.createSerializer)(normalizedOptions.serialization),
         options: normalizedOptions,

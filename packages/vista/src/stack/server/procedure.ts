@@ -13,6 +13,7 @@ type ProcedureOutputFormat = 'json';
 
 interface ProcedureBuilderState<TEnv> {
   schema?: SchemaLike<any>;
+  outputSchema?: SchemaLike<any>;
   middlewares: MiddlewareFunction<any, any, TEnv>[];
   outputFormat: ProcedureOutputFormat;
 }
@@ -24,6 +25,9 @@ export interface ProcedureBuilder<TCtx, TEnv, TInput = void> {
   input<TSchema extends SchemaLike<any>>(
     schema: TSchema
   ): ProcedureBuilder<TCtx, TEnv, InferSchemaInput<TSchema>>;
+  output<TSchema extends SchemaLike<any>>(
+    schema: TSchema
+  ): ProcedureBuilder<TCtx, TEnv, TInput>;
   query<TOutput>(
     handler: ProcedureHandler<TCtx, TInput, TEnv, TOutput>
   ): GetOperation<TInput, TOutput, TCtx, TEnv>;
@@ -41,6 +45,7 @@ export interface ProcedureBuilder<TCtx, TEnv, TInput = void> {
 function cloneState<TEnv>(state?: Partial<ProcedureBuilderState<TEnv>>): ProcedureBuilderState<TEnv> {
   return {
     schema: state?.schema,
+    outputSchema: state?.outputSchema,
     middlewares: [...(state?.middlewares ?? [])],
     outputFormat: state?.outputFormat ?? 'json',
   };
@@ -56,6 +61,7 @@ function createOperation<TType extends 'get' | 'post', TCtx, TInput, TOutput, TE
   return {
     type,
     schema: state.schema,
+    outputSchema: state.outputSchema,
     handler,
     middlewares: [...state.middlewares],
     outputFormat: state.outputFormat,
@@ -79,6 +85,13 @@ export function createProcedureBuilder<TCtx = {}, TEnv = unknown, TInput = void>
       return createProcedureBuilder({
         ...currentState,
         schema,
+      });
+    },
+
+    output(schema) {
+      return createProcedureBuilder({
+        ...currentState,
+        outputSchema: schema,
       });
     },
 

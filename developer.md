@@ -196,14 +196,14 @@ Legacy SSR still exists behind `--legacy`, but most current parity work is on th
 
 ### 7.1 `.vista`
 
-Production builds emit `.vista/`, which now contains real non-empty artifacts:
+Production builds emit `.vista/`, aligned to Next.js `.next/`:
 
-- server manifests
-- runtime manifests
-- file-trace metadata
-- standalone server output
-- static pages and PPR shell artifacts
-- cache/image/media manifests
+- `server/` manifests, runtime, and file-trace
+- `static/` chunks, media, and PPR shells
+- `cache/` plus image/media manifests
+- `types/routes.d.ts` (App Router path unions, like `.next/types`)
+- top-level `trace` (summary of `server/file-trace.json`, like `.next/trace`)
+- `standalone/` server output
 
 If `.vista` ends up empty or missing critical manifests, treat that as a framework bug.
 
@@ -322,6 +322,7 @@ These are the most important scripts to know:
 - `scripts/test-middleware.cjs`
 - `scripts/test-middleware-security.cjs`
 - `scripts/test-auth.cjs`
+- `scripts/test-vstack.cjs`
 - `scripts/test-use-cache.cjs`
 - `scripts/test-segment-config.cjs`
 - `scripts/test-advanced-runtime.cjs`

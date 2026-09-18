@@ -4,7 +4,8 @@ export type { ProcedureBuilder } from './procedure';
 export { createRouter, normalizeStackRoutePath } from './router';
 export type { CreateRouterOptions } from './router';
 
-export { mergeRouters } from './merge-routers';
+export { createCaller } from './caller';
+export type { CreateCallerOptions, InferCaller } from './caller';
 
 export {
   createResponseToolkit,
@@ -12,6 +13,7 @@ export {
   executeRoute,
   runMiddlewareChain,
   StackMethodNotAllowedError,
+  StackOutputValidationError,
   StackRouteNotFoundError,
   StackValidationError,
 } from './executor';
@@ -47,6 +49,7 @@ export type {
   ResolvedRoute,
   RouterMetadata,
   SchemaLike,
+  StackCookieStore,
   StackErrorHandler,
   StackErrorWithStatus,
   StackExecutionContext,

@@ -531,6 +531,9 @@ async function executeTypedRoute(
       headers: options.req.headers as Record<string, string | string[] | undefined>,
       originalUrl: options.req.originalUrl,
       url: options.req.url,
+      cookies: createReadonlyCookieStore(
+        typeof options.req.headers?.cookie === 'string' ? options.req.headers.cookie : null
+      ),
     },
     ctx: options.context,
     env: options.env,

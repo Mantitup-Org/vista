@@ -15,6 +15,7 @@ const COMMANDS = [
   ['scripts/test-middleware.cjs'],
   ['scripts/test-middleware-security.cjs'],
   ['scripts/test-auth.cjs'],
+  ['scripts/test-vstack.cjs'],
   ['scripts/test-vista-deploy.cjs'],
   ['scripts/test-rsc-conformance.cjs'],
   ['scripts/test-flashpack-dev.cjs'],

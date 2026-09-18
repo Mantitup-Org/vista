@@ -214,6 +214,8 @@ async function verifyVariant(variant, port) {
   assert(fs.existsSync(cacheManifestPath), 'missing cache/cache-manifest.json');
   assert(fs.existsSync(imageManifestPath), 'missing cache/images/manifest.json');
   assert(fs.existsSync(mediaManifestPath), 'missing static/media/media-manifest.json');
+  assert(fs.existsSync(path.join(vistaDir, 'types', 'routes.d.ts')), 'missing types/routes.d.ts');
+  assert(fs.existsSync(path.join(vistaDir, 'trace')), 'missing top-level .vista/trace');
 
   const runtimeManifest = readJson(runtimeManifestPath);
   const fileTrace = readJson(fileTracePath);

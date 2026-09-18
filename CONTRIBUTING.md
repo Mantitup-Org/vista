@@ -203,6 +203,13 @@ pnpm test:middleware-security
 pnpm test:auth
 ```
 
+### If you change vstack or `.vista` output
+
+```bash
+pnpm test:vstack
+pnpm test:vista-output
+```
+
 ### If you change Flashpack behavior
 
 ```bash

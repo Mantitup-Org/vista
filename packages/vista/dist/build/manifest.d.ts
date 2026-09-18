@@ -22,6 +22,7 @@ export interface VistaDirs {
     chunks: string;
     css: string;
     media: string;
+    types: string;
 }
 /**
  * Create the .vista directory structure.
@@ -55,6 +56,8 @@ export interface ArtifactManifest {
         runtimeManifest?: string;
         fileTrace?: string;
         standaloneServer?: string;
+        types?: string;
+        trace?: string;
     };
 }
 /**
@@ -74,6 +77,12 @@ export interface RouteHandlerLike {
     runtime?: string;
 }
 export declare function generateAppPathRoutesManifest(vistaDir: string, routes?: RouteLike[], routeHandlers?: RouteHandlerLike[]): Record<string, string>;
+export declare function writeVistaTypes(vistaDir: string, routes?: string[]): void;
+export declare function writeVistaTrace(vistaDir: string, fileTrace?: {
+    schemaVersion?: number;
+    copiedFiles?: unknown[];
+    generatedAt?: string;
+}): void;
 export declare function generatePrerenderManifest(vistaDir: string): void;
 export declare function generateRequiredServerFilesManifest(cwd: string, vistaDir: string, extraFiles?: string[], appDir?: string): void;
 export declare function ensureJsonFile(vistaDir: string, relativePath: string, fallback?: unknown): void;

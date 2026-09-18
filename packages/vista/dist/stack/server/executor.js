@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StackValidationError = exports.StackMethodNotAllowedError = exports.StackRouteNotFoundError = void 0;
+exports.StackOutputValidationError = exports.StackValidationError = exports.StackMethodNotAllowedError = exports.StackRouteNotFoundError = void 0;
 exports.createResponseToolkit = createResponseToolkit;
 exports.runMiddlewareChain = runMiddlewareChain;
 exports.executeOperation = executeOperation;
@@ -42,6 +42,23 @@ class StackValidationError extends Error {
     }
 }
 exports.StackValidationError = StackValidationError;
+class StackOutputValidationError extends StackValidationError {
+    status = 500;
+    constructor(message, cause) {
+        super(message, cause);
+        this.name = 'StackOutputValidationError';
+    }
+}
+exports.StackOutputValidationError = StackOutputValidationError;
+class StackMiddlewareResponse {
+    response;
+    constructor(response) {
+        this.response = response;
+    }
+}
+function isWebResponse(value) {
+    return typeof Response !== 'undefined' && value instanceof Response;
+}
 function createResponseToolkit(mode = 'json') {
     return {
         json(data, init) {
@@ -86,6 +103,9 @@ async function runMiddlewareChain(middlewares, context, env, req, c) {
             c,
             next,
         });
+        if (isWebResponse(result) && !nextCalled) {
+            throw new StackMiddlewareResponse(result);
+        }
         if (nextCalled) {
             const downstreamContext = await nextContextPromise;
             if (isObjectRecord(result) && isObjectRecord(downstreamContext)) {
@@ -125,17 +145,37 @@ function resolveInput(operation, req, serialization) {
         throw new StackValidationError('Invalid typed API input', error);
     }
 }
+function resolveOutput(operation, output) {
+    if (!operation.outputSchema || isWebResponse(output)) {
+        return output;
+    }
+    try {
+        return operation.outputSchema.parse(output);
+    }
+    catch (error) {
+        throw new StackOutputValidationError('Invalid typed API output', error);
+    }
+}
 async function executeOperation(operation, options) {
-    const middlewareChain = [...(options.middlewares ?? []), ...operation.middlewares];
-    const finalContext = await runMiddlewareChain(middlewareChain, options.ctx, options.env, options.req, options.c);
-    const input = resolveInput(operation, options.req, options.serialization ?? 'json');
-    return operation.handler({
-        ctx: finalContext,
-        input,
-        env: options.env,
-        req: options.req,
-        c: options.c,
-    });
+    try {
+        const middlewareChain = [...(options.middlewares ?? []), ...operation.middlewares];
+        const finalContext = await runMiddlewareChain(middlewareChain, options.ctx, options.env, options.req, options.c);
+        const input = resolveInput(operation, options.req, options.serialization ?? 'json');
+        const output = await operation.handler({
+            ctx: finalContext,
+            input,
+            env: options.env,
+            req: options.req,
+            c: options.c,
+        });
+        return resolveOutput(operation, output);
+    }
+    catch (error) {
+        if (error instanceof StackMiddlewareResponse) {
+            return error.response;
+        }
+        throw error;
+    }
 }
 function hasPath(routes, path) {
     return Object.prototype.hasOwnProperty.call(routes, path);
@@ -164,7 +204,7 @@ async function executeRoute(router, options) {
         middlewares: router.metadata.globalMiddlewares,
         serialization,
     });
-    if (typeof Response !== 'undefined' && payload instanceof Response) {
+    if (isWebResponse(payload)) {
         return {
             path: normalizedPath,
             method: normalizedMethod,
