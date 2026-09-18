@@ -46,7 +46,7 @@ function registerTypeScriptRuntime() {
 
 registerTypeScriptRuntime();
 
-const { generateClientManifest, discoverProjectClientRoots } = require(
+const { generateClientManifest, generateClientManifestWithRoots, discoverProjectClientRoots } = require(
   path.join(vistaSrc, 'build', 'rsc', 'client-manifest.ts')
 );
 const { createGuardedReactClientManifest } = require(
@@ -261,6 +261,60 @@ function checkClientManifestScansUtils() {
     );
   } finally {
     fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+
+  const srcAppDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-src-app-manifest-'));
+  try {
+    writeFile(
+      path.join(srcAppDir, 'src', 'app', 'button.tsx'),
+      ["'use client'", '', 'export default function Button() { return null }', ''].join('\n')
+    );
+    writeFile(
+      path.join(srcAppDir, 'src', 'components', 'toggle.tsx'),
+      ["'use client'", '', 'export function Toggle() { return null }', ''].join('\n')
+    );
+    const srcManifest = generateClientManifest(srcAppDir, path.join(srcAppDir, 'src', 'app'));
+    const srcPaths = Object.values(srcManifest.clientModules || {}).map((entry) =>
+      String(entry.path || '')
+    );
+    const buttonHits = srcPaths.filter((modulePath) => modulePath.includes('button'));
+    assert.equal(
+      buttonHits.length,
+      1,
+      `src/app/button must appear once, got: ${srcPaths.join(', ')}`
+    );
+    assert.ok(
+      srcPaths.some((modulePath) => modulePath.includes('toggle')),
+      `Expected src/components/toggle in the client manifest, got: ${srcPaths.join(', ')}`
+    );
+  } finally {
+    fs.rmSync(srcAppDir, { recursive: true, force: true });
+  }
+
+  const customRootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-custom-roots-'));
+  try {
+    writeFile(
+      path.join(customRootDir, 'app', 'page.tsx'),
+      'export default function Page() { return null }\n'
+    );
+    writeFile(
+      path.join(customRootDir, '.hidden-clients', 'secret.tsx'),
+      ["'use client'", '', 'export function Secret() { return null }', ''].join('\n')
+    );
+    const customManifest = generateClientManifestWithRoots(
+      customRootDir,
+      path.join(customRootDir, 'app'),
+      [{ dir: path.join(customRootDir, '.hidden-clients'), prefix: 'hidden/' }]
+    );
+    const customPaths = Object.values(customManifest.clientModules || {}).map((entry) =>
+      String(entry.path || '')
+    );
+    assert.ok(
+      customPaths.some((modulePath) => modulePath.includes('secret')),
+      `Custom additionalRoots must still be scanned, got: ${customPaths.join(', ')}`
+    );
+  } finally {
+    fs.rmSync(customRootDir, { recursive: true, force: true });
   }
 }
 

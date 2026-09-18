@@ -20,6 +20,7 @@ export * from './core';
 const CSRF_COOKIE = 'vista.csrf-token';
 const STATE_COOKIE = 'vista.oauth-state';
 const PKCE_COOKIE = 'vista.pkce';
+const CALLBACK_COOKIE = 'vista.oauth-callback';
 
 function cookie(name: string, value: string, options: { maxAge?: number; httpOnly?: boolean } = {}): string {
   const parts = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'SameSite=Lax'];
@@ -29,8 +30,8 @@ function cookie(name: string, value: string, options: { maxAge?: number; httpOnl
   return parts.join('; ');
 }
 
-function expiredCookie(name: string): string {
-  return `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+function expiredCookie(name: string, options: { httpOnly?: boolean } = {}): string {
+  return cookie(name, '', { maxAge: 0, httpOnly: options.httpOnly });
 }
 
 function readCookies(request: Request): Map<string, string> {
@@ -68,27 +69,60 @@ function redirect(location: string, cookies: string[] = []): Response {
   return new Response(null, { status: 302, headers });
 }
 
-function sessionCookie(config: ResolvedAuthConfig, user: AuthUser): { cookie: string; session: AuthSession } {
+async function resolveRedirect(
+  config: ResolvedAuthConfig,
+  target: string,
+  requestUrl: string
+): Promise<string> {
+  const baseUrl = new URL(requestUrl).origin;
+  let location = isSafeRedirectLocation(target, requestUrl) ? target : '/';
+  if (config.callbacks?.redirect) {
+    location = await config.callbacks.redirect({ url: location, baseUrl });
+    if (!isSafeRedirectLocation(location, requestUrl)) {
+      location = '/';
+    }
+  }
+  return location;
+}
+
+async function createSessionCookie(
+  config: ResolvedAuthConfig,
+  user: AuthUser
+): Promise<{ cookie: string; session: AuthSession }> {
   const now = Math.floor(Date.now() / 1000);
-  const payload: JWTPayload = {
+  let payload: JWTPayload = {
     user,
     expires: new Date((now + config.session.maxAge) * 1000).toISOString(),
     iat: now,
     exp: now + config.session.maxAge,
   };
+  if (config.callbacks?.jwt) {
+    payload = await config.callbacks.jwt({ token: payload, user });
+  }
+  let session: AuthSession = { user: payload.user, expires: payload.expires };
+  if (config.callbacks?.session) {
+    session = await config.callbacks.session({ session, token: payload });
+  }
   const token = encryptJwt(payload, config.secret);
   return {
-    session: { user, expires: payload.expires },
+    session,
     cookie: cookie(config.session.cookieName, token, { maxAge: config.session.maxAge }),
   };
 }
 
-function readSessionFromRequest(request: Request, config: ResolvedAuthConfig): AuthSession | null {
+async function readSessionFromRequest(
+  request: Request,
+  config: ResolvedAuthConfig
+): Promise<AuthSession | null> {
   const token = readCookies(request).get(config.session.cookieName);
   if (!token) return null;
   const payload = decryptJwt(token, config.secret);
   if (!payload?.user) return null;
-  return { user: payload.user, expires: payload.expires };
+  let session: AuthSession = { user: payload.user, expires: payload.expires };
+  if (config.callbacks?.session) {
+    session = await config.callbacks.session({ session, token: payload });
+  }
+  return session;
 }
 
 async function exchangeOAuth(
@@ -139,7 +173,7 @@ async function handleAuthRequest(
   const method = request.method.toUpperCase();
 
   if (action === 'session' && method === 'GET') {
-    const session = readSessionFromRequest(request, config);
+    const session = await readSessionFromRequest(request, config);
     return json(session ? { user: session.user, expires: session.expires } : { user: null });
   }
 
@@ -158,7 +192,7 @@ async function handleAuthRequest(
   if (action === 'signout' && (method === 'POST' || method === 'GET')) {
     return redirect(config.pages?.signIn || '/', [
       expiredCookie(config.session.cookieName),
-      expiredCookie(CSRF_COOKIE),
+      expiredCookie(CSRF_COOKIE, { httpOnly: false }),
     ]);
   }
 
@@ -212,14 +246,15 @@ async function handleAuthRequest(
       if (config.callbacks?.signIn && !(await config.callbacks.signIn({ user }))) {
         return json({ error: 'Access denied' }, { status: 403 });
       }
-      const created = sessionCookie(config, user);
+      const created = await createSessionCookie(config, user);
       const redirectTo = credentials.callbackUrl || url.searchParams.get('callbackUrl') || '/';
-      const safeRedirect = isSafeRedirectLocation(redirectTo, url.toString()) ? redirectTo : '/';
+      const safeRedirect = await resolveRedirect(config, redirectTo, url.toString());
       return redirect(safeRedirect, [created.cookie]);
     }
 
     const { verifier, challenge } = pkcePair();
     const state = randomToken(16);
+    const callbackUrl = url.searchParams.get('callbackUrl') || '/';
     const redirectUri = `${origin}${basePath}/callback/${provider.id}`;
     const params = new URLSearchParams({
       client_id: provider.clientId,
@@ -233,6 +268,7 @@ async function handleAuthRequest(
     return redirect(`${provider.authorization.url}?${params.toString()}`, [
       cookie(STATE_COOKIE, state, { maxAge: 600 }),
       cookie(PKCE_COOKIE, verifier, { maxAge: 600 }),
+      cookie(CALLBACK_COOKIE, callbackUrl, { maxAge: 600 }),
     ]);
   }
 
@@ -268,11 +304,14 @@ async function handleAuthRequest(
     if (config.callbacks?.signIn && !(await config.callbacks.signIn({ user }))) {
       return json({ error: 'Access denied' }, { status: 403 });
     }
-    const created = sessionCookie(config, user);
-    return redirect('/', [
+    const created = await createSessionCookie(config, user);
+    const callbackUrl = cookies.get(CALLBACK_COOKIE) || '/';
+    const safeRedirect = await resolveRedirect(config, callbackUrl, url.toString());
+    return redirect(safeRedirect, [
       created.cookie,
       expiredCookie(STATE_COOKIE),
       expiredCookie(PKCE_COOKIE),
+      expiredCookie(CALLBACK_COOKIE),
     ]);
   }
 
@@ -310,13 +349,33 @@ export function VistaAuth(config: AuthConfig) {
     const context = getRequestContext();
     const host = context?.req?.get?.('host') || 'localhost';
     const protocol = context?.req?.protocol || 'http';
+    if (providerId) {
+      const provider = findProvider(resolved, providerId);
+      if (provider?.type === 'credentials') {
+        const user = await provider.authorize(options);
+        if (!user) {
+          return json({ error: 'Invalid credentials' }, { status: 401 });
+        }
+        if (resolved.callbacks?.signIn && !(await resolved.callbacks.signIn({ user }))) {
+          return json({ error: 'Access denied' }, { status: 403 });
+        }
+        const created = await createSessionCookie(resolved, user);
+        const requestUrl = `${protocol}://${host}/`;
+        const safeRedirect = await resolveRedirect(
+          resolved,
+          options.callbackUrl || '/',
+          requestUrl
+        );
+        return redirect(safeRedirect, [created.cookie]);
+      }
+    }
     const url = new URL(`${protocol}://${host}${resolved.basePath}/signin${providerId ? `/${providerId}` : ''}`);
     for (const [key, value] of Object.entries(options)) {
       url.searchParams.set(key, value);
     }
     const headers = new Headers();
     if (context?.req?.headers?.cookie) headers.set('cookie', String(context.req.headers.cookie));
-    return handleAuthRequest(new Request(url, { method: providerId === 'credentials' ? 'POST' : 'GET', headers }), resolved);
+    return handleAuthRequest(new Request(url, { method: 'GET', headers }), resolved);
   }
 
   async function signOut(): Promise<Response> {
@@ -338,7 +397,7 @@ export function VistaAuth(config: AuthConfig) {
         request instanceof Request
           ? request
           : new Request(request.url, { headers: request.headers, method: request.method });
-      const session = readSessionFromRequest(webRequest, resolved);
+      const session = await readSessionFromRequest(webRequest, resolved);
       if (!callback) {
         return next();
       }

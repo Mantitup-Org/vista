@@ -206,7 +206,7 @@ fn should_skip_scan_dir(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules"
 }
 
-fn same_path(left: &Path, right: &Path) -> bool {
+pub(crate) fn same_path(left: &Path, right: &Path) -> bool {
     if left == right {
         return true;
     }
@@ -220,6 +220,26 @@ fn same_path(left: &Path, right: &Path) -> bool {
                     .to_lowercase()
             };
             normalize(left) == normalize(right)
+        }
+    }
+}
+
+pub(crate) fn is_same_or_inside(path: &Path, ancestor: &Path) -> bool {
+    if same_path(path, ancestor) {
+        return true;
+    }
+    match (fs::canonicalize(path), fs::canonicalize(ancestor)) {
+        (Ok(resolved), Ok(root)) => resolved.starts_with(&root),
+        _ => {
+            let normalize = |p: &Path| {
+                p.to_string_lossy()
+                    .replace('\\', "/")
+                    .trim_end_matches('/')
+                    .to_lowercase()
+            };
+            let child = normalize(path);
+            let parent = normalize(ancestor);
+            child == parent || child.starts_with(&format!("{parent}/"))
         }
     }
 }
@@ -298,7 +318,14 @@ fn scan_directory_recursive(
     components: &mut Vec<ScannedComponent>,
     errors: &mut Vec<ServerComponentError>,
     collect_server_errors: bool,
+    skip_inside: Option<&Path>,
 ) {
+    if let Some(skip) = skip_inside {
+        if is_same_or_inside(dir, skip) {
+            return;
+        }
+    }
+
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -317,9 +344,15 @@ fn scan_directory_recursive(
                     components,
                     errors,
                     collect_server_errors,
+                    skip_inside,
                 );
             }
         } else if path.is_file() {
+            if let Some(skip) = skip_inside {
+                if is_same_or_inside(&path, skip) {
+                    continue;
+                }
+            }
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             if !["ts", "tsx", "js", "jsx"].contains(&ext) {
                 continue;
@@ -348,9 +381,22 @@ fn scan_directory_recursive(
 
 /// Scan a directory for `'use client'` modules, prefixing relative paths.
 pub fn scan_client_components_in_dir(dir: &str, path_prefix: &str) -> Vec<ScannedComponent> {
+    scan_client_components_in_dir_skipping(dir, path_prefix, Path::new(""))
+}
+
+fn scan_client_components_in_dir_skipping(
+    dir: &str,
+    path_prefix: &str,
+    skip_inside: &Path,
+) -> Vec<ScannedComponent> {
     let scan_root = Path::new(dir);
     let mut components = Vec::new();
     let mut errors = Vec::new();
+    let skip = if skip_inside.as_os_str().is_empty() {
+        None
+    } else {
+        Some(skip_inside)
+    };
     scan_directory_recursive(
         scan_root,
         scan_root,
@@ -358,6 +404,7 @@ pub fn scan_client_components_in_dir(dir: &str, path_prefix: &str) -> Vec<Scanne
         &mut components,
         &mut errors,
         false,
+        skip,
     );
     components.into_iter().filter(|c| c.is_client).collect()
 }
@@ -371,7 +418,11 @@ pub fn scan_project_client_components(cwd: &str, app_dir: &str) -> Vec<ScannedCo
         if same_path(root_path, app_path) {
             continue;
         }
-        client_components.extend(scan_client_components_in_dir(&root.dir, &root.prefix));
+        client_components.extend(scan_client_components_in_dir_skipping(
+            &root.dir,
+            &root.prefix,
+            app_path,
+        ));
     }
     client_components
 }
@@ -384,7 +435,7 @@ pub fn scan_app_directory(app_dir: &str) -> ScanResult {
     let mut components = Vec::new();
     let mut errors = Vec::new();
     
-    scan_directory_recursive(app_path, app_path, "", &mut components, &mut errors, true);
+    scan_directory_recursive(app_path, app_path, "", &mut components, &mut errors, true, None);
     
     let total_files = components.len();
     
@@ -550,6 +601,48 @@ mod tests {
                 .iter()
                 .any(|c| c.relative_path.contains("theme-toggle")),
             "app scan should stay app-only"
+        );
+    }
+
+    #[test]
+    fn test_src_app_layout_does_not_duplicate_app_client_modules() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-src-app-scan-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app_dir = root.join("src").join("app");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(root.join("src").join("components")).unwrap();
+        fs::write(
+            app_dir.join("button.tsx"),
+            "'use client';\nexport default function Button() { return null; }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("src").join("components").join("toggle.tsx"),
+            "'use client';\nexport function Toggle() { return null; }\n",
+        )
+        .unwrap();
+
+        let extra = scan_project_client_components(
+            root.to_str().unwrap(),
+            app_dir.to_str().unwrap(),
+        );
+        fs::remove_dir_all(&root).ok();
+
+        assert!(
+            extra.iter().any(|c| c.relative_path.contains("toggle")),
+            "expected src/components/toggle in extra scan, got {:?}",
+            extra.iter().map(|c| c.relative_path.clone()).collect::<Vec<_>>()
+        );
+        assert!(
+            !extra.iter().any(|c| c.relative_path.contains("button")),
+            "src/app/button must not be rescanned via the src/ extra root, got {:?}",
+            extra.iter().map(|c| c.relative_path.clone()).collect::<Vec<_>>()
         );
     }
 }

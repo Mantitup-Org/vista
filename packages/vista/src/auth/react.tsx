@@ -48,7 +48,34 @@ export function useSession(): SessionContextValue {
   return context;
 }
 
-export function signIn(provider?: string, options: Record<string, string> = {}, basePath = '/api/auth'): void {
+export async function signIn(
+  provider?: string,
+  options: Record<string, string> = {},
+  basePath = '/api/auth'
+): Promise<void> {
+  if (provider === 'credentials') {
+    const csrfResponse = await fetch(`${basePath}/csrf`, { credentials: 'same-origin' });
+    const csrfJson = (await csrfResponse.json()) as { csrfToken?: string };
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `${basePath}/signin/credentials`;
+    form.style.display = 'none';
+    const fields: Record<string, string> = {
+      ...options,
+      csrfToken: csrfJson.csrfToken || '',
+    };
+    for (const [name, value] of Object.entries(fields)) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+    return;
+  }
+
   const params = new URLSearchParams(options);
   const target = provider ? `${basePath}/signin/${provider}?${params}` : `${basePath}/signin?${params}`;
   window.location.assign(target);

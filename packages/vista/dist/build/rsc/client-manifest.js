@@ -127,21 +127,42 @@ function extractExports(source) {
     }
     return [...new Set(exports)];
 }
+function isSameOrInside(target, ancestor) {
+    const resolvedTarget = path_1.default.resolve(target);
+    const resolvedAncestor = path_1.default.resolve(ancestor);
+    if (resolvedTarget === resolvedAncestor)
+        return true;
+    const prefix = resolvedAncestor.endsWith(path_1.default.sep)
+        ? resolvedAncestor
+        : `${resolvedAncestor}${path_1.default.sep}`;
+    return resolvedTarget.startsWith(prefix);
+}
+function additionalRootsMatchDiscovery(cwd, appDir, additionalRoots) {
+    const discovered = discoverProjectClientRoots(cwd).filter((root) => path_1.default.resolve(root.dir) !== path_1.default.resolve(appDir));
+    if (additionalRoots.length !== discovered.length)
+        return false;
+    const extra = new Set(additionalRoots.map((root) => path_1.default.resolve(root.dir)));
+    return discovered.every((root) => extra.has(path_1.default.resolve(root.dir)));
+}
 /**
  * Scan directory recursively for client components
  */
-function scanForClientComponents(dir, scanRoot, components, pathPrefix = '') {
+function scanForClientComponents(dir, scanRoot, components, pathPrefix = '', skipInside) {
     if (!fs_1.default.existsSync(dir))
+        return;
+    if (skipInside && isSameOrInside(dir, skipInside))
         return;
     const items = fs_1.default.readdirSync(dir, { withFileTypes: true });
     for (const item of items) {
         const fullPath = path_1.default.join(dir, item.name);
         if (item.isDirectory()) {
             if (!item.name.startsWith('.') && item.name !== 'node_modules') {
-                scanForClientComponents(fullPath, scanRoot, components, pathPrefix);
+                scanForClientComponents(fullPath, scanRoot, components, pathPrefix, skipInside);
             }
         }
         else if (item.isFile()) {
+            if (skipInside && isSameOrInside(fullPath, skipInside))
+                continue;
             const ext = path_1.default.extname(item.name);
             if (!['.tsx', '.ts', '.jsx', '.js'].includes(ext))
                 continue;
@@ -217,16 +238,18 @@ function nativeClientManifestToJs(native) {
     };
 }
 function generateClientManifestWithRoots(cwd, appDir, additionalRoots = []) {
-    const native = (0, native_scanner_1.generateClientManifestForProjectNative)(cwd, appDir, readBuildId(cwd));
-    if (native && Array.isArray(native.clientModules)) {
-        return nativeClientManifestToJs(native);
+    if (additionalRootsMatchDiscovery(cwd, appDir, additionalRoots)) {
+        const native = (0, native_scanner_1.generateClientManifestForProjectNative)(cwd, appDir, readBuildId(cwd));
+        if (native && Array.isArray(native.clientModules)) {
+            return nativeClientManifestToJs(native);
+        }
     }
     const components = [];
     scanForClientComponents(appDir, appDir, components);
     for (const root of additionalRoots) {
         if (!fs_1.default.existsSync(root.dir))
             continue;
-        scanForClientComponents(root.dir, root.dir, components, root.prefix || '');
+        scanForClientComponents(root.dir, root.dir, components, root.prefix || '', appDir);
     }
     const clientModules = {};
     const pathToId = {};

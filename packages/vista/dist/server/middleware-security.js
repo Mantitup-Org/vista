@@ -76,8 +76,8 @@ function isSafeRewriteLocation(location) {
     const trimmed = String(location || '').trim();
     if (!trimmed)
         return false;
-    if (trimmed.startsWith('/') && !trimmed.startsWith('//')) {
-        return true;
+    if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\')) {
+        return !trimmed.includes('://');
     }
     return false;
 }

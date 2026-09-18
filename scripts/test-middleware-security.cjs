@@ -98,6 +98,14 @@ async function main() {
     isSafeRedirectLocation('https://trusted.example/ok', 'http://localhost:3000/', ['trusted.example']),
     true
   );
+  assert.equal(isSafeRedirectLocation('/\\evil.example/phish', 'http://localhost:3000/'), false);
+
+  const { isSafeRewriteLocation } = require(
+    path.join(vistaSrc, 'server', 'middleware-security.ts')
+  );
+  assert.equal(isSafeRewriteLocation('/about'), true);
+  assert.equal(isSafeRewriteLocation('/\\evil.example/phish'), false);
+  assert.equal(isSafeRewriteLocation('//evil.example/phish'), false);
 
   const sanitized = sanitizeRequestHeaderMap({ Host: 'evil', 'x-user-id': '42', cookie: 'a=b' });
   assert.equal(sanitized.has('host'), false);
@@ -132,6 +140,20 @@ async function main() {
     assert.equal(result.status, 500);
   } finally {
     fs.rmSync(tmpLoad, { recursive: true, force: true });
+  }
+
+  const tmpEmpty = makeTempProject();
+  try {
+    fs.writeFileSync(
+      path.join(tmpEmpty, 'middleware.ts'),
+      'exports.config = { matcher: "/admin" };\n'
+    );
+    const req = createMockReq({ url: '/admin', path: '/admin' });
+    const result = await runMiddleware(req, tmpEmpty, true);
+    assert.equal(result.kind, 'short-circuit');
+    assert.equal(result.status, 500);
+  } finally {
+    fs.rmSync(tmpEmpty, { recursive: true, force: true });
   }
 
   const tmp2 = makeTempProject();

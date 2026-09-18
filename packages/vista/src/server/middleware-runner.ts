@@ -530,7 +530,16 @@ export async function runMiddleware(
       }
     }
 
-    if (!fn) continue;
+    if (!fn) {
+      if (entry.source !== 'route') {
+        return {
+          kind: 'short-circuit',
+          status: 500,
+          body: 'Middleware Error',
+        };
+      }
+      continue;
+    }
 
     // Check optional matcher config
     if (!shouldRunMiddleware(mod, pathname, buildNextRequest(req))) {
