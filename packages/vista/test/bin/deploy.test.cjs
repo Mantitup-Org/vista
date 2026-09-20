@@ -190,6 +190,78 @@ test('runDeploy dry-run succeeds for docker target with existing artifacts', asy
   }
 });
 
+test('cloudflare static emit flattens pages and copies /_vista/static', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.mkdirSync(path.join(cwd, 'public'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'public', 'vista.svg'), '<svg></svg>', 'utf8');
+    fs.mkdirSync(path.join(cwd, '.vista', 'static', 'chunks'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'chunks', 'main.js'), 'console.log(1)', 'utf8');
+    fs.mkdirSync(path.join(cwd, '.vista', 'static', 'pages', 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'docs.html'), '<html>docs</html>', 'utf8');
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'index.rsc'), 'flight-index', 'utf8');
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'docs.rsc'), 'flight-docs', 'utf8');
+
+    const adapter = getDeployAdapter('cloudflare');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: { deploy: { target: 'cloudflare', output: 'static' } },
+      deployConfig: resolveDeployConfig({ deploy: { target: 'cloudflare', output: 'static' } }),
+      target: 'cloudflare',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    const outputDir = path.join(cwd, '.vista', 'deploy', 'cloudflare');
+    assert.equal(fs.existsSync(path.join(outputDir, 'index.html')), true);
+    assert.equal(fs.existsSync(path.join(outputDir, 'docs', 'index.html')), true);
+    assert.equal(fs.existsSync(path.join(outputDir, 'vista.svg')), true);
+    assert.equal(fs.existsSync(path.join(outputDir, '_vista', 'static', 'chunks', 'main.js')), true);
+    assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'index.rsc'), 'utf8'), 'flight-index');
+    assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'docs.rsc'), 'utf8'), 'flight-docs');
+    const redirects = fs.readFileSync(path.join(outputDir, '_redirects'), 'utf8');
+    assert.match(redirects, /\/rsc\/\*\.rsc \/rsc\/:splat\.rsc 200/);
+    assert.match(redirects, /\/rsc\/\* \/rsc\/:splat\.rsc 200/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('svg Image props skip /_vista/image srcSet', () => {
+  const { getImgProps } = require('../../dist/image/get-img-props');
+  const { defaultLoader } = require('../../dist/image/image-loader');
+  const { imageConfigDefault } = require('../../dist/image/image-config');
+  const props = getImgProps(
+    { src: '/vista.svg', alt: 'logo', width: 120, height: 40 },
+    imageConfigDefault,
+    defaultLoader
+  );
+  assert.equal(props.src, '/vista.svg');
+  assert.equal(props.srcSet, undefined);
+});
+
+test('SSG HTML inlines Flight payload before deferred chunks', () => {
+  const { injectInlineFlightBootstrap } = require('../../dist/server/static-generator');
+  const html = [
+    '<html><body>',
+    '<script>window.__VISTA_HYDRATE_DOCUMENT__ = true;</script>',
+    '<script defer src="/_vista/static/chunks/main.js"></script>',
+    '</body></html>',
+  ].join('\n');
+  const next = injectInlineFlightBootstrap(html, '1:["$","div"]');
+  assert.match(next, /window\.__VISTA_RSC_DATA__=/);
+  assert.ok(
+    next.indexOf('__VISTA_RSC_DATA__') < next.indexOf('<script defer'),
+    'Flight bootstrap must run before deferred hydration chunks'
+  );
+});
+
 test('netlify adapter emit packs Flight function with .vista standalone', async () => {
   const cwd = makeTempWorkspace();
   try {

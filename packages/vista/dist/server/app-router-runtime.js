@@ -9,6 +9,7 @@ exports.isInterceptionRouteSegment = isInterceptionRouteSegment;
 exports.isRouteGroupSegment = isRouteGroupSegment;
 exports.isParallelRouteSegment = isParallelRouteSegment;
 exports.resolveParallelSlotMatches = resolveParallelSlotMatches;
+exports.isPathInside = isPathInside;
 exports.resolveDirectoryChain = resolveDirectoryChain;
 exports.resolveNearestSegmentNotFoundPath = resolveNearestSegmentNotFoundPath;
 const fs_1 = __importDefault(require("fs"));
@@ -284,17 +285,41 @@ function resolveParallelSlotMatches(input) {
     }
     return matches;
 }
+function canonicalizeExistingPath(input) {
+    const resolved = path_1.default.resolve(input);
+    try {
+        return fs_1.default.realpathSync.native(resolved);
+    }
+    catch {
+        return resolved;
+    }
+}
+function posixPath(input) {
+    return input.replace(/\\/g, '/');
+}
+function isPathInside(parent, child) {
+    const root = posixPath(canonicalizeExistingPath(parent));
+    const target = posixPath(canonicalizeExistingPath(child));
+    const normalize = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
+    const a = normalize(root);
+    const b = normalize(target);
+    return b === a || b.startsWith(a.endsWith('/') ? a : `${a}/`);
+}
 function resolveDirectoryChain(rootDir, entryFilePath) {
-    const resolvedRootDir = path_1.default.resolve(rootDir);
-    const resolvedEntryDir = path_1.default.resolve(path_1.default.dirname(entryFilePath));
-    if (!resolvedEntryDir.startsWith(resolvedRootDir)) {
+    const resolvedRootDir = canonicalizeExistingPath(rootDir);
+    const resolvedEntryDir = canonicalizeExistingPath(path_1.default.dirname(entryFilePath));
+    if (!isPathInside(resolvedRootDir, resolvedEntryDir)) {
         return [resolvedEntryDir];
     }
-    const relativeSegments = path_1.default
-        .relative(resolvedRootDir, resolvedEntryDir)
-        .replace(/\\/g, '/')
-        .split('/')
-        .filter(Boolean);
+    let relativePath = path_1.default.relative(resolvedRootDir, resolvedEntryDir).replace(/\\/g, '/');
+    if (relativePath.startsWith('..')) {
+        const rootPosix = posixPath(resolvedRootDir);
+        const entryPosix = posixPath(resolvedEntryDir);
+        const rootKey = process.platform === 'win32' ? rootPosix.toLowerCase() : rootPosix;
+        const entryKey = process.platform === 'win32' ? entryPosix.toLowerCase() : entryPosix;
+        relativePath = entryKey.slice(rootKey.length).replace(/^\//, '');
+    }
+    const relativeSegments = relativePath.split('/').filter((segment) => segment && segment !== '.');
     const chain = [resolvedRootDir];
     let currentDir = resolvedRootDir;
     for (const segment of relativeSegments) {
@@ -306,7 +331,7 @@ function resolveDirectoryChain(rootDir, entryFilePath) {
 function resolveNearestSegmentNotFoundPath(appDir, startDir) {
     let currentDir = path_1.default.resolve(startDir);
     const resolvedAppDir = path_1.default.resolve(appDir);
-    while (currentDir.startsWith(resolvedAppDir)) {
+    while (isPathInside(resolvedAppDir, currentDir)) {
         const notFoundPath = resolveConventionModule(currentDir, 'not-found');
         if (notFoundPath) {
             return notFoundPath;

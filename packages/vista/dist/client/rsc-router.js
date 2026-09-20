@@ -121,14 +121,36 @@ function getCallServer() {
     }
     return _callServer;
 }
-function fetchFlight(pathname, search) {
+function flightRequestUrl(pathname, search) {
+    const normalized = pathname === '/' ? '' : pathname.replace(/\/$/, '');
+    // Static CDNs rewrite `/rsc/docs` → `/rsc/docs.rsc`. Request the extensionless
+    // URL so that rewrite is not applied twice (`/rsc/docs.rsc` → `/rsc/docs.rsc.rsc`).
+    return `/rsc${normalized}${search}`;
+}
+function hardNavigate(url) {
+    if (typeof window === 'undefined')
+        return;
+    window.location.assign(url);
+}
+function fetchFlight(pathname, search, options = {}) {
     const key = cacheKey(pathname, search);
     const cached = flightCache.get(key);
     if (cached)
         return cached;
     const create = getCreateFromFetch();
-    const thenable = create(fetch(`/rsc${pathname}${search}`, {
+    const requestUrl = flightRequestUrl(pathname, search);
+    const hardFallback = options.hardFallback !== false;
+    const thenable = create(fetch(requestUrl, {
         headers: { Accept: 'text/x-component' },
+    }).then((response) => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!response.ok || contentType.includes('text/html')) {
+            if (hardFallback) {
+                hardNavigate(`${pathname}${search}`);
+            }
+            throw new Error(`Flight request failed (${response.status}): ${requestUrl}`);
+        }
+        return response;
     }), { callServer: getCallServer() });
     // Evict oldest if over limit
     if (flightCache.size >= CACHE_MAX) {
@@ -148,14 +170,33 @@ function prefetchFlight(pathname, search) {
     const key = cacheKey(pathname, search);
     if (flightCache.has(key))
         return;
-    // Create the thenable which kicks off the fetch
-    fetchFlight(pathname, search);
+    fetchFlight(pathname, search, { hardFallback: false });
 }
 // ---------------------------------------------------------------------------
 // RSCRoot — reads the current Flight thenable
 // ---------------------------------------------------------------------------
 function RSCRoot({ response }) {
     return React.use(response);
+}
+class FlightNavigationErrorBoundary extends React.Component {
+    state = { failed: false };
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+    componentDidCatch() {
+        hardNavigate(this.props.href);
+    }
+    componentDidUpdate(prevProps) {
+        if (prevProps.href !== this.props.href && this.state.failed) {
+            this.setState({ failed: false });
+        }
+    }
+    render() {
+        if (this.state.failed) {
+            return null;
+        }
+        return this.props.children;
+    }
 }
 function RSCRouter({ initialResponse, initialPathname }) {
     const [flightResponse, setFlightResponse] = React.useState(initialResponse);
@@ -164,6 +205,13 @@ function RSCRouter({ initialResponse, initialPathname }) {
         ? new URLSearchParams(window.location.search)
         : new URLSearchParams());
     const [isPending, startTransition] = React.useTransition();
+    const href = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
+    React.useEffect(() => {
+        const initialKey = cacheKey(initialPathname || (typeof window !== 'undefined' ? window.location.pathname : '/'), typeof window !== 'undefined' ? window.location.search : '');
+        if (!flightCache.has(initialKey)) {
+            flightCache.set(initialKey, initialResponse);
+        }
+    }, [initialPathname, initialResponse]);
     // Handle browser back/forward
     React.useEffect(() => {
         const onPopState = () => {
@@ -214,6 +262,33 @@ function RSCRouter({ initialResponse, initialPathname }) {
             setFlightResponse(fetchFlight(curPath, curSearch));
         });
     }, []);
+    const resume = React.useCallback((url) => {
+        const parsed = new URL(url, window.location.origin);
+        const nextPath = parsed.pathname;
+        const nextSearch = parsed.search;
+        const nextUrl = `${nextPath}${nextSearch}`;
+        const nextResponse = fetchFlight(nextPath, nextSearch);
+        document.documentElement.setAttribute('data-vista-ppr', 'flight-resuming');
+        recordRuntimeTrace('rsc-resume-start', { url: nextUrl });
+        dispatchRuntimeEvent('vista:rsc-resume-start', { url: nextUrl });
+        startTransition(() => {
+            setPathname(nextPath);
+            setSearchParams(new URLSearchParams(nextSearch));
+            setFlightResponse(nextResponse);
+        });
+        Promise.resolve(nextResponse)
+            .then(() => {
+            recordRuntimeTrace('rsc-resume-complete', { url: nextUrl });
+            dispatchRuntimeEvent('vista:rsc-resume-complete', { url: nextUrl });
+        })
+            .catch((error) => {
+            const message = error && typeof error === 'object' && 'message' in error
+                ? String(error.message || error)
+                : String(error || 'Unknown RSC resume error');
+            recordRuntimeTrace('rsc-resume-error', { url: nextUrl, message });
+            dispatchRuntimeEvent('vista:rsc-resume-error', { url: nextUrl, message });
+        });
+    }, []);
     const contextValue = React.useMemo(() => ({
         pathname,
         searchParams,
@@ -225,59 +300,31 @@ function RSCRouter({ initialResponse, initialPathname }) {
         refresh,
         isPending,
     }), [pathname, searchParams, push, replace, back, forward, prefetch, refresh, isPending]);
-    React.useEffect(() => {
-        if (typeof window === 'undefined') {
-            return;
-        }
-        const bridge = {
-            refresh,
-            prefetch,
-            resume: (url) => {
-                const parsed = new URL(url, window.location.origin);
-                const nextPath = parsed.pathname;
-                const nextSearch = parsed.search;
-                const nextUrl = `${nextPath}${nextSearch}`;
-                const nextResponse = fetchFlight(nextPath, nextSearch);
-                document.documentElement.setAttribute('data-vista-ppr', 'flight-resuming');
-                recordRuntimeTrace('rsc-resume-start', { url: nextUrl });
-                dispatchRuntimeEvent('vista:rsc-resume-start', { url: nextUrl });
-                startTransition(() => {
-                    setPathname(nextPath);
-                    setSearchParams(new URLSearchParams(nextSearch));
-                    setFlightResponse(nextResponse);
-                });
-                Promise.resolve(nextResponse)
-                    .then(() => {
-                    recordRuntimeTrace('rsc-resume-complete', { url: nextUrl });
-                    dispatchRuntimeEvent('vista:rsc-resume-complete', { url: nextUrl });
-                })
-                    .catch((error) => {
-                    const message = error && typeof error === 'object' && 'message' in error
-                        ? String(error.message || error)
-                        : String(error || 'Unknown RSC resume error');
-                    recordRuntimeTrace('rsc-resume-error', { url: nextUrl, message });
-                    dispatchRuntimeEvent('vista:rsc-resume-error', { url: nextUrl, message });
-                });
-            },
+    if (typeof window !== 'undefined') {
+        window.__VISTA_RSC_ROUTER__ = {
+            ...contextValue,
+            resume,
             getState: () => ({
                 pathname,
                 search: searchParams.toString() ? `?${searchParams.toString()}` : '',
                 isPending,
             }),
         };
-        window.__VISTA_RSC_ROUTER__ = bridge;
+    }
+    React.useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
         recordRuntimeTrace('rsc-router-ready', {
             pathname,
             search: searchParams.toString() ? `?${searchParams.toString()}` : '',
         });
         document.dispatchEvent(new CustomEvent('vista:rsc-router-ready'));
         return () => {
-            if (window.__VISTA_RSC_ROUTER__ === bridge) {
-                delete window.__VISTA_RSC_ROUTER__;
-            }
+            delete window.__VISTA_RSC_ROUTER__;
         };
-    }, [pathname, searchParams, isPending, refresh, prefetch]);
-    return ((0, jsx_runtime_1.jsx)(exports.RSCRouterContext.Provider, { value: contextValue, children: (0, jsx_runtime_1.jsx)(RSCRoot, { response: flightResponse }) }));
+    }, []);
+    return ((0, jsx_runtime_1.jsx)(exports.RSCRouterContext.Provider, { value: contextValue, children: (0, jsx_runtime_1.jsx)(FlightNavigationErrorBoundary, { href: href, children: (0, jsx_runtime_1.jsx)(RSCRoot, { response: flightResponse }) }) }));
 }
 // ---------------------------------------------------------------------------
 // Hooks — unified versions that work in both RSC and legacy modes
@@ -287,5 +334,11 @@ function RSCRouter({ initialResponse, initialPathname }) {
  * otherwise falls back to null.
  */
 function useRSCRouter() {
-    return React.useContext(exports.RSCRouterContext);
+    const ctx = React.useContext(exports.RSCRouterContext);
+    if (ctx)
+        return ctx;
+    if (typeof window !== 'undefined' && typeof window.__VISTA_RSC_ROUTER__?.push === 'function') {
+        return window.__VISTA_RSC_ROUTER__;
+    }
+    return null;
 }

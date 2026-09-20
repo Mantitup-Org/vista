@@ -7,7 +7,7 @@
  */
 import webpack from 'webpack';
 import { VistaDirs } from '../manifest';
-import type { VistaEngineVariant } from '../../config';
+import type { DeployOutput, VistaEngineVariant } from '../../config';
 export interface RSCCompilerOptions {
     cwd: string;
     isDev: boolean;
@@ -15,6 +15,8 @@ export interface RSCCompilerOptions {
     buildId: string;
     engineVariant?: VistaEngineVariant;
     clientReferenceFiles?: string[];
+    imagesUnoptimized?: boolean;
+    deployOutput?: DeployOutput;
 }
 /**
  * Create Server-Side Webpack Configuration

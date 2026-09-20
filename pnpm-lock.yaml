@@ -12704,14 +12704,14 @@ snapshots:
 
   temp-dir@1.0.0: {}
 
-  terser-webpack-plugin@5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)):
+  terser-webpack-plugin@5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.3.3
       serialize-javascript: 6.0.2
       terser: 5.46.0
-      webpack: 5.104.1(@swc/core@1.15.8)
+      webpack: 5.104.1(@swc/core@1.15.8)(esbuild@0.25.12)
     optionalDependencies:
       '@swc/core': 1.15.8
       esbuild: 0.24.2
@@ -13162,7 +13162,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.0
-      terser-webpack-plugin: 5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8))
+      terser-webpack-plugin: 5.3.16(@swc/core@1.15.8)(esbuild@0.24.2)(webpack@5.104.1(@swc/core@1.15.8)(esbuild@0.25.12))
       watchpack: 2.5.1
       webpack-sources: 3.3.4
     transitivePeerDependencies:

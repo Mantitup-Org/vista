@@ -10,7 +10,7 @@ import React, {
   useContext,
 } from 'react';
 import { RouterContext, usePathname } from './router';
-import { RSCRouterContext, useRSCRouter } from './rsc-router';
+import { useRSCRouter } from './rsc-router';
 
 /*
  * Vista Link Component
@@ -153,7 +153,7 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
   ) => {
     // Try the RSC router first — if we're inside an RSCRouter, use
     // Flight-based navigation. Otherwise fall back to the legacy router.
-    const rscRouter = useContext(RSCRouterContext);
+    const rscRouter = useRSCRouter();
     const legacyRouter = useContext(RouterContext);
     const fallbackPathname = usePathname();
     const pathname = rscRouter?.pathname ?? legacyRouter?.pathname ?? fallbackPathname;

@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { getImgProps, type ImageProps } from './get-img-props';
-import { imageConfigDefault } from './image-config';
+import { resolveRuntimeImageConfig } from './image-config';
 import { defaultLoader } from './image-loader';
 
-export interface EnhancedImageProps extends ImageProps {}
+export type EnhancedImageProps = ImageProps;
 
 /**
  * React-server safe Image component.
@@ -12,7 +12,7 @@ export interface EnhancedImageProps extends ImageProps {}
  * react-server condition uses a plain SSR-friendly <img> wrapper.
  */
 export function Image(props: EnhancedImageProps): React.ReactElement {
-  const imgProps = getImgProps(props, imageConfigDefault, defaultLoader);
+  const imgProps = getImgProps(props, resolveRuntimeImageConfig(), defaultLoader);
 
   return (
     <img

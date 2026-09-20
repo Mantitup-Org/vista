@@ -59,7 +59,7 @@ const rsc_router_1 = require("./rsc-router");
  * to popstate events.
  */
 function usePathname() {
-    const rscCtx = React.useContext(rsc_router_1.RSCRouterContext);
+    const rscCtx = (0, rsc_router_1.useRSCRouter)();
     if (rscCtx)
         return rscCtx.pathname;
     const [pathname, setPathname] = React.useState(() => typeof window !== 'undefined' ? window.location.pathname : '/');
@@ -77,7 +77,7 @@ function usePathname() {
  * Uses the RSC router context when available.
  */
 function useSearchParams() {
-    const rscCtx = React.useContext(rsc_router_1.RSCRouterContext);
+    const rscCtx = (0, rsc_router_1.useRSCRouter)();
     if (rscCtx)
         return rscCtx.searchParams;
     const [searchParams, setSearchParams] = React.useState(() => typeof window !== 'undefined'

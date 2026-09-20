@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VALID_LOADERS = exports.imageConfigDefault = void 0;
+exports.resolveRuntimeImageConfig = resolveRuntimeImageConfig;
 const constants_1 = require("../constants");
 exports.imageConfigDefault = {
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
@@ -18,4 +19,20 @@ exports.imageConfigDefault = {
     remotePatterns: [],
     unoptimized: false,
 };
+function envDisablesImageOptimization() {
+    return (process.env.VISTA_IMAGES_UNOPTIMIZED === '1' ||
+        process.env.VISTA_DEPLOY_OUTPUT === 'static' ||
+        process.env.CF_PAGES === '1' ||
+        process.env.NETLIFY === 'true');
+}
+/** Merge defaults with build-time env (`VISTA_IMAGES_UNOPTIMIZED`, static deploy). */
+function resolveRuntimeImageConfig(overrides) {
+    return {
+        ...exports.imageConfigDefault,
+        ...overrides,
+        unoptimized: overrides?.unoptimized === true ||
+            exports.imageConfigDefault.unoptimized ||
+            envDisablesImageOptimization(),
+    };
+}
 exports.VALID_LOADERS = ['default', 'imgix', 'cloudinary', 'akamai', 'custom'];

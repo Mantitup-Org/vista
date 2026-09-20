@@ -1,8 +1,8 @@
 'use client';
 
 import React, { forwardRef, useState, useCallback } from 'react';
-import { getImgProps, ImageProps, PlaceholderValue } from './get-img-props';
-import { imageConfigDefault } from './image-config';
+import { getImgProps, ImageProps } from './get-img-props';
+import { resolveRuntimeImageConfig } from './image-config';
 import { defaultLoader } from './image-loader';
 
 // Blur placeholder styles
@@ -24,9 +24,7 @@ const wrapperStyle: React.CSSProperties = {
     overflow: 'hidden',
 };
 
-export interface EnhancedImageProps extends ImageProps {
-    // All props from ImageProps
-}
+export type EnhancedImageProps = ImageProps;
 
 export const Image = forwardRef<HTMLImageElement, EnhancedImageProps>((props, ref) => {
     const {
@@ -79,7 +77,7 @@ export const Image = forwardRef<HTMLImageElement, EnhancedImageProps>((props, re
     // Get processed img props
     const imgProps = getImgProps(
         { ...restProps, priority, unoptimized: useDirectSrc || restProps.unoptimized },
-        imageConfigDefault,
+        resolveRuntimeImageConfig(),
         defaultLoader
     );
 

@@ -61,7 +61,7 @@ function resolveFromWorkspace(specifier, cwd) {
  * Output goes to .vista/server/ and is NEVER sent to the client.
  */
 function createServerWebpackConfig(options) {
-    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default' } = options;
+    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default', imagesUnoptimized = false, deployOutput, } = options;
     const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -181,6 +181,8 @@ function createServerWebpackConfig(options) {
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
                 'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
                 'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+                'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+                'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
                 [constants_1.BUILD_ID_DEFINE]: JSON.stringify(buildId),
                 [constants_1.SERVER_DEFINE]: 'true',
             }),
@@ -196,7 +198,7 @@ function createServerWebpackConfig(options) {
  * Server components are replaced with client references.
  */
 function createClientWebpackConfig(options) {
-    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default', clientReferenceFiles = [] } = options;
+    const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default', clientReferenceFiles = [], imagesUnoptimized = false, deployOutput, } = options;
     const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -222,7 +224,7 @@ function createClientWebpackConfig(options) {
         entry: clientEntry,
         output: {
             path: vistaDirs.chunks,
-            filename: isDev ? '[name].js' : 'main-[contenthash:8].js',
+            filename: isDev ? '[name].js' : '[name]-[contenthash:8].js',
             chunkFilename: isDev ? '[name].js' : '[name]-[contenthash:8].js',
             publicPath: constants_1.STATIC_CHUNKS_PATH,
             clean: !isDev,
@@ -405,6 +407,8 @@ function createClientWebpackConfig(options) {
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
                 'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
                 'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+                'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+                'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
                 [constants_1.BUILD_ID_DEFINE]: JSON.stringify(buildId),
                 [constants_1.SERVER_DEFINE]: 'false',
             }),

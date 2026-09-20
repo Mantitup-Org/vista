@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { type ImageProps } from './get-img-props';
-export interface EnhancedImageProps extends ImageProps {
-}
+export type EnhancedImageProps = ImageProps;
 /**
  * React-server safe Image component.
  *

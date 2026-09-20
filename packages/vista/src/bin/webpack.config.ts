@@ -5,7 +5,7 @@ import MiniCssExtractPlugin from 'mini-css-extract-plugin';
 import { VistaServerComponentPlugin } from './server-component-plugin';
 import { VistaFlightPlugin } from '../build/webpack/plugins/vista-flight-plugin';
 import { BUILD_DIR, FLASH_DIR } from '../constants';
-import type { VistaEngineVariant } from '../config';
+import type { DeployOutput, VistaEngineVariant } from '../config';
 import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
 
 export interface WebpackConfigOptions {
@@ -13,10 +13,19 @@ export interface WebpackConfigOptions {
   isDev: boolean;
   engineVariant?: VistaEngineVariant;
   cacheComponentsEnabled?: boolean;
+  imagesUnoptimized?: boolean;
+  deployOutput?: DeployOutput;
 }
 
 export function createWebpackConfig(options: WebpackConfigOptions): webpack.Configuration {
-  const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false } = options;
+  const {
+    cwd,
+    isDev,
+    engineVariant = 'default',
+    cacheComponentsEnabled = false,
+    imagesUnoptimized = false,
+    deployOutput,
+  } = options;
   const vistaDir = path.join(cwd, BUILD_DIR);
   const flashDir = path.join(cwd, FLASH_DIR);
   const entryPoint = path.join(vistaDir, 'client.tsx');
@@ -173,6 +182,8 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
         'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
         'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+        'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+        'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
       }),
       new MiniCssExtractPlugin({
         filename: isDev ? 'modules.css' : 'modules-[contenthash:8].css',

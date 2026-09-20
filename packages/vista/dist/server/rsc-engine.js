@@ -24,7 +24,7 @@ const server_1 = require("react-dom/server");
 const webpack_dev_middleware_1 = __importDefault(require("webpack-dev-middleware"));
 const stream_1 = require("stream");
 const child_process_1 = require("child_process");
-const url_1 = require("url");
+const ssr_webpack_shim_1 = require("./ssr-webpack-shim");
 const middleware_runner_1 = require("./middleware-runner");
 const image_optimizer_1 = require("./image-optimizer");
 const ppr_1 = require("./ppr");
@@ -33,39 +33,10 @@ const logger_1 = require("./logger");
 const not_found_page_1 = require("./not-found-page");
 const static_cache_1 = require("./static-cache");
 const static_generator_1 = require("./static-generator");
+const hydration_chunks_1 = require("./hydration-chunks");
 const react_client_reference_manifest_1 = require("../build/rsc/react-client-reference-manifest");
 const constants_1 = require("../constants");
 const CjsModule = require('module');
-// ---------------------------------------------------------------------------
-// SSR Webpack Shim
-// ---------------------------------------------------------------------------
-// The Flight SSR decoder (react-server-dom-webpack/client.node) calls
-// __webpack_require__(specifier) to load client components during SSR.
-// In Vista the SSR process runs in plain Node.js (not through webpack),
-// so we provide a shim that converts file:// URLs to absolute paths and
-// delegates to Node's require().
-// ---------------------------------------------------------------------------
-function installSSRWebpackShim() {
-    if (typeof globalThis.__webpack_require__ === 'function')
-        return;
-    globalThis.__webpack_require__ = function ssrWebpackRequire(specifier) {
-        let modulePath = specifier;
-        // Convert file:// URLs to absolute paths
-        if (specifier.startsWith('file://')) {
-            try {
-                modulePath = (0, url_1.fileURLToPath)(specifier);
-            }
-            catch {
-                modulePath = specifier;
-            }
-        }
-        return require(modulePath);
-    };
-    // Chunk loading is a no-op on the server — all code is already local.
-    globalThis.__webpack_chunk_load__ = function ssrChunkLoad(_chunkId) {
-        return Promise.resolve();
-    };
-}
 const config_1 = require("../config");
 const dev_error_1 = require("../dev-error");
 const artifact_validator_1 = require("./artifact-validator");
@@ -338,32 +309,7 @@ function cleanHotUpdateFiles(cwd) {
     }
 }
 function findChunkFiles(cwd, isDev) {
-    const chunksDir = path_1.default.join(cwd, constants_1.BUILD_DIR, 'static', 'chunks');
-    if (!fs_1.default.existsSync(chunksDir))
-        return [];
-    const files = fs_1.default
-        .readdirSync(chunksDir)
-        .filter((name) => name.endsWith('.js') && !name.endsWith('.map') && !name.includes('.hot-update.'));
-    // In dev, avoid loading stale production artifacts left from a previous build.
-    // Production chunks end with a hash suffix like `main-1a2b3c4d.js`.
-    const normalizedFiles = isDev
-        ? files.filter((name) => !/-[0-9a-f]{8,}\.js$/i.test(name))
-        : files;
-    // Load webpack runtime first, then framework, then the rest alphabetically.
-    // This ensures the chunk registry (__webpack_require__) is available before
-    // any deferred chunk tries to self-register.
-    const priority = ['webpack.js', 'framework.js', 'vendor.js'];
-    return normalizedFiles.sort((a, b) => {
-        const ai = priority.indexOf(a);
-        const bi = priority.indexOf(b);
-        if (ai !== -1 && bi !== -1)
-            return ai - bi;
-        if (ai !== -1)
-            return -1;
-        if (bi !== -1)
-            return 1;
-        return a.localeCompare(b);
-    });
+    return (0, hydration_chunks_1.listHydrationChunkFiles)(cwd, isDev);
 }
 function normalizeSSRManifest(manifest) {
     if (!manifest || !manifest.moduleMap) {
@@ -616,9 +562,15 @@ async function renderAppSubtreeElement(input) {
     });
     const directoryChain = (0, app_router_runtime_1.resolveDirectoryChain)(input.subtreeRootDir, input.entryFilePath);
     for (let i = directoryChain.length - 1; i >= 0; i--) {
-        const dir = directoryChain[i];
-        element = applySegmentBoundaries(dir, element);
-        const layoutPath = (0, app_router_runtime_1.resolveConventionModule)(dir, 'root') ?? (0, app_router_runtime_1.resolveConventionModule)(dir, 'layout');
+        element = applySegmentBoundaries(directoryChain[i], element);
+    }
+    const layoutPaths = input.layoutPaths && input.layoutPaths.length > 0
+        ? input.layoutPaths
+        : directoryChain
+            .map((dir) => (0, app_router_runtime_1.resolveConventionModule)(dir, 'root') ?? (0, app_router_runtime_1.resolveConventionModule)(dir, 'layout'))
+            .filter((layoutPath) => Boolean(layoutPath));
+    for (let i = layoutPaths.length - 1; i >= 0; i--) {
+        const layoutPath = layoutPaths[i];
         if (!layoutPath || path_1.default.resolve(layoutPath) === path_1.default.resolve(input.entryFilePath)) {
             continue;
         }
@@ -682,6 +634,7 @@ async function createRouteElement(route, context, isDev, rootLayout, runtimeRoot
         cwd: runtimeRoot,
         evaluateLeafMetadata: false,
         disableParallelSlots: options.disableParallelSlots,
+        layoutPaths: route.layoutPaths,
     });
     return { element, metadata, rootMode: rootLayout.mode };
 }
@@ -1017,7 +970,7 @@ function startRSCServer(options = {}) {
         cacheComponentsEnabled: cacheComponentsConfig.enabled,
     });
     (0, fetch_policy_1.installSegmentFetchPolicyShim)();
-    installSSRWebpackShim();
+    (0, ssr_webpack_shim_1.installSSRWebpackShim)();
     const serverManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'server', 'server-manifest.json');
     if (!fs_1.default.existsSync(serverManifestPath)) {
         failRSCStartup(`[vista:rsc] Missing server manifest at ${serverManifestPath}. Run "vista build --rsc" first.`, shouldListen);

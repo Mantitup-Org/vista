@@ -641,11 +641,22 @@ function transpileProjectSource(source, filename, fallback) {
         return fallback;
     }
 }
+function extraCompileRootsFromStandalone(cwd) {
+    const resolved = path_1.default.resolve(cwd);
+    const normalized = resolved.replace(/\\/g, '/');
+    const marker = '/.vista/standalone/project';
+    const idx = normalized.toLowerCase().lastIndexOf(marker);
+    if (idx === -1) {
+        return [];
+    }
+    return [path_1.default.resolve(resolved.slice(0, idx))];
+}
 function installModuleCompileHook(options) {
     const vistaRuntimeDir = path_1.default.resolve(__dirname, '..');
     const vistaPackageRoot = path_1.default.resolve(__dirname, '..', '..');
     activeCompileRoots = Array.from(new Set([
         options.cwd,
+        ...extraCompileRootsFromStandalone(options.cwd),
         vistaRuntimeDir,
         vistaPackageRoot,
         path_1.default.join(vistaPackageRoot, 'src'),

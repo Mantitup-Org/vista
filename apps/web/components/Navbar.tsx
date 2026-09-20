@@ -25,7 +25,7 @@ export default function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 md:px-6">
-        <a href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <Image
             src="/vista.svg"
             width={120}
@@ -34,7 +34,7 @@ export default function Navbar() {
             className="relative z-10 dark:invert"
             style={{ width: '120px', height: 'auto' }}
           />
-        </a>
+        </Link>
 
         <div className="flex items-center gap-4 md:gap-6">
           {siteConfig.nav.map((item) =>

@@ -390,9 +390,15 @@ async function renderAppSubtreeElement(input) {
     });
     const directoryChain = (0, app_router_runtime_1.resolveDirectoryChain)(input.subtreeRootDir, input.entryFilePath);
     for (let i = directoryChain.length - 1; i >= 0; i--) {
-        const dir = directoryChain[i];
-        element = applySegmentBoundaries(dir, element);
-        const layoutPath = (0, app_router_runtime_1.resolveConventionModule)(dir, 'root') ?? (0, app_router_runtime_1.resolveConventionModule)(dir, 'layout');
+        element = applySegmentBoundaries(directoryChain[i], element);
+    }
+    const layoutPaths = input.layoutPaths && input.layoutPaths.length > 0
+        ? input.layoutPaths
+        : directoryChain
+            .map((dir) => (0, app_router_runtime_1.resolveConventionModule)(dir, 'root') ?? (0, app_router_runtime_1.resolveConventionModule)(dir, 'layout'))
+            .filter((layoutPath) => Boolean(layoutPath));
+    for (let i = layoutPaths.length - 1; i >= 0; i--) {
+        const layoutPath = layoutPaths[i];
         if (!layoutPath || path_1.default.resolve(layoutPath) === path_1.default.resolve(input.entryFilePath)) {
             continue;
         }
@@ -447,6 +453,7 @@ async function createRouteElement(route, context, isDev, runtimeRoot, options = 
         cwd: runtimeRoot,
         evaluateLeafMetadata: true,
         disableParallelSlots: options.disableParallelSlots,
+        layoutPaths: route.layoutPaths,
     });
 }
 async function readRawRequestBody(req) {

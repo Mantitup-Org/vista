@@ -55,18 +55,6 @@ function writeFullRuntimeNetlifyToml(ctx) {
     (0, utils_1.writeFileIfAllowed)(targetFile, content, ctx.force);
     return targetFile;
 }
-function writeStaticRedirects(outputDir) {
-    const redirectsPath = path_1.default.join(outputDir, '_redirects');
-    const lines = [
-        '/_vista/* /:splat 200',
-        '/ /static/pages/index.html 200',
-        '/rsc /static/pages/index.rsc 200',
-        '/_rsc/* /static/pages/:splat.rsc 200',
-        '/* /static/pages/:splat.html 200',
-    ];
-    fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
-    return redirectsPath;
-}
 exports.netlifyAdapter = {
     id: 'netlify',
     requiredOutput: 'standalone',
@@ -83,12 +71,12 @@ exports.netlifyAdapter = {
         (0, utils_1.ensureDir)(outputDir);
         if ((0, runtime_pack_1.isStaticOnlyDeploy)(ctx)) {
             (0, utils_1.copyStaticHostAssets)(ctx.cwd, ctx.vistaDir, outputDir);
-            const redirectsPath = writeStaticRedirects(outputDir);
+            (0, utils_1.prepareStaticCdnOutput)(outputDir);
             const netlifyTomlPath = writeStaticNetlifyToml(ctx);
             return {
                 status: 'emitted',
                 target: 'netlify',
-                artifactPaths: [outputDir, redirectsPath, netlifyTomlPath],
+                artifactPaths: [outputDir, netlifyTomlPath],
                 instructions: ['Static mode: Netlify serves pre-rendered pages only.'],
             };
         }

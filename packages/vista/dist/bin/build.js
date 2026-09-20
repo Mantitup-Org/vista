@@ -279,6 +279,14 @@ async function buildClient(watch = false, onRebuild) {
     const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const structureConfig = (0, config_1.resolveStructureValidationConfig)(vistaConfig);
     const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)(vistaConfig);
+    const deployConfig = (0, config_1.resolveDeployConfig)(vistaConfig);
+    const imagesUnoptimized = vistaConfig.images?.unoptimized === true || deployConfig.output === 'static';
+    if (imagesUnoptimized) {
+        process.env.VISTA_IMAGES_UNOPTIMIZED = '1';
+    }
+    if (deployConfig.output) {
+        process.env.VISTA_DEPLOY_OUTPUT = deployConfig.output;
+    }
     if (_debug)
         console.log(`[vista:build] Engine variant: ${engineVariant}`);
     if (structureConfig.enabled) {
@@ -383,6 +391,8 @@ async function buildClient(watch = false, onRebuild) {
         isDev: watch,
         engineVariant,
         cacheComponentsEnabled: cacheComponentsConfig.enabled,
+        imagesUnoptimized,
+        deployOutput: deployConfig.output,
     });
     // Create Webpack compiler
     exports.compiler = compiler = (0, webpack_1.default)(config);

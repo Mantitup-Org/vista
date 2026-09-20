@@ -18,7 +18,7 @@ import webpackDevMiddleware from 'webpack-dev-middleware';
 import { Readable, Transform, PassThrough } from 'stream';
 import { type ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
-import { fileURLToPath } from 'url';
+import { installSSRWebpackShim } from './ssr-webpack-shim';
 import { runMiddleware, applyMiddlewareResult } from './middleware-runner';
 import { createImageHandler } from './image-optimizer';
 import { resolvePprRequestMode } from './ppr';
@@ -35,6 +35,7 @@ import {
   invalidateCachedPagesByTag,
 } from './static-cache';
 import { revalidatePath } from './static-generator';
+import { listHydrationChunkFiles } from './hydration-chunks';
 import { normalizeReactServerConsumerManifest } from '../build/rsc/react-client-reference-manifest';
 import {
   BUILD_DIR,
@@ -48,40 +49,6 @@ import {
 } from '../constants';
 
 const CjsModule = require('module');
-
-// ---------------------------------------------------------------------------
-// SSR Webpack Shim
-// ---------------------------------------------------------------------------
-// The Flight SSR decoder (react-server-dom-webpack/client.node) calls
-// __webpack_require__(specifier) to load client components during SSR.
-// In Vista the SSR process runs in plain Node.js (not through webpack),
-// so we provide a shim that converts file:// URLs to absolute paths and
-// delegates to Node's require().
-// ---------------------------------------------------------------------------
-
-function installSSRWebpackShim(): void {
-  if (typeof (globalThis as any).__webpack_require__ === 'function') return;
-
-  (globalThis as any).__webpack_require__ = function ssrWebpackRequire(specifier: string): any {
-    let modulePath = specifier;
-    // Convert file:// URLs to absolute paths
-    if (specifier.startsWith('file://')) {
-      try {
-        modulePath = fileURLToPath(specifier);
-      } catch {
-        modulePath = specifier;
-      }
-    }
-    return require(modulePath);
-  };
-
-  // Chunk loading is a no-op on the server — all code is already local.
-  (globalThis as any).__webpack_chunk_load__ = function ssrChunkLoad(
-    _chunkId: string
-  ): Promise<void> {
-    return Promise.resolve();
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Flight SSR Client types
@@ -426,33 +393,7 @@ function cleanHotUpdateFiles(cwd: string): void {
 }
 
 function findChunkFiles(cwd: string, isDev: boolean): string[] {
-  const chunksDir = path.join(cwd, BUILD_DIR, 'static', 'chunks');
-  if (!fs.existsSync(chunksDir)) return [];
-
-  const files = fs
-    .readdirSync(chunksDir)
-    .filter(
-      (name) => name.endsWith('.js') && !name.endsWith('.map') && !name.includes('.hot-update.')
-    );
-
-  // In dev, avoid loading stale production artifacts left from a previous build.
-  // Production chunks end with a hash suffix like `main-1a2b3c4d.js`.
-  const normalizedFiles = isDev
-    ? files.filter((name) => !/-[0-9a-f]{8,}\.js$/i.test(name))
-    : files;
-
-  // Load webpack runtime first, then framework, then the rest alphabetically.
-  // This ensures the chunk registry (__webpack_require__) is available before
-  // any deferred chunk tries to self-register.
-  const priority = ['webpack.js', 'framework.js', 'vendor.js'];
-  return normalizedFiles.sort((a, b) => {
-    const ai = priority.indexOf(a);
-    const bi = priority.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  return listHydrationChunkFiles(cwd, isDev);
 }
 
 function normalizeSSRManifest(manifest: SSRManifest): SSRManifest {
@@ -746,6 +687,7 @@ async function renderAppSubtreeElement(input: {
   cwd: string;
   evaluateLeafMetadata?: boolean;
   disableParallelSlots?: boolean;
+  layoutPaths?: string[];
 }): Promise<React.ReactElement> {
   const appDir = resolveAppDir(input.cwd);
   let element = await createRenderableRouteModuleElement(
@@ -761,13 +703,19 @@ async function renderAppSubtreeElement(input: {
   );
 
   const directoryChain = resolveDirectoryChain(input.subtreeRootDir, input.entryFilePath);
-
   for (let i = directoryChain.length - 1; i >= 0; i--) {
-    const dir = directoryChain[i];
-    element = applySegmentBoundaries(dir, element);
+    element = applySegmentBoundaries(directoryChain[i], element);
+  }
 
-    const layoutPath =
-      resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout');
+  const layoutPaths =
+    input.layoutPaths && input.layoutPaths.length > 0
+      ? input.layoutPaths
+      : directoryChain
+          .map((dir) => resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout'))
+          .filter((layoutPath): layoutPath is string => Boolean(layoutPath));
+
+  for (let i = layoutPaths.length - 1; i >= 0; i--) {
+    const layoutPath = layoutPaths[i];
     if (!layoutPath || path.resolve(layoutPath) === path.resolve(input.entryFilePath)) {
       continue;
     }
@@ -857,6 +805,7 @@ async function createRouteElement(
     cwd: runtimeRoot,
     evaluateLeafMetadata: false,
     disableParallelSlots: options.disableParallelSlots,
+    layoutPaths: route.layoutPaths,
   });
 
   return { element, metadata, rootMode: rootLayout.mode };

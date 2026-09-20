@@ -57,9 +57,7 @@ declare global {
                 at: number;
             };
         };
-        __VISTA_RSC_ROUTER__?: {
-            refresh: () => void;
-            prefetch: (url: string) => void;
+        __VISTA_RSC_ROUTER__?: RSCNavigationState & {
             resume: (url: string) => void;
             getState: () => {
                 pathname: string;

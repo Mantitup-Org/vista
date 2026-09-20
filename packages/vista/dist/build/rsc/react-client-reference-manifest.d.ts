@@ -18,6 +18,13 @@ export interface ReactServerConsumerManifest {
     moduleMap?: Record<string, Record<string, ReactServerConsumerManifestEntry>>;
     serverModuleMap?: Record<string, unknown>;
 }
+/**
+ * Flight encode looks up `file://...#ExportName`. Webpack may have keyed the
+ * same module under a standalone copy, a different drive-letter case, or a
+ * slightly different absolute prefix. Resolve those aliases at lookup time so
+ * missing keys do not serialize as Flight `E{"digest":""}` rows.
+ */
+export declare function resolveReactClientManifestEntry(manifest: ReactClientReferenceManifest, key: string): ReactClientReferenceManifestEntry | undefined;
 export declare function normalizeReactClientReferenceManifest(input: ReactClientReferenceManifest): ReactClientReferenceManifest;
 export declare function normalizeReactServerConsumerManifest(input: ReactServerConsumerManifest): ReactServerConsumerManifest;
 /**

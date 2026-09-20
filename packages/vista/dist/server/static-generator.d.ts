@@ -34,6 +34,8 @@ export interface StaticGeneratorResult {
     /** The prerender manifest */
     manifest: PrerenderManifest;
 }
+/** Embed Flight on SSG HTML so the client can hydrate without a live /rsc server. */
+export declare function injectInlineFlightBootstrap(html: string, flightText: string): string;
 /**
  * Run static generation for all eligible routes.
  */

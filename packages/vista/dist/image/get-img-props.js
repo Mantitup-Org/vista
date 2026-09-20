@@ -3,22 +3,20 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getImgProps = getImgProps;
 const image_config_1 = require("./image-config");
 // Helper: Generate srcSet
-function generateSrcSet(src, width, loader, config, unoptimized) {
+function generateSrcSet(src, _width, loader, config, unoptimized, quality) {
     if (unoptimized)
         return undefined;
     const { deviceSizes, imageSizes } = config;
     const sizes = [...deviceSizes, ...imageSizes].sort((a, b) => a - b);
-    // If width is known, only generate sizes up to that width (plus maybe 2x/3x for density)
-    // For simplicity MVP, we'll generate device sizes.
     return sizes
         .map((size) => {
-        const url = loader({ src, width: size });
+        const url = loader({ src, width: size, quality });
         return `${url} ${size}w`;
     })
         .join(', ');
 }
 function getImgProps(props, config = image_config_1.imageConfigDefault, defaultLoader) {
-    const { src, alt, width, height, fill, loader = defaultLoader, quality, priority, unoptimized, style, sizes, className, loading, placeholder, blurDataURL, onLoadingComplete, ...rest } = props;
+    const { src, alt, width, height, fill, loader = defaultLoader, quality, priority, unoptimized, style, sizes, className, loading, placeholder: _placeholder, blurDataURL: _blurDataURL, onLoadingComplete: _onLoadingComplete, ...rest } = props;
     const imgStyle = { ...style };
     // Handle Fill Mode
     if (fill) {
@@ -29,15 +27,27 @@ function getImgProps(props, config = image_config_1.imageConfigDefault, defaultL
         imgStyle.objectFit = 'cover'; // Default to cover for bg images
     }
     // Handle Dimensions
-    let widthInt = width ? Number(width) : undefined;
-    let heightInt = height ? Number(height) : undefined;
+    const widthInt = width ? Number(width) : undefined;
+    const heightInt = height ? Number(height) : undefined;
     const vercelStaticBuild = typeof window === 'undefined' &&
         (process.env.VERCEL === '1' || typeof process.env.VERCEL_URL === 'string');
-    // Disable optimizer when explicitly requested, configured globally,
-    // or when building for Vercel static output (no /_vista/image endpoint).
-    const disableOptimization = !!unoptimized || !!config.unoptimized || vercelStaticBuild;
+    const srcPath = String(src || '')
+        .split('?')[0]
+        .toLowerCase();
+    const passthroughSrc = srcPath.startsWith('data:') ||
+        srcPath.startsWith('blob:') ||
+        srcPath.endsWith('.svg') ||
+        srcPath.endsWith('.gif') ||
+        srcPath.endsWith('.ico');
+    const staticHost = process.env.VISTA_DEPLOY_OUTPUT === 'static' ||
+        process.env.VISTA_IMAGES_UNOPTIMIZED === '1' ||
+        process.env.CF_PAGES === '1' ||
+        process.env.NETLIFY === 'true';
+    // Skip /_vista/image when the optimizer is unavailable (static CDN hosts)
+    // or the format cannot be resized (SVG/GIF/ICO).
+    const disableOptimization = !!unoptimized || !!config.unoptimized || passthroughSrc || staticHost || vercelStaticBuild;
     // Generate SrcSet
-    const srcSet = generateSrcSet(src, widthInt, loader, config, disableOptimization);
+    const srcSet = generateSrcSet(src, widthInt, loader, config, disableOptimization, quality ? Number(quality) : undefined);
     return {
         ...rest,
         src,

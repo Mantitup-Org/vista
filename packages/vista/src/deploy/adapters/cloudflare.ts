@@ -9,7 +9,7 @@ import {
   writeCloudflareFullRuntimeToml,
 } from '../runtime-pack';
 import type { DeployAdapter, DeployContext } from '../types';
-import { copyStaticHostAssets, ensureDir, writeFileIfAllowed } from '../utils';
+import { copyStaticHostAssets, ensureDir, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
 import { DOCKERFILE_TEMPLATE } from './docker';
 
 const CLOUDFLARE_OUTPUT_DIR = '.vista/deploy/cloudflare';
@@ -27,30 +27,6 @@ pages_build_output_dir = "${relativeOutput}"
 `;
   writeFileIfAllowed(targetFile, content, ctx.force);
   return targetFile;
-}
-
-function writeRoutesJson(outputDir: string): string {
-  const routesPath = path.join(outputDir, '_routes.json');
-  const routes = {
-    version: 1,
-    include: ['/*'],
-    exclude: ['/static/*'],
-  };
-  fs.writeFileSync(routesPath, `${JSON.stringify(routes, null, 2)}\n`, 'utf8');
-  return routesPath;
-}
-
-function writeRedirects(outputDir: string): string {
-  const redirectsPath = path.join(outputDir, '_redirects');
-  const lines = [
-    '/_vista/* /:splat 200',
-    '/ /static/pages/index.html 200',
-    '/rsc /static/pages/index.rsc 200',
-    '/_rsc/* /static/pages/:splat.rsc 200',
-    '/* /static/pages/:splat.html 200',
-  ];
-  fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
-  return redirectsPath;
 }
 
 export const cloudflareAdapter: DeployAdapter = {
@@ -72,13 +48,12 @@ export const cloudflareAdapter: DeployAdapter = {
 
     if (isStaticOnlyDeploy(ctx)) {
       copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
-      const routesPath = writeRoutesJson(outputDir);
-      const redirectsPath = writeRedirects(outputDir);
+      prepareStaticCdnOutput(outputDir);
       const wranglerPath = writeStaticWranglerToml(ctx, outputDir);
       return {
         status: 'emitted',
         target: 'cloudflare',
-        artifactPaths: [outputDir, routesPath, redirectsPath, wranglerPath],
+        artifactPaths: [outputDir, wranglerPath],
         instructions: [
           'Static mode: Cloudflare Pages serves pre-rendered output.',
           'For Flight SSR, omit deploy.output "static" and use Cloudflare Containers.',

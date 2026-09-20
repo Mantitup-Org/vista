@@ -244,6 +244,14 @@ waitForInlineFlightPayload(4000).then(function (inlineFlight) {
     return;
   }
 
+  if (/(?:^|\\n)\\d+:E\\{/.test(inlineFlight)) {
+    reportDevRuntimeError(
+      'Hydration Error',
+      new Error('Inline Flight payload contains error rows. Keeping server HTML instead of hydrating the document.')
+    );
+    return;
+  }
+
   const initialResponse = createFromReadableStream(flightTextToReadableStream(inlineFlight), {
     callServer,
   }) as Promise<React.ReactNode>;
@@ -365,6 +373,14 @@ async function buildRSC(watch = false) {
     const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const structureConfig = (0, config_1.resolveStructureValidationConfig)(vistaConfig);
     const cacheComponentsConfig = (0, config_1.resolveCacheComponentsConfig)(vistaConfig);
+    const deployConfig = (0, config_1.resolveDeployConfig)(vistaConfig);
+    const imagesUnoptimized = vistaConfig.images?.unoptimized === true || deployConfig.output === 'static';
+    if (imagesUnoptimized) {
+        process.env.VISTA_IMAGES_UNOPTIMIZED = '1';
+    }
+    if (deployConfig.output) {
+        process.env.VISTA_DEPLOY_OUTPUT = deployConfig.output;
+    }
     if (_debug)
         console.log(`[vista:build] Engine variant: ${engineVariant}`);
     if (structureConfig.enabled) {
@@ -487,6 +503,8 @@ async function buildRSC(watch = false) {
         buildId,
         engineVariant,
         clientReferenceFiles,
+        imagesUnoptimized,
+        deployOutput: deployConfig.output,
     };
     // Build CSS
     runPostCSS(cwd, vistaDirs.root);
