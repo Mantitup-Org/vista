@@ -633,13 +633,7 @@ function startServer(port = 3003, compiler) {
                     console.error(err);
                 }
                 // Render Server-Side Error Overlay
-                const errorInfo = {
-                    type: 'runtime',
-                    message: err.message || 'Unknown Server Error',
-                    stack: err.stack,
-                    file: (err.message.match && err.message.match(/(app\/.*?):(\d+):(\d+)/)?.[1]) || undefined,
-                };
-                res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
+                res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(err, { source: 'server' })]));
             }
         });
     });

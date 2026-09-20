@@ -112,7 +112,7 @@ import {
   resolveStructureValidationConfig,
   resolveTypedApiConfig,
 } from '../config';
-import { ErrorOverlay, renderErrorHTML } from '../dev-error';
+import { ErrorOverlay, fromCaughtError, renderErrorHTML } from '../dev-error';
 import type { RouteEntry, ServerManifest } from '../build/rsc/server-manifest';
 import { assertVistaArtifacts } from './artifact-validator';
 import { resolveNotFoundComponent, resolveRootLayout, type RootRenderMode } from './root-resolver';
@@ -1963,12 +1963,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
         // This is much better than falling through to legacy renderToString,
         // which will likely hit the same error (e.g. useState in a server component).
         if (isDev && !res.headersSent) {
-          const errorInfo = {
-            type: 'runtime' as const,
-            message: flightError.message || 'Flight SSR Error',
-            stack: flightError.stack,
-          };
-          res.status(500).send(renderErrorHTML([errorInfo]));
+          res.status(500).send(renderErrorHTML([fromCaughtError(flightError, { source: 'server' })]));
           return;
         }
 
@@ -2127,12 +2122,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
       }
       console.error('[vista:rsc] Render error:', error);
       if (isDev) {
-        const errorInfo = {
-          type: 'runtime' as const,
-          message: error.message || 'Unknown Server Error',
-          stack: error.stack,
-        };
-        res.status(500).send(renderErrorHTML([errorInfo]));
+        res.status(500).send(renderErrorHTML([fromCaughtError(error, { source: 'server' })]));
       } else {
         res.status(500).send('<h1>Internal Server Error</h1>');
       }

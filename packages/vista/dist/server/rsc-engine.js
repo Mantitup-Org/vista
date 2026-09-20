@@ -1582,12 +1582,7 @@ function startRSCServer(options = {}) {
                     // This is much better than falling through to legacy renderToString,
                     // which will likely hit the same error (e.g. useState in a server component).
                     if (isDev && !res.headersSent) {
-                        const errorInfo = {
-                            type: 'runtime',
-                            message: flightError.message || 'Flight SSR Error',
-                            stack: flightError.stack,
-                        };
-                        res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
+                        res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(flightError, { source: 'server' })]));
                         return;
                     }
                     // If headers were already sent (stream was partially flushed),
@@ -1706,12 +1701,7 @@ function startRSCServer(options = {}) {
                 }
                 console.error('[vista:rsc] Render error:', error);
                 if (isDev) {
-                    const errorInfo = {
-                        type: 'runtime',
-                        message: error.message || 'Unknown Server Error',
-                        stack: error.stack,
-                    };
-                    res.status(500).send((0, dev_error_1.renderErrorHTML)([errorInfo]));
+                    res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(error, { source: 'server' })]));
                 }
                 else {
                     res.status(500).send('<h1>Internal Server Error</h1>');

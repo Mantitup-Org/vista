@@ -4,18 +4,32 @@
  * Standalone dev error UI with Next.js-style pagination and controls.
  */
 import React from 'react';
+export interface VistaErrorLocation {
+    file: string;
+    line?: number;
+    column?: number;
+    codeFrame?: string;
+    kind?: 'source' | 'server' | 'client' | 'log';
+}
 export interface VistaError {
     type: 'build' | 'runtime' | 'hydration';
+    source?: 'server' | 'client';
     message: string;
     stack?: string;
     file?: string;
     line?: number;
     column?: number;
     codeFrame?: string;
+    related?: VistaErrorLocation[];
+    hint?: string;
 }
 interface ErrorOverlayProps {
     errors: VistaError[];
 }
+export declare function fromCaughtError(error: unknown, options?: {
+    type?: VistaError['type'];
+    source?: 'server' | 'client';
+}): VistaError;
 /**
  * Render a full HTML error page.
  * Engines should send this directly: `res.status(500).send(renderErrorHTML(...))`.
