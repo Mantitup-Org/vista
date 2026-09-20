@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.runGenerateCommand = runGenerateCommand;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const app_dir_1 = require("../server/app-dir");
 function toKebabCase(value) {
     return value
         .trim()
@@ -362,8 +363,7 @@ function renderEnvExample() {
     ].join('\n');
 }
 function patchRootWithSessionProvider(cwd) {
-    const relativePath = path_1.default.join('app', 'root.tsx');
-    const absolutePath = path_1.default.join(cwd, relativePath);
+    const absolutePath = path_1.default.join((0, app_dir_1.resolveAppDir)(cwd), 'root.tsx');
     if (!fs_1.default.existsSync(absolutePath)) {
         return { path: absolutePath, patched: false };
     }
@@ -401,11 +401,14 @@ async function runGenerateCommand(args, options = {}) {
         printGenerateUsage(log);
         return 1;
     }
+    // Write generated files into the resolved app/components dirs (supports src/app layout).
+    const appDirRelative = path_1.default.relative(cwd, (0, app_dir_1.resolveAppDir)(cwd));
+    const componentsDirRelative = path_1.default.relative(cwd, (0, app_dir_1.resolveComponentsDir)(cwd));
     if (command === 'api-init') {
         const writes = [
-            writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'typed.ts'), renderApiInitEntrypoint()),
-            writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'routers', 'index.ts'), renderRootRouter()),
-            writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'procedures', 'health.ts'), renderProcedure('health', 'get')),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'typed.ts'), renderApiInitEntrypoint()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'routers', 'index.ts'), renderRootRouter()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'procedures', 'health.ts'), renderProcedure('health', 'get')),
         ];
         const configState = ensureTypedApiEnabledInConfig(cwd);
         writes.forEach((result) => {
@@ -438,7 +441,7 @@ async function runGenerateCommand(args, options = {}) {
             error(`Invalid router name "${rawName}".`);
             return 1;
         }
-        const result = writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'routers', `${safeName}.ts`), renderRouter(safeName));
+        const result = writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'routers', `${safeName}.ts`), renderRouter(safeName));
         const relativePath = path_1.default.relative(cwd, result.path).replace(/\\/g, '/');
         log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
         return 0;
@@ -459,7 +462,7 @@ async function runGenerateCommand(args, options = {}) {
             error(`Invalid procedure name "${rawName}".`);
             return 1;
         }
-        const result = writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'procedures', `${safeName}.ts`), renderProcedure(safeName, methodArg));
+        const result = writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'procedures', `${safeName}.ts`), renderProcedure(safeName, methodArg));
         const relativePath = path_1.default.relative(cwd, result.path).replace(/\\/g, '/');
         log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
         return 0;
@@ -475,9 +478,9 @@ async function runGenerateCommand(args, options = {}) {
             error(`Invalid agent name "${rawName}".`);
             return 1;
         }
-        const agentFile = writeFileIfMissing(cwd, path_1.default.join('app', 'agents', safeName, 'agent.ts'), renderAgent(safeName));
-        const routeFile = writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'agents', safeName, 'route.ts'), renderAgentRoute(safeName));
-        const guideFile = writeFileIfMissing(cwd, path_1.default.join('app', 'AGENTS.md'), renderAppAgentsGuide());
+        const agentFile = writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'agents', safeName, 'agent.ts'), renderAgent(safeName));
+        const routeFile = writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'agents', safeName, 'route.ts'), renderAgentRoute(safeName));
+        const guideFile = writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'AGENTS.md'), renderAppAgentsGuide());
         [agentFile, routeFile, guideFile].forEach((res) => {
             const relativePath = path_1.default.relative(cwd, res.path).replace(/\\/g, '/');
             log(`${res.created ? 'created' : 'skipped'} ${relativePath}`);
@@ -487,11 +490,11 @@ async function runGenerateCommand(args, options = {}) {
     if (command === 'auth') {
         const writes = [
             writeFileIfMissing(cwd, 'auth.ts', renderAuthConfig()),
-            writeFileIfMissing(cwd, path_1.default.join('app', 'api', 'auth', '[...vista]', 'route.ts'), renderAuthRoute()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'auth', '[...vista]', 'route.ts'), renderAuthRoute()),
             writeFileIfMissing(cwd, 'middleware.ts', renderAuthMiddleware()),
-            writeFileIfMissing(cwd, path_1.default.join('components', 'auth-session-provider.tsx'), renderAuthSessionProvider()),
-            writeFileIfMissing(cwd, path_1.default.join('app', 'signin', 'page.tsx'), renderSignInPage()),
-            writeFileIfMissing(cwd, path_1.default.join('app', 'account', 'page.tsx'), renderAccountPage()),
+            writeFileIfMissing(cwd, path_1.default.join(componentsDirRelative, 'auth-session-provider.tsx'), renderAuthSessionProvider()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'signin', 'page.tsx'), renderSignInPage()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'account', 'page.tsx'), renderAccountPage()),
             writeFileIfMissing(cwd, '.env.example', renderEnvExample()),
         ];
         writes.forEach((result) => {

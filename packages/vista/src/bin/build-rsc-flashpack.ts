@@ -20,6 +20,17 @@ export async function buildRSCFlashpack(
     allowFallback: !strict,
   });
 
+  if (!prepared.rustPipelineUsed) {
+    if (strict) {
+      throw new Error(
+        '[flashpack] Rust pipeline did not run during build. Refusing silent non-Rust Flight prep (set VISTA_FLASHPACK_STRICT=false for explicit fallback).'
+      );
+    }
+    console.warn(
+      '[flashpack] WARNING: Rust pipeline skipped during build — webpack will still emit Flight/SSR manifests (explicit fallback, not renderToString).'
+    );
+  }
+
   if (process.env.VISTA_DEBUG) {
     console.log(
       `[flashpack] runtime prepared (rust=${prepared.rustPipelineUsed ? 'on' : 'fallback'}) at ${prepared.flashDir}`

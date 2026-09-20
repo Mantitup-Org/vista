@@ -9,11 +9,11 @@
     "prepare-bench": "rimraf components && fuzzponent -d 2 -s 206 -o components",
     "start": "vista start",
     "dev-flashpack": "vista dev",
-    "dev-default": "vista dev --legacy",
+    "dev-default": "vista dev --default-engine",
     "build-flashpack": "vista build",
-    "build-default": "vista build --legacy",
+    "build-default": "vista build --default-engine",
     "start-flashpack": "vista start",
-    "start-default": "vista start --legacy",
+    "start-default": "vista start --default-engine",
     "start-application": "vista start"
   },
   "devDependencies": {

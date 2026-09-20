@@ -11,6 +11,7 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const config_1 = require("../config");
 const artifact_validator_1 = require("../server/artifact-validator");
+const app_dir_1 = require("../server/app-dir");
 const utils_1 = require("./utils");
 function hasDynamicOnlyRoutes(vistaDir) {
     const routesManifest = (0, utils_1.readJsonSafe)(path_1.default.join(vistaDir, 'routes-manifest.json'));
@@ -48,7 +49,7 @@ async function runStaticHostPreflight(ctx) {
     if (typedApi.enabled) {
         errors.push('Typed API is enabled. Static CDN hosts cannot run typed API runtime. Use deploy.target "render" or "docker".');
     }
-    const appApiDir = path_1.default.join(ctx.cwd, 'app', 'api');
+    const appApiDir = path_1.default.join((0, app_dir_1.resolveAppDir)(ctx.cwd), 'api');
     if (fs_1.default.existsSync(appApiDir)) {
         warnings.push('Found app/api routes. Server-side API routes are not supported on static CDN deploy targets.');
     }

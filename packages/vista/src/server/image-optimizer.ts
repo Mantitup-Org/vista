@@ -20,6 +20,7 @@ import https from 'https';
 import { URL } from 'url';
 import type { Request, Response } from 'express';
 import { imageConfigDefault, type ImageConfigComplete } from '../image/image-config';
+import { resolveAppDir } from './app-dir';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,7 +99,7 @@ function fetchLocalFile(filePath: string, cwd: string): Promise<Buffer> {
   }
 
   // Also try app/ directory
-  const appPath = path.join(cwd, 'app', filePath);
+  const appPath = path.join(resolveAppDir(cwd), filePath);
   if (fs.existsSync(appPath)) {
     return fs.promises.readFile(appPath);
   }

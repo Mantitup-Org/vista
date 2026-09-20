@@ -28,6 +28,7 @@ async function fallbackToCore(phase, port) {
     process.env.VISTA_ENGINE_VARIANT = 'flashpack';
     process.env.VISTA_FLASHPACK = 'true';
     process.env.VISTA_FLASHPACK_PIPELINE = 'js-fallback';
+    console.warn(`[flashpack] Using explicit webpack Flight SSR fallback for ${phase} (same inline-Flight contract; not renderToString).`);
     if (phase === 'build') {
         await (0, build_rsc_1.buildRSC)(false);
         return;

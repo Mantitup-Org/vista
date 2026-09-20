@@ -11,6 +11,7 @@ const mini_css_extract_plugin_1 = __importDefault(require("mini-css-extract-plug
 const server_component_plugin_1 = require("./server-component-plugin");
 const vista_flight_plugin_1 = require("../build/webpack/plugins/vista-flight-plugin");
 const constants_1 = require("../constants");
+const app_dir_1 = require("../server/app-dir");
 function createWebpackConfig(options) {
     const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false } = options;
     const vistaDir = path_1.default.join(cwd, constants_1.BUILD_DIR);
@@ -147,12 +148,12 @@ function createWebpackConfig(options) {
         plugins: [
             // Server Component enforcement - runs on every compile
             new server_component_plugin_1.VistaServerComponentPlugin({
-                appDir: path_1.default.join(cwd, 'app'),
-                componentsDir: path_1.default.join(cwd, 'components'),
+                appDir: (0, app_dir_1.resolveAppDir)(cwd),
+                componentsDir: (0, app_dir_1.resolveComponentsDir)(cwd),
                 cacheComponentsEnabled,
             }),
             // Vista Flight Plugin - RSC bundle separation and manifest
-            new vista_flight_plugin_1.VistaFlightPlugin({ appDir: path_1.default.join(cwd, 'app'), dev: isDev }),
+            new vista_flight_plugin_1.VistaFlightPlugin({ appDir: (0, app_dir_1.resolveAppDir)(cwd), dev: isDev }),
             ...(isDev
                 ? [
                     new webpack_1.default.HotModuleReplacementPlugin(),

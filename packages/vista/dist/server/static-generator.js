@@ -28,6 +28,7 @@ const config_1 = require("../config");
 const ppr_1 = require("./ppr");
 const vista_import_map_1 = require("./vista-import-map");
 const project_alias_resolver_1 = require("./project-alias-resolver");
+const app_dir_1 = require("./app-dir");
 const CjsModule = require('module');
 let staticRuntimeReady = false;
 let reactResolutionInstalled = false;
@@ -260,7 +261,7 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
                 return React.createElement(component, props, child);
             };
             const renderStaticSubtree = async (input) => {
-                const appDir = path_1.default.join(cwd, 'app');
+                const appDir = (0, app_dir_1.resolveAppDir)(cwd);
                 const RouteModule = require(input.entryFilePath);
                 const RouteComponent = RouteModule.default;
                 if (!RouteComponent) {
@@ -353,7 +354,7 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
                 metadataHtml = '';
             }
             const element = await renderStaticSubtree({
-                subtreeRootDir: path_1.default.join(cwd, 'app'),
+                subtreeRootDir: (0, app_dir_1.resolveAppDir)(cwd),
                 entryFilePath: route.pagePath,
                 pathname: urlPath,
                 params: params || {},
@@ -365,7 +366,7 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
             if (pprEnabled && route.loadingPath) {
                 try {
                     const shellElement = await renderStaticSubtree({
-                        subtreeRootDir: path_1.default.join(cwd, 'app'),
+                        subtreeRootDir: (0, app_dir_1.resolveAppDir)(cwd),
                         entryFilePath: route.loadingPath,
                         pathname: urlPath,
                         params: params || {},

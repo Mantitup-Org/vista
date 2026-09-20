@@ -48,6 +48,8 @@ class StructureWatcher extends events_1.EventEmitter {
             const watchPaths = [
                 path_1.default.join(this.cwd, 'app', '**', '*'),
                 path_1.default.join(this.cwd, 'components', '**', '*'),
+                path_1.default.join(this.cwd, 'src', 'app', '**', '*'),
+                path_1.default.join(this.cwd, 'src', 'components', '**', '*'),
                 path_1.default.join(this.cwd, 'vista.config.ts'),
                 path_1.default.join(this.cwd, 'vista.config.js'),
             ];

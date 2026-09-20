@@ -19,9 +19,16 @@ function startFlashpackRSCServer(options = {}) {
         mode,
         allowFallback: !strict,
     });
+    if (!prepared.rustPipelineUsed) {
+        if (strict) {
+            throw new Error('[flashpack] Rust pipeline did not run. Refusing to start Flight SSR without Flashpack prep (set VISTA_FLASHPACK_STRICT=false for an explicit non-Rust fallback).');
+        }
+        console.warn('[flashpack] WARNING: Rust pipeline skipped — serving via webpack Flight SSR fallback (not a silent renderToString path).');
+    }
     if (process.env.VISTA_DEBUG) {
         console.log(`[flashpack] server runtime prepared (rust=${prepared.rustPipelineUsed ? 'on' : 'fallback'}) at ${prepared.flashDir}`);
     }
+    // Same Flight SSR contract as webpack: inline Flight, React.use streaming, fail-closed.
     (0, rsc_engine_1.startRSCServer)(options);
 }
 exports.startRSCServer = startFlashpackRSCServer;

@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateAppStructure = validateAppStructure;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const app_dir_1 = require("./app-dir");
 // ============================================================================
 // Constants
 // ============================================================================
@@ -364,7 +365,7 @@ function walkRouteDirectories(dir, callback) {
 }
 function validateAppStructure(input) {
     const { cwd, notFoundRoute } = input;
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const issues = [];
     // 1. Root exists
     checkRootExists(appDir, issues);

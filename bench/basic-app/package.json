@@ -5,12 +5,12 @@
   "scripts": {
     "build-application": "vista build",
     "start-application": "vista start",
-    "dev-flashpack": "vista dev",
-    "dev-default": "vista dev --legacy",
-    "build-flashpack": "vista build",
-    "build-default": "vista build --legacy",
-    "start-flashpack": "vista start",
-    "start-default": "vista start --legacy"
+    "dev-flashpack": "vista dev --flashpack",
+    "dev-default": "vista dev --default-engine",
+    "build-flashpack": "vista build --flashpack",
+    "build-default": "vista build --default-engine",
+    "start-flashpack": "vista start --flashpack",
+    "start-default": "vista start --default-engine"
   },
   "dependencies": {
     "react": "^19.0.0",

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
 
 type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent' | 'auth';
 type ProcedureMethod = 'get' | 'post';
@@ -402,8 +403,7 @@ function renderEnvExample(): string {
 }
 
 function patchRootWithSessionProvider(cwd: string): { path: string; patched: boolean } {
-  const relativePath = path.join('app', 'root.tsx');
-  const absolutePath = path.join(cwd, relativePath);
+  const absolutePath = path.join(resolveAppDir(cwd), 'root.tsx');
   if (!fs.existsSync(absolutePath)) {
     return { path: absolutePath, patched: false };
   }
@@ -459,13 +459,17 @@ export async function runGenerateCommand(
     return 1;
   }
 
+  // Write generated files into the resolved app/components dirs (supports src/app layout).
+  const appDirRelative = path.relative(cwd, resolveAppDir(cwd));
+  const componentsDirRelative = path.relative(cwd, resolveComponentsDir(cwd));
+
   if (command === 'api-init') {
     const writes = [
-      writeFileIfMissing(cwd, path.join('app', 'api', 'typed.ts'), renderApiInitEntrypoint()),
-      writeFileIfMissing(cwd, path.join('app', 'api', 'routers', 'index.ts'), renderRootRouter()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'api', 'typed.ts'), renderApiInitEntrypoint()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'api', 'routers', 'index.ts'), renderRootRouter()),
       writeFileIfMissing(
         cwd,
-        path.join('app', 'api', 'procedures', 'health.ts'),
+        path.join(appDirRelative, 'api', 'procedures', 'health.ts'),
         renderProcedure('health', 'get')
       ),
     ];
@@ -507,7 +511,7 @@ export async function runGenerateCommand(
 
     const result = writeFileIfMissing(
       cwd,
-      path.join('app', 'api', 'routers', `${safeName}.ts`),
+      path.join(appDirRelative, 'api', 'routers', `${safeName}.ts`),
       renderRouter(safeName)
     );
     const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
@@ -536,7 +540,7 @@ export async function runGenerateCommand(
 
     const result = writeFileIfMissing(
       cwd,
-      path.join('app', 'api', 'procedures', `${safeName}.ts`),
+      path.join(appDirRelative, 'api', 'procedures', `${safeName}.ts`),
       renderProcedure(safeName, methodArg)
     );
     const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
@@ -559,15 +563,15 @@ export async function runGenerateCommand(
 
     const agentFile = writeFileIfMissing(
       cwd,
-      path.join('app', 'agents', safeName, 'agent.ts'),
+      path.join(appDirRelative, 'agents', safeName, 'agent.ts'),
       renderAgent(safeName)
     );
     const routeFile = writeFileIfMissing(
       cwd,
-      path.join('app', 'api', 'agents', safeName, 'route.ts'),
+      path.join(appDirRelative, 'api', 'agents', safeName, 'route.ts'),
       renderAgentRoute(safeName)
     );
-    const guideFile = writeFileIfMissing(cwd, path.join('app', 'AGENTS.md'), renderAppAgentsGuide());
+    const guideFile = writeFileIfMissing(cwd, path.join(appDirRelative, 'AGENTS.md'), renderAppAgentsGuide());
 
     [agentFile, routeFile, guideFile].forEach((res) => {
       const relativePath = path.relative(cwd, res.path).replace(/\\/g, '/');
@@ -581,17 +585,17 @@ export async function runGenerateCommand(
       writeFileIfMissing(cwd, 'auth.ts', renderAuthConfig()),
       writeFileIfMissing(
         cwd,
-        path.join('app', 'api', 'auth', '[...vista]', 'route.ts'),
+        path.join(appDirRelative, 'api', 'auth', '[...vista]', 'route.ts'),
         renderAuthRoute()
       ),
       writeFileIfMissing(cwd, 'middleware.ts', renderAuthMiddleware()),
       writeFileIfMissing(
         cwd,
-        path.join('components', 'auth-session-provider.tsx'),
+        path.join(componentsDirRelative, 'auth-session-provider.tsx'),
         renderAuthSessionProvider()
       ),
-      writeFileIfMissing(cwd, path.join('app', 'signin', 'page.tsx'), renderSignInPage()),
-      writeFileIfMissing(cwd, path.join('app', 'account', 'page.tsx'), renderAccountPage()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'signin', 'page.tsx'), renderSignInPage()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'account', 'page.tsx'), renderAccountPage()),
       writeFileIfMissing(cwd, '.env.example', renderEnvExample()),
     ];
     writes.forEach((result) => {

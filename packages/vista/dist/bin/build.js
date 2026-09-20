@@ -20,17 +20,19 @@ const dev_error_overlay_snippet_1 = require("./dev-error-overlay-snippet");
 const deploy_output_1 = require("./deploy-output");
 const module_boundary_validator_1 = require("../server/module-boundary-validator");
 const client_manifest_1 = require("../build/rsc/client-manifest");
+const app_dir_1 = require("../server/app-dir");
 const _debug = !!process.env.VISTA_DEBUG;
 // Helper to run PostCSS
 function runPostCSS(cwd, vistaDir) {
-    const globalsCss = path_1.default.join(cwd, 'app/globals.css');
+    const globalsCss = path_1.default.join((0, app_dir_1.resolveAppDir)(cwd), 'globals.css');
     if (fs_1.default.existsSync(globalsCss)) {
         if (_debug)
             console.log('Building CSS with PostCSS...');
         const { execSync } = require('child_process');
         try {
             const cssOut = path_1.default.join(vistaDir, 'client.css');
-            execSync(`npx postcss app/globals.css -o "${cssOut}"`, {
+            const globalsCssRelative = path_1.default.relative(cwd, globalsCss).replace(/\\/g, '/');
+            execSync(`npx postcss "${globalsCssRelative}" -o "${cssOut}"`, {
                 stdio: _debug ? 'inherit' : 'pipe',
                 cwd,
             });
@@ -77,7 +79,7 @@ function collectRouteArtifactEntries(node, segments = [], entries = []) {
 // Only imports components with 'use client' directive
 function generateClientEntry(cwd, vistaDir, clientComponents, isDev = false) {
     const devToolsBootId = `legacy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     // Generate imports ONLY for client components
     const clientImports = [];
     const clientRegistrations = [];
@@ -289,7 +291,7 @@ async function buildClient(watch = false, onRebuild) {
         // Warnings: continue build, already logged above.
     }
     // Scan app directory using Rust bindings to get client components
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const additionalClientRoots = (0, client_manifest_1.discoverProjectClientRoots)(cwd).filter((root) => path_1.default.resolve(root.dir) !== path_1.default.resolve(appDir));
     let clientComponents = [];
     if (fs_1.default.existsSync(appDir)) {
@@ -391,7 +393,7 @@ async function buildClient(watch = false, onRebuild) {
         // Watch CSS + source files that may affect Tailwind output.
         const chokidar = require('chokidar');
         try {
-            const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data']
+            const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data', 'src']
                 .map((entry) => path_1.default.join(cwd, entry))
                 .filter((entry) => fs_1.default.existsSync(entry));
             let cssTimer = null;

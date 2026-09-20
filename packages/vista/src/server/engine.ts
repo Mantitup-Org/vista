@@ -64,6 +64,7 @@ import {
 } from './structure-log';
 import { installModuleCompileHook } from './module-compile-hook';
 import { runWithRequestContext } from './request-context';
+import { resolveAppDir, resolveComponentsDir } from './app-dir';
 
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
@@ -152,7 +153,7 @@ function initClientComponentRegistry(appDir: string, cwd: string): void {
     clientComponentIdsByPath.clear();
 
     const appCount = registerClientComponents(appDir);
-    const componentsCount = registerClientComponents(path.join(cwd, 'components'), 'components/');
+    const componentsCount = registerClientComponents(resolveComponentsDir(cwd), 'components/');
 
     if (process.env.VISTA_DEBUG) {
       console.log(
@@ -269,7 +270,7 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
   const engineVariant = resolveAndApplyEngineVariant(vistaConfig);
   const typedApiConfig = resolveTypedApiConfig(vistaConfig);
   const isDev = process.env.NODE_ENV !== 'production';
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   if (process.env.VISTA_DEBUG) {
     logInfo(`Engine variant: ${engineVariant}`);
   }
@@ -635,8 +636,8 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
 
       // Route Matching Logic
       const getExactPath = (p: string) => {
-        if (p === '/' || p === '/index') return path.resolve(cwd, 'app', 'index.tsx');
-        return path.resolve(cwd, 'app', p.substring(1), 'page.tsx');
+        if (p === '/' || p === '/index') return path.join(appDir, 'index.tsx');
+        return path.join(appDir, p.substring(1), 'page.tsx');
       };
 
       const tryPath = getExactPath(req.path);
@@ -655,7 +656,6 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
       } else {
         // Dynamic Route Matching
         const segments = req.path.split('/').filter(Boolean);
-        const appDir = path.resolve(cwd, 'app');
 
         if (segments.length === 2) {
           const [section, paramVal] = segments;

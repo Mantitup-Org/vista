@@ -22,6 +22,7 @@ import {
   sanitizeRequestHeaderMap,
   securityHeaders,
 } from './middleware-security';
+import { resolveAppDirOrNull } from './app-dir';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,16 +132,6 @@ export function clearMiddlewareCaches(): void {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getAppDir(cwd: string): string | null {
-  const candidates = [path.join(cwd, 'app'), path.join(cwd, 'src', 'app')];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 /**
  * Discover top-level global middleware.
  * Checks `<cwd>/middleware.*` then `<cwd>/src/middleware.*`.
@@ -175,7 +166,7 @@ export function discoverRouteMiddlewares(cwd: string, pathname: string, bustCach
     return routeDiscoveryCache.get(cacheKey)!;
   }
 
-  const appDir = getAppDir(cwd);
+  const appDir = resolveAppDirOrNull(cwd);
   if (!appDir) {
     routeDiscoveryCache.set(cacheKey, []);
     return [];

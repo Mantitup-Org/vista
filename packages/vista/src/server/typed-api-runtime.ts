@@ -16,6 +16,7 @@ import { setCurrentSegmentConfig } from './request-context';
 import { resolveRouteHandler, ROUTE_HANDLER_METHODS } from './route-handler-registry';
 import type { RouteParams } from './route-patterns';
 import { safeDecodeURIComponent } from './cookie-parse';
+import { resolveAppDir } from './app-dir';
 
 type TypedApiRouter = StackRouter<ProcedureRecord, any, any>;
 type RouteRuntimeMode = 'nodejs' | 'edge' | 'experimental-edge';
@@ -24,15 +25,16 @@ type MetadataRouteMapping = {
   stem: string;
 };
 
+// Relative to the resolved app directory (supports both app/ and src/app layouts).
 const TYPED_API_ENTRYPOINTS = [
-  path.join('app', 'api', 'typed.ts'),
-  path.join('app', 'api', 'typed.tsx'),
-  path.join('app', 'api', 'typed.js'),
-  path.join('app', 'api', 'typed.jsx'),
-  path.join('app', 'typed-api.ts'),
-  path.join('app', 'typed-api.tsx'),
-  path.join('app', 'typed-api.js'),
-  path.join('app', 'typed-api.jsx'),
+  path.join('api', 'typed.ts'),
+  path.join('api', 'typed.tsx'),
+  path.join('api', 'typed.js'),
+  path.join('api', 'typed.jsx'),
+  'typed-api.ts',
+  'typed-api.tsx',
+  'typed-api.js',
+  'typed-api.jsx',
 ];
 
 const METADATA_ROUTE_MAPPINGS: MetadataRouteMapping[] = [
@@ -134,7 +136,7 @@ function isRouteGroupDirectory(name: string): boolean {
 }
 
 function resolveMetadataRoutePath(cwd: string, stem: string): string | null {
-  const appDir = path.resolve(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
 
   const tryStemInDirectory = (dir: string): string | null => {
     for (const extension of ROUTE_FILE_EXTENSIONS) {
@@ -471,8 +473,9 @@ function isEdgeRuntime(runtime: RouteRuntimeMode): boolean {
 }
 
 function getTypedApiEntrypoint(cwd: string): string | null {
+  const appDir = resolveAppDir(cwd);
   for (const relativePath of TYPED_API_ENTRYPOINTS) {
-    const absolutePath = path.resolve(cwd, relativePath);
+    const absolutePath = path.join(appDir, relativePath);
     if (fs.existsSync(absolutePath)) {
       return absolutePath;
     }
@@ -578,7 +581,7 @@ export function resolveRouteHandlerMatch(
     return { filePath: literalPath, params: {} };
   }
 
-  const dynamicMatch = resolveRouteHandler(path.resolve(cwd, 'app'), requestPath, options);
+  const dynamicMatch = resolveRouteHandler(resolveAppDir(cwd), requestPath, options);
   if (dynamicMatch) {
     return { filePath: dynamicMatch.filePath, params: dynamicMatch.params };
   }
@@ -588,6 +591,7 @@ export function resolveRouteHandlerMatch(
 
 export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string): string | null {
   const normalized = normalizeRouteRequestPath(requestPath);
+  const appDir = resolveAppDir(cwd);
   const routeCandidates: string[] = [];
 
   const metadataRoute = METADATA_ROUTE_MAPPINGS.find(
@@ -603,22 +607,22 @@ export function resolveLegacyRouteHandlerPath(cwd: string, requestPath: string):
   if (normalized.startsWith('api/')) {
     const apiRoute = normalized.slice('api/'.length);
     routeCandidates.push(
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.ts'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.tsx'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.js'),
-      path.resolve(cwd, 'app', 'api', apiRoute, 'route.jsx'),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.ts`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.tsx`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.js`),
-      path.resolve(cwd, 'app', 'api', `${apiRoute}.jsx`)
+      path.join(appDir, 'api', apiRoute, 'route.ts'),
+      path.join(appDir, 'api', apiRoute, 'route.tsx'),
+      path.join(appDir, 'api', apiRoute, 'route.js'),
+      path.join(appDir, 'api', apiRoute, 'route.jsx'),
+      path.join(appDir, 'api', `${apiRoute}.ts`),
+      path.join(appDir, 'api', `${apiRoute}.tsx`),
+      path.join(appDir, 'api', `${apiRoute}.js`),
+      path.join(appDir, 'api', `${apiRoute}.jsx`)
     );
   }
 
   routeCandidates.push(
-    path.resolve(cwd, 'app', normalized, 'route.ts'),
-    path.resolve(cwd, 'app', normalized, 'route.tsx'),
-    path.resolve(cwd, 'app', normalized, 'route.js'),
-    path.resolve(cwd, 'app', normalized, 'route.jsx')
+    path.join(appDir, normalized, 'route.ts'),
+    path.join(appDir, normalized, 'route.tsx'),
+    path.join(appDir, normalized, 'route.js'),
+    path.join(appDir, normalized, 'route.jsx')
   );
 
   for (const routePath of routeCandidates) {

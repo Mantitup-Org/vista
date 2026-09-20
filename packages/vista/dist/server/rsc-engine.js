@@ -81,6 +81,7 @@ const app_router_runtime_1 = require("./app-router-runtime");
 const fetch_policy_1 = require("./fetch-policy");
 const vista_import_map_1 = require("./vista-import-map");
 const project_alias_resolver_1 = require("./project-alias-resolver");
+const app_dir_1 = require("./app-dir");
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
 // - .module.css: return empty class mapping (webpack build handles real mappings)
@@ -432,6 +433,46 @@ function loadSSRManifestFromDisk(absolutePath) {
     const manifest = (0, react_client_reference_manifest_1.normalizeReactServerConsumerManifest)(JSON.parse(fs_1.default.readFileSync(absolutePath, 'utf-8')));
     return normalizeSSRManifest(manifest);
 }
+/** Stub `{}` manifests written before the first webpack emit are not usable for Flight SSR. */
+function isSSRManifestReady(manifest) {
+    if (!manifest || !manifest.moduleMap)
+        return false;
+    return Object.keys(manifest.moduleMap).length > 0;
+}
+/**
+ * Tee an upstream Flight body: one copy for createFromNodeStream (SSR), one
+ * buffer for inline hydration bootstrap in the HTML response.
+ */
+function teeFlightReadable(source) {
+    const decodeStream = new stream_1.PassThrough();
+    const chunks = [];
+    let resolveBuffer;
+    let rejectBuffer;
+    const bufferPromise = new Promise((resolve, reject) => {
+        resolveBuffer = resolve;
+        rejectBuffer = reject;
+    });
+    source.on('data', (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        chunks.push(buf);
+        if (!decodeStream.write(buf)) {
+            source.pause();
+            decodeStream.once('drain', () => source.resume());
+        }
+    });
+    source.on('end', () => {
+        decodeStream.end();
+        resolveBuffer(Buffer.concat(chunks));
+    });
+    source.on('error', (error) => {
+        decodeStream.destroy(error);
+        rejectBuffer(error);
+    });
+    return { decodeStream, bufferPromise };
+}
+function buildInlineFlightBootstrapScript(flightText) {
+    return `<script>window.${constants_1.RSC_DATA_FLAG}=${JSON.stringify(flightText)};</script>`;
+}
 function matchPattern(pathname, pattern) {
     const patternParts = pattern.split('/').filter(Boolean);
     const pathParts = pathname.split('/').filter(Boolean);
@@ -563,7 +604,7 @@ function applySegmentBoundaries(dir, element) {
     return wrappedElement;
 }
 async function renderAppSubtreeElement(input) {
-    const appDir = path_1.default.join(input.cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(input.cwd);
     let element = await createRenderableRouteModuleElement(input.entryFilePath, {
         params: input.params,
         searchParams: input.searchParams,
@@ -630,7 +671,7 @@ async function createRouteElement(route, context, isDev, rootLayout, runtimeRoot
         metadata = { ...metadata, ...dynamicMeta };
     }
     const element = await renderAppSubtreeElement({
-        subtreeRootDir: path_1.default.join(runtimeRoot, 'app'),
+        subtreeRootDir: (0, app_dir_1.resolveAppDir)(runtimeRoot),
         entryFilePath: route.pagePath,
         pathname: req.path,
         params,
@@ -748,8 +789,8 @@ function spawnUpstream(cwd, runtimeRoot, upstreamPort) {
 // ---------------------------------------------------------------------------
 /**
  * Fetch the Flight stream from the upstream RSC process, decode it with
- * createFromNodeStream, and render the resulting React tree to an HTML stream
- * via renderToPipeableStream.
+ * createFromNodeStream, render HTML via renderToPipeableStream, and inline the
+ * raw Flight payload so the browser can hydrate without a second /rsc fetch.
  */
 async function renderFlightToHTMLStream(upstreamOrigin, pathname, search, metadataHtml, chunkFiles, rootMode, flightSSRClient, ssrManifest, res, isDev) {
     const flightUrl = `${upstreamOrigin}/rsc${pathname}${search ? `?${search}` : ''}`;
@@ -763,30 +804,20 @@ async function renderFlightToHTMLStream(upstreamOrigin, pathname, search, metada
     if (!upstream.body) {
         throw new Error('Upstream returned empty body');
     }
-    // 2. Convert Web ReadableStream to Node.js Readable
+    // 2. Tee: decode stream for SSR + buffer for inline hydration bootstrap
     const nodeStream = stream_1.Readable.fromWeb(upstream.body);
-    // 3. Decode Flight stream into a React tree
-    const flightResponse = flightSSRClient.createFromNodeStream(nodeStream, ssrManifest);
-    let element;
-    // In dev, decode the flight payload before React.use() render path.
-    // This keeps manifest mismatch errors in the request try/catch boundary
-    // instead of crashing the whole process with an uncaught exception.
-    if (isDev) {
-        const resolvedTree = await flightResponse;
-        element = react_1.default.createElement(react_1.default.Fragment, null, resolvedTree);
+    const { decodeStream, bufferPromise } = teeFlightReadable(nodeStream);
+    // 3. Decode Flight stream into a React tree (stream in both dev and prod)
+    const flightResponse = flightSSRClient.createFromNodeStream(decodeStream, ssrManifest);
+    function FlightRoot() {
+        return react_1.default.use(flightResponse);
     }
-    else {
-        // 4. Wrap in a component that consumes the Flight response
-        function FlightRoot() {
-            return react_1.default.use(flightResponse);
-        }
-        element = react_1.default.createElement(FlightRoot);
-    }
-    // 5. Build script tags for client chunks
+    const element = react_1.default.createElement(FlightRoot);
+    // 4. Build script tags for client chunks
     const scripts = chunkFiles
         .map((chunk) => `<script defer src="${constants_1.STATIC_CHUNKS_PATH}${chunk}"></script>`)
         .join('\n  ');
-    // 6. Render to a pipeable HTML stream
+    // 5. Render to a pipeable HTML stream; inject inline Flight before client scripts
     return new Promise((resolve, reject) => {
         let shellSent = false;
         const { pipe } = (0, server_1.renderToPipeableStream)(element, {
@@ -795,11 +826,10 @@ async function renderFlightToHTMLStream(upstreamOrigin, pathname, search, metada
                 res.status(upstream.status === 404 ? 404 : 200);
                 res.setHeader('Content-Type', 'text/html; charset=utf-8');
                 res.setHeader('Transfer-Encoding', 'chunked');
-                // Create a transform stream to inject head/body content
+                let heldTail = '';
                 const transform = new stream_1.Transform({
                     transform(chunk, _encoding, callback) {
                         let html = chunk.toString();
-                        // Inject into <head> if present
                         if (html.includes('</head>')) {
                             const fontHtml = (0, registry_1.getAllFontHTML)();
                             const headInjection = `
@@ -810,14 +840,28 @@ async function renderFlightToHTMLStream(upstreamOrigin, pathname, search, metada
   ${getCSSLinks()}`;
                             html = html.replace('</head>', `${headInjection}\n</head>`);
                         }
-                        // Inject scripts before </body>
-                        if (html.includes('</body>')) {
-                            const bodyInjection = `
-  <script>window.${constants_1.HYDRATE_DOCUMENT_FLAG} = ${rootMode === 'document'};</script>
-  ${scripts}`;
-                            html = html.replace('</body>', `${bodyInjection}\n</body>`);
+                        // Hold </body>… so flush can inject Flight + scripts before it.
+                        const bodyCloseIdx = html.indexOf('</body>');
+                        if (bodyCloseIdx !== -1) {
+                            const beforeBodyClose = html.slice(0, bodyCloseIdx);
+                            heldTail = html.slice(bodyCloseIdx);
+                            const hydrateFlag = `<script>window.${constants_1.HYDRATE_DOCUMENT_FLAG} = ${rootMode === 'document'};</script>`;
+                            callback(null, `${beforeBodyClose}\n  ${hydrateFlag}\n`);
+                            return;
                         }
                         callback(null, html);
+                    },
+                    flush(callback) {
+                        bufferPromise
+                            .then((buf) => {
+                            const flightScript = buildInlineFlightBootstrapScript(buf.toString('utf8'));
+                            // Flight first, then deferred client chunks, then </body></html>
+                            this.push(`${flightScript}\n  ${scripts}\n${heldTail || '</body></html>'}`);
+                            callback();
+                        })
+                            .catch((error) => {
+                            callback(error instanceof Error ? error : new Error(String(error)));
+                        });
                     },
                 });
                 pipe(transform);
@@ -978,7 +1022,8 @@ function startRSCServer(options = {}) {
         flightSSRClient = require(flightClientPath);
     }
     catch (err) {
-        // Flight SSR not available — fallback to renderToString
+        // Flight SSR client missing — requests will fail closed (no renderToString).
+        (0, logger_1.logError)(`[vista:rsc] react-server-dom-webpack/client.node unavailable: ${err?.message || String(err)}`);
     }
     const ssrManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'react-server-manifest.json');
     const ssrManifestLegacyPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'react-ssr-manifest.json');
@@ -988,13 +1033,21 @@ function startRSCServer(options = {}) {
             ? ssrManifestLegacyPath
             : null;
     if (resolvedSSRManifestPath) {
-        ssrManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
+        try {
+            ssrManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
+        }
+        catch {
+            ssrManifest = null;
+        }
     }
-    else if (flightSSRClient) {
-        // Can't use Flight SSR without the manifest
+    if (ssrManifest && !isSSRManifestReady(ssrManifest)) {
+        // Stub manifests written before the first webpack emit must not drive SSR.
+        ssrManifest = null;
+    }
+    if (!resolvedSSRManifestPath && flightSSRClient) {
         flightSSRClient = null;
     }
-    const useFlightSSR = !!flightSSRClient && !!ssrManifest;
+    let useFlightSSR = !!flightSSRClient && isSSRManifestReady(ssrManifest);
     // ========================================================================
     // Structure Validation (dev + strict-block)
     // ========================================================================
@@ -1134,6 +1187,7 @@ function startRSCServer(options = {}) {
             'lib',
             'ctx',
             'data',
+            'src',
             'middleware.ts',
             'vista.config.ts',
             'content-collections.ts',
@@ -1228,9 +1282,18 @@ function startRSCServer(options = {}) {
             if (fs_1.default.existsSync(serverManifestPath)) {
                 serverManifest = JSON.parse(fs_1.default.readFileSync(serverManifestPath, 'utf-8'));
             }
-            // Reload SSR manifest on rebuild too
+            // Reload SSR manifest on rebuild; ignore stub `{}` until webpack writes a real map.
             if (resolvedSSRManifestPath && fs_1.default.existsSync(resolvedSSRManifestPath)) {
-                ssrManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
+                try {
+                    const nextManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
+                    if (isSSRManifestReady(nextManifest)) {
+                        ssrManifest = nextManifest;
+                        useFlightSSR = !!flightSSRClient;
+                    }
+                }
+                catch {
+                    // Manifest may be mid-write during compilation.
+                }
             }
         });
     }
@@ -1503,209 +1566,95 @@ function startRSCServer(options = {}) {
                 return;
             }
             // ==================================================================
-            // Flight-Based SSR Path
+            // Flight-Based SSR Path (fail-closed — no renderToString page HTML)
             // ==================================================================
-            // If the Flight SSR client + SSR manifest are available, render pages
-            // by fetching the Flight stream from upstream and using
-            // renderToPipeableStream for streaming HTML with proper hydration.
-            // Falls back to legacy renderToString if Flight SSR is unavailable.
-            // ==================================================================
-            if (useFlightSSR) {
+            if (isDev && resolvedSSRManifestPath && fs_1.default.existsSync(resolvedSSRManifestPath)) {
                 try {
-                    if (isDev && resolvedSSRManifestPath && fs_1.default.existsSync(resolvedSSRManifestPath)) {
-                        try {
-                            ssrManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
-                        }
-                        catch {
-                            // Manifest may be mid-write during compilation; keep the last good in-memory copy.
-                        }
+                    const nextManifest = loadSSRManifestFromDisk(resolvedSSRManifestPath);
+                    if (isSSRManifestReady(nextManifest)) {
+                        ssrManifest = nextManifest;
+                        useFlightSSR = !!flightSSRClient;
                     }
-                    // Metadata extraction: still done locally so we have <head> content
-                    const rootLayout = (0, root_resolver_1.resolveRootLayout)(runtimeRoot, isDev);
-                    const route = currentRoute;
-                    let metadataHtml = '';
-                    if (route) {
-                        if (isDev) {
-                            clearProjectRequireCache(runtimeRoot);
-                        }
-                        const PageModule = require(route.pagePath);
-                        let metadata = { ...(rootLayout.metadata || {}) };
-                        if (PageModule.metadata) {
-                            metadata = { ...metadata, ...PageModule.metadata };
-                        }
-                        if (typeof PageModule.generateMetadata === 'function') {
-                            const params = extractParams(req.path, route);
-                            const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                            const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-                            metadata = { ...metadata, ...dynamicMeta };
-                        }
-                        const { generateMetadataHtml } = require('../metadata/generate');
-                        metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
-                    }
-                    // Render the page via Flight stream → SSR
-                    await renderFlightToHTMLStream(upstreamOrigin, req.path, req.query ? new URLSearchParams(req.query).toString() : '', metadataHtml, findChunkFiles(cwd, isDev), rootLayout.mode, flightSSRClient, ssrManifest, res, isDev);
+                }
+                catch {
+                    // Manifest may be mid-write during compilation; keep the last good in-memory copy.
+                }
+            }
+            if (!useFlightSSR || !flightSSRClient || !isSSRManifestReady(ssrManifest)) {
+                if (isDev && options.compiler) {
+                    // Wait for a non-empty SSR manifest after the first webpack emit.
+                    res.status(503).type('text/html').send(renderCompilePendingHTML());
                     return;
                 }
-                catch (flightError) {
-                    if (flightError?.name === 'NotFoundError' && !res.headersSent) {
-                        try {
-                            const rootLayout = (0, root_resolver_1.resolveRootLayout)(runtimeRoot, isDev);
-                            const route = currentRoute;
-                            if (route) {
-                                const segmentNotFoundPath = (0, app_router_runtime_1.resolveNearestSegmentNotFoundPath)(path_1.default.join(runtimeRoot, 'app'), route.routeDir);
-                                if (segmentNotFoundPath) {
-                                    const params = extractParams(req.path, route);
-                                    const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                                    const notFoundResult = await createRouteElement({
-                                        ...route,
-                                        pagePath: segmentNotFoundPath,
-                                    }, { params, searchParams, req }, isDev, rootLayout, runtimeRoot, { disableParallelSlots: true });
-                                    const html = (0, server_1.renderToString)(notFoundResult.element);
-                                    const { generateMetadataHtml } = require('../metadata/generate');
-                                    const metadataHtml = notFoundResult.metadata
-                                        ? generateMetadataHtml(notFoundResult.metadata)
-                                        : '';
-                                    res
-                                        .status(404)
-                                        .type('text/html')
-                                        .send(createHtmlDocument(html, metadataHtml, findChunkFiles(cwd, isDev), notFoundResult.rootMode));
-                                    return;
-                                }
-                            }
-                        }
-                        catch (notFoundError) {
-                            console.error('[vista:rsc] Failed to render segment not-found fallback:', notFoundError);
-                        }
-                    }
-                    console.error('[vista:rsc] Flight SSR failed:', flightError.message);
-                    // If headers haven't been sent yet, show the error overlay directly.
-                    // This is much better than falling through to legacy renderToString,
-                    // which will likely hit the same error (e.g. useState in a server component).
-                    if (isDev && !res.headersSent) {
-                        res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(flightError, { source: 'server' })]));
-                        return;
-                    }
-                    // If headers were already sent (stream was partially flushed),
-                    // we can't change the status code, but we can inject an error
-                    // overlay script at the end of the stream.
-                    if (isDev && res.headersSent) {
-                        try {
-                            const errMsg = (flightError.message || 'Flight SSR Error')
-                                .replace(/'/g, "\\'")
-                                .replace(/\n/g, '\\n');
-                            res.write(`<script>document.body.innerHTML='';document.body.style.background='#1a1a2e';document.body.style.color='#ff6b6b';document.body.style.fontFamily='monospace';document.body.style.padding='40px';document.body.innerHTML='<h2 style="color:#ff6b6b">\\u26a0 Server Error</h2><pre style="white-space:pre-wrap;color:#ffa07a">${errMsg}</pre>';</script>`);
-                            res.end();
-                        }
-                        catch {
-                            res.end();
-                        }
-                        return;
-                    }
+                const message = 'Flight SSR is unavailable. A usable react-server-manifest.json is required; Vista no longer falls back to renderToString.';
+                if (isDev) {
+                    res.status(500).send((0, dev_error_1.renderErrorHTML)([
+                        {
+                            type: 'build',
+                            source: 'server',
+                            message,
+                        },
+                    ]));
                 }
-            }
-            // ==================================================================
-            // Legacy Fallback: Direct renderToString
-            // ==================================================================
-            // Used when Flight SSR is unavailable or fails. This path does NOT
-            // go through the Flight protocol — it requires page modules directly
-            // and renders them with renderToString (synchronous, no streaming).
-            // ==================================================================
-            try {
-                // Check upstream availability for the legacy path
-                await withTimeout(`${upstreamOrigin}/rsc/`, { headers: { Accept: 'text/x-component' } }, 3000);
-            }
-            catch (error) {
-                res.status(503).type('text/plain').send(getUpstreamUnavailableMessage());
+                else {
+                    res.status(500).type('text/plain').send(message);
+                }
                 return;
             }
             try {
+                // Metadata extraction: still done locally so we have <head> content
                 const rootLayout = (0, root_resolver_1.resolveRootLayout)(runtimeRoot, isDev);
                 const route = currentRoute;
-                (0, request_context_1.setCurrentSegmentConfig)(route?.segmentConfig);
-                if (!route) {
-                    const resolvedNotFound = (0, root_resolver_1.resolveNotFoundComponent)(runtimeRoot, rootLayout, isDev);
-                    if (resolvedNotFound) {
-                        const notFoundElement = react_1.default.createElement(resolvedNotFound.component, {
-                            params: {},
-                            searchParams: {},
-                        });
-                        const wrapped = react_1.default.createElement(rootLayout.component, { params: {}, searchParams: {} }, notFoundElement);
-                        const html = (0, server_1.renderToString)(wrapped);
-                        res
-                            .status(404)
-                            .type('text/html')
-                            .send(createHtmlDocument(html, '', findChunkFiles(cwd, isDev), rootLayout.mode));
-                        return;
+                let metadataHtml = '';
+                if (route) {
+                    if (isDev) {
+                        clearProjectRequireCache(runtimeRoot);
                     }
+                    const PageModule = require(route.pagePath);
+                    let metadata = { ...(rootLayout.metadata || {}) };
+                    if (PageModule.metadata) {
+                        metadata = { ...metadata, ...PageModule.metadata };
+                    }
+                    if (typeof PageModule.generateMetadata === 'function') {
+                        const params = extractParams(req.path, route);
+                        const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
+                        const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+                        metadata = { ...metadata, ...dynamicMeta };
+                    }
+                    const { generateMetadataHtml } = require('../metadata/generate');
+                    metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
+                }
+                await renderFlightToHTMLStream(upstreamOrigin, req.path, req.query ? new URLSearchParams(req.query).toString() : '', metadataHtml, findChunkFiles(cwd, isDev), rootLayout.mode, flightSSRClient, ssrManifest, res, isDev);
+                return;
+            }
+            catch (flightError) {
+                if (flightError?.name === 'NotFoundError' && !res.headersSent) {
                     res.status(404).type('text/html').send((0, not_found_page_1.getStyledNotFoundHTML)());
                     return;
                 }
-                const params = extractParams(req.path, route);
-                const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                const { element, metadata, rootMode } = await createRouteElement(route, { params, searchParams, req }, isDev, rootLayout, runtimeRoot);
-                const appHtml = (0, server_1.renderToString)(element);
-                const { generateMetadataHtml } = require('../metadata/generate');
-                const metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
-                res
-                    .status(200)
-                    .type('text/html')
-                    .send(createHtmlDocument(appHtml, metadataHtml, findChunkFiles(cwd, isDev), rootMode));
-            }
-            catch (error) {
-                if (error?.name === 'NotFoundError') {
+                console.error('[vista:rsc] Flight SSR failed:', flightError.message);
+                if (!res.headersSent) {
+                    if (isDev) {
+                        res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(flightError, { source: 'server' })]));
+                    }
+                    else {
+                        res.status(500).send('<h1>Internal Server Error</h1>');
+                    }
+                    return;
+                }
+                if (isDev && res.headersSent) {
                     try {
-                        const rootLayout = (0, root_resolver_1.resolveRootLayout)(runtimeRoot, isDev);
-                        const route = currentRoute;
-                        (0, request_context_1.setCurrentSegmentConfig)(route?.segmentConfig);
-                        if (route) {
-                            const segmentNotFoundPath = (0, app_router_runtime_1.resolveNearestSegmentNotFoundPath)(path_1.default.join(runtimeRoot, 'app'), route.routeDir);
-                            if (segmentNotFoundPath) {
-                                const params = extractParams(req.path, route);
-                                const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                                const notFoundResult = await createRouteElement({
-                                    ...route,
-                                    pagePath: segmentNotFoundPath,
-                                }, { params, searchParams, req }, isDev, rootLayout, runtimeRoot, { disableParallelSlots: true });
-                                const html = (0, server_1.renderToString)(notFoundResult.element);
-                                const { generateMetadataHtml } = require('../metadata/generate');
-                                const metadataHtml = notFoundResult.metadata
-                                    ? generateMetadataHtml(notFoundResult.metadata)
-                                    : '';
-                                res
-                                    .status(404)
-                                    .type('text/html')
-                                    .send(createHtmlDocument(html, metadataHtml, findChunkFiles(cwd, isDev), notFoundResult.rootMode));
-                                return;
-                            }
-                        }
-                        const resolvedNotFound = (0, root_resolver_1.resolveNotFoundComponent)(runtimeRoot, rootLayout, isDev);
-                        if (resolvedNotFound) {
-                            const notFoundElement = react_1.default.createElement(resolvedNotFound.component, {
-                                params: {},
-                                searchParams: {},
-                            });
-                            const wrapped = react_1.default.createElement(rootLayout.component, { params: {}, searchParams: {} }, notFoundElement);
-                            const html = (0, server_1.renderToString)(wrapped);
-                            res
-                                .status(404)
-                                .type('text/html')
-                                .send(createHtmlDocument(html, '', findChunkFiles(cwd, isDev), rootLayout.mode));
-                            return;
-                        }
-                        res.status(404).type('text/html').send((0, not_found_page_1.getStyledNotFoundHTML)());
-                        return;
+                        const errMsg = (flightError.message || 'Flight SSR Error')
+                            .replace(/'/g, "\\'")
+                            .replace(/\n/g, '\\n');
+                        res.write(`<script>document.body.innerHTML='';document.body.style.background='#1a1a2e';document.body.style.color='#ff6b6b';document.body.style.fontFamily='monospace';document.body.style.padding='40px';document.body.innerHTML='<h2 style="color:#ff6b6b">\\u26a0 Server Error</h2><pre style="white-space:pre-wrap;color:#ffa07a">${errMsg}</pre>';</script>`);
+                        res.end();
                     }
-                    catch (notFoundError) {
-                        console.error('[vista:rsc] Failed to render NotFoundError fallback:', notFoundError);
+                    catch {
+                        res.end();
                     }
                 }
-                console.error('[vista:rsc] Render error:', error);
-                if (isDev) {
-                    res.status(500).send((0, dev_error_1.renderErrorHTML)([(0, dev_error_1.fromCaughtError)(error, { source: 'server' })]));
-                }
-                else {
-                    res.status(500).send('<h1>Internal Server Error</h1>');
-                }
+                return;
             }
         });
     });

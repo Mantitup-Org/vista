@@ -21,6 +21,7 @@ const client_manifest_1 = require("./client-manifest");
 const server_manifest_1 = require("./server-manifest");
 const react_client_reference_manifest_1 = require("./react-client-reference-manifest");
 const constants_1 = require("../../constants");
+const app_dir_1 = require("../../server/app-dir");
 // Find module path (handles monorepo hoisting)
 const findModulePath = (moduleName, cwd) => {
     const localPath = path_1.default.resolve(cwd, 'node_modules', moduleName);
@@ -65,7 +66,7 @@ function createServerWebpackConfig(options) {
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
     // Generate server manifest first
-    const serverManifest = (0, server_manifest_1.generateServerManifest)(cwd, path_1.default.join(cwd, 'app'));
+    const serverManifest = (0, server_manifest_1.generateServerManifest)(cwd, (0, app_dir_1.resolveAppDir)(cwd));
     fs_1.default.writeFileSync(path_1.default.join(vistaDirs.server, 'server-manifest.json'), JSON.stringify(serverManifest, null, 2));
     return {
         mode: isDev ? 'development' : 'production',
@@ -74,7 +75,7 @@ function createServerWebpackConfig(options) {
         // Entry: All pages and layouts for SSR
         entry: () => {
             const entries = {};
-            const appDir = path_1.default.join(cwd, 'app');
+            const appDir = (0, app_dir_1.resolveAppDir)(cwd);
             // Scan for all page.tsx, layout.tsx files
             function scanDir(dir, prefix = '') {
                 if (!fs_1.default.existsSync(dir))
@@ -201,7 +202,7 @@ function createClientWebpackConfig(options) {
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
     const MiniCssExtractPlugin = require('mini-css-extract-plugin');
     // Generate client manifest
-    const clientManifest = (0, client_manifest_1.generateClientManifest)(cwd, path_1.default.join(cwd, 'app'));
+    const clientManifest = (0, client_manifest_1.generateClientManifest)(cwd, (0, app_dir_1.resolveAppDir)(cwd));
     fs_1.default.writeFileSync(path_1.default.join(vistaDirs.root, 'client-manifest.json'), JSON.stringify(clientManifest, null, 2));
     const reactPath = findModulePath('react', cwd);
     const reactDomPath = findModulePath('react-dom', cwd);
@@ -335,7 +336,7 @@ function createClientWebpackConfig(options) {
                     ? flightClientReferences
                     : [
                         {
-                            directory: path_1.default.join(cwd, 'app'),
+                            directory: (0, app_dir_1.resolveAppDir)(cwd),
                             recursive: true,
                             include: /\.[jt]sx?$/,
                         },

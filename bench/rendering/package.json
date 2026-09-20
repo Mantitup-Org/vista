@@ -7,9 +7,9 @@
     "build-application": "vista build",
     "start": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start",
     "build-flashpack": "vista build",
-    "build-default": "vista build --legacy",
+    "build-default": "vista build --default-engine",
     "start-flashpack": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start",
-    "start-default": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start --legacy",
+    "start-default": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start --default-engine",
     "start-application": "NODE_ENV=production pnpm build-application && NODE_ENV=production vista start"
   },
   "dependencies": {

@@ -70,17 +70,24 @@ const explicitFlashpack = rawArgs.includes('--flashpack');
 const explicitDefaultEngine = rawArgs.includes('--default-engine');
 const explicitEngine = getFlagValue('--engine');
 const explicitPackageManager = getExplicitPackageManagerFromArgs(rawArgs);
+const explicitSrcDir =
+  rawArgs.includes('--src-dir') || rawArgs.includes('--src')
+    ? true
+    : rawArgs.includes('--no-src-dir')
+      ? false
+      : undefined;
 
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
 Usage:
-  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--yes] [--no-deploy-templates] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
+  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--yes] [--no-deploy-templates] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--src-dir|--no-src-dir] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
 
 Example:
   npx create-vista-app@latest my-vista-app
   npx create-vista-app@latest
   npx create-vista-app@latest my-vista-app --typed-api
   npx create-vista-app@latest my-vista-app --flashpack
+  npx create-vista-app@latest my-vista-app --src-dir
   npx create-vista-app@latest my-vista-app --package-manager pnpm
 `);
   process.exit(0);
@@ -88,6 +95,16 @@ Example:
 
 if (explicitFlashpack && explicitDefaultEngine) {
   console.error('Error: use only one of --flashpack or --default-engine.');
+  process.exit(1);
+}
+
+if (rawArgs.includes('--src-dir') && rawArgs.includes('--no-src-dir')) {
+  console.error('Error: use only one of --src-dir or --no-src-dir.');
+  process.exit(1);
+}
+
+if (rawArgs.includes('--src') && rawArgs.includes('--no-src-dir')) {
+  console.error('Error: use only one of --src / --src-dir or --no-src-dir.');
   process.exit(1);
 }
 
@@ -124,12 +141,13 @@ async function resolveProjectName() {
   }
   return value;
 }
-async function confirmProceed(projectName, projectDir, engine, packageManager) {
+async function confirmProceed(projectName, projectDir, engine, packageManager, useSrcDir) {
   if (assumeYes || !canPrompt) return true;
+  const layout = useSrcDir ? 'src/app' : 'app';
   const response = await prompts({
     type: 'confirm',
     name: 'proceed',
-    message: `Create Vista app "${projectName}" in ${projectDir} (engine: ${engine}, package manager: ${packageManager})?`,
+    message: `Create Vista app "${projectName}" in ${projectDir} (engine: ${engine}, layout: ${layout}, package manager: ${packageManager})?`,
     initial: true,
   });
   return response.proceed !== false;
@@ -166,6 +184,25 @@ async function resolveEngineChoice() {
     process.exit(0);
   }
   return value;
+}
+
+async function resolveSrcDirChoice() {
+  if (typeof explicitSrcDir === 'boolean') return explicitSrcDir;
+  if (assumeYes || !canPrompt) return false;
+
+  const response = await prompts({
+    type: 'confirm',
+    name: 'useSrcDir',
+    message: 'Would you like to use a `src/` directory?',
+    initial: false,
+  });
+
+  if (typeof response.useSrcDir !== 'boolean') {
+    console.log('Aborted.');
+    process.exit(0);
+  }
+
+  return response.useSrcDir;
 }
 
 async function resolvePackageManagerChoice() {
@@ -277,21 +314,83 @@ function applyEngineToVistaConfig(projectDir, selectedEngine) {
   fs.writeFileSync(configPath, patched);
 }
 
-function applyReadmeSelections(projectDir, selectedEngine, useTypedApi) {
+function applyReadmeSelections(projectDir, selectedEngine, useTypedApi, useSrcDir = false) {
   const readmePath = path.join(projectDir, 'README.md');
   if (!fs.existsSync(readmePath)) return;
 
-  const source = fs.readFileSync(readmePath, 'utf8');
-  const patched = source
+  let source = fs.readFileSync(readmePath, 'utf8');
+  source = source
     .replace(/__VISTA_ENGINE__/g, selectedEngine)
     .replace(/__VISTA_TYPED_API__/g, useTypedApi ? 'enabled' : 'disabled');
-  fs.writeFileSync(readmePath, patched);
+
+  if (useSrcDir) {
+    source = source
+      .replace(/Add pages under `app`\./g, 'Add pages under `src/app`.')
+      .replace(/`app\/api\/\*\*\/route\.ts`/g, '`src/app/api/**/route.ts`')
+      .replace(/`app\/agents\//g, '`src/app/agents/')
+      .replace(
+        /```\napp\/\n├── root\.tsx[\s\S]*?vista\.config\.ts\n```/,
+        '```\nsrc/\n├── app/\n│   ├── root.tsx        # Root layout\n│   ├── index.tsx       # Home → /\n│   ├── globals.css\n│   └── about/page.tsx  # → /about\n└── components/\npublic/\nvista.config.ts\n```'
+      );
+  }
+
+  fs.writeFileSync(readmePath, source);
 }
 
 function applyFlashpackStarterTheme(projectDir) {
   const flashTemplateDir = path.join(__dirname, 'flash-template');
   if (fs.existsSync(flashTemplateDir)) {
     copyRecursiveSync(flashTemplateDir, projectDir);
+  }
+}
+
+/**
+ * Move app/ + components/ under src/ (Next-style layout).
+ * Call after all template overlays so flashpack/typed files move too.
+ */
+function applySrcDirectoryLayout(projectDir) {
+  const srcDir = path.join(projectDir, 'src');
+  fs.mkdirSync(srcDir, { recursive: true });
+
+  const moves = [
+    ['app', path.join('src', 'app')],
+    ['components', path.join('src', 'components')],
+  ];
+
+  for (const [fromRel, toRel] of moves) {
+    const from = path.join(projectDir, fromRel);
+    const to = path.join(projectDir, toRel);
+    if (!fs.existsSync(from)) continue;
+    if (fs.existsSync(to)) {
+      // Merge: move children into existing target
+      for (const entry of fs.readdirSync(from)) {
+        const srcPath = path.join(from, entry);
+        const destPath = path.join(to, entry);
+        if (fs.existsSync(destPath)) {
+          fs.rmSync(destPath, { recursive: true, force: true });
+        }
+        fs.renameSync(srcPath, destPath);
+      }
+      fs.rmSync(from, { recursive: true, force: true });
+    } else {
+      fs.renameSync(from, to);
+    }
+  }
+
+  // Point @/* at src/* for the common import alias.
+  const tsconfigPath = path.join(projectDir, 'tsconfig.json');
+  if (fs.existsSync(tsconfigPath)) {
+    try {
+      const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
+      tsconfig.compilerOptions = tsconfig.compilerOptions || {};
+      tsconfig.compilerOptions.paths = {
+        ...(tsconfig.compilerOptions.paths || {}),
+        '@/*': ['./src/*'],
+      };
+      fs.writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`);
+    } catch {
+      // Keep scaffold resilient if tsconfig is unexpected.
+    }
   }
 }
 
@@ -318,6 +417,7 @@ async function main() {
   const currentDir = process.cwd();
   const projectName = await resolveProjectName();
   const selectedEngine = await resolveEngineChoice();
+  const useSrcDir = await resolveSrcDirChoice();
   const selectedPackageManager = await resolvePackageManagerChoice();
   const projectDir = path.join(currentDir, projectName);
 
@@ -325,7 +425,8 @@ async function main() {
     projectName,
     projectDir,
     selectedEngine,
-    selectedPackageManager
+    selectedPackageManager,
+    useSrcDir
   );
   if (!proceed) {
     console.log('Aborted.');
@@ -352,13 +453,18 @@ async function main() {
   }
 
   applyEngineToVistaConfig(projectDir, selectedEngine);
-  applyReadmeSelections(projectDir, selectedEngine, useTypedApiStarter);
+  applyReadmeSelections(projectDir, selectedEngine, useTypedApiStarter, useSrcDir);
   if (selectedEngine === 'flashpack') {
     applyFlashpackStarterTheme(projectDir);
   }
   if (includeDeployTemplates) {
     applyDeployTemplates(projectDir, { all: rawArgs.includes('--deploy-templates-all') });
     console.log('Added deployment templates (render.yaml, Dockerfile).');
+  }
+
+  if (useSrcDir) {
+    applySrcDirectoryLayout(projectDir);
+    console.log('Using src/ directory layout (src/app, src/components).');
   }
 
   console.log('Scaffolding complete.');
@@ -500,6 +606,7 @@ coverage/
   console.log(`
 ✨ Success! Created ${projectName} at ${projectDir}
 Engine: ${selectedEngine}
+Layout: ${useSrcDir ? 'src/app' : 'app'}
 Package manager: ${selectedPackageManager}
 
 Get started by running:
@@ -525,6 +632,7 @@ module.exports = {
   applyEngineToVistaConfig,
   applyReadmeSelections,
   applyFlashpackStarterTheme,
+  applySrcDirectoryLayout,
 };
 
 if (require.main === module) {

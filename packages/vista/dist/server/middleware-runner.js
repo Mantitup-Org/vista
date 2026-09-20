@@ -28,6 +28,7 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const cookie_parse_1 = require("./cookie-parse");
 const middleware_security_1 = require("./middleware-security");
+const app_dir_1 = require("./app-dir");
 // ---------------------------------------------------------------------------
 // Discovery Caches
 // ---------------------------------------------------------------------------
@@ -42,15 +43,6 @@ function clearMiddlewareCaches() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function getAppDir(cwd) {
-    const candidates = [path_1.default.join(cwd, 'app'), path_1.default.join(cwd, 'src', 'app')];
-    for (const candidate of candidates) {
-        if (fs_1.default.existsSync(candidate) && fs_1.default.statSync(candidate).isDirectory()) {
-            return candidate;
-        }
-    }
-    return null;
-}
 /**
  * Discover top-level global middleware.
  * Checks `<cwd>/middleware.*` then `<cwd>/src/middleware.*`.
@@ -81,7 +73,7 @@ function discoverRouteMiddlewares(cwd, pathname, bustCache) {
     if (!bustCache && routeDiscoveryCache.has(cacheKey)) {
         return routeDiscoveryCache.get(cacheKey);
     }
-    const appDir = getAppDir(cwd);
+    const appDir = (0, app_dir_1.resolveAppDirOrNull)(cwd);
     if (!appDir) {
         routeDiscoveryCache.set(cacheKey, []);
         return [];

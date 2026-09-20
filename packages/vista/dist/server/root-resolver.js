@@ -9,6 +9,7 @@ exports.resolveNotFoundComponent = resolveNotFoundComponent;
 exports.resolveLayoutChain = resolveLayoutChain;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const app_dir_1 = require("./app-dir");
 const FILE_EXTENSIONS = ['.tsx', '.ts', '.jsx', '.js'];
 let hasWarnedLayoutFallback = false;
 function resolveAppModuleByStem(appDir, stem) {
@@ -42,12 +43,12 @@ function detectRootMode(rootPath) {
     return 'legacy';
 }
 function resolveRootLayout(cwd, isDev) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const rootPath = resolveAppModuleByStem(appDir, 'root');
     const layoutPath = resolveAppModuleByStem(appDir, 'layout');
     const selectedPath = rootPath ?? layoutPath;
     if (!selectedPath) {
-        throw new Error('Missing app/root.(tsx|ts|jsx|js). Add app/root.tsx (canonical) or app/layout.tsx (fallback).');
+        throw new Error('Missing app/root.(tsx|ts|jsx|js). Add app/root.tsx or src/app/root.tsx (canonical), or app/layout.tsx / src/app/layout.tsx (fallback).');
     }
     const usedLayoutFallback = !rootPath && !!layoutPath;
     if (usedLayoutFallback && !hasWarnedLayoutFallback) {
@@ -80,7 +81,7 @@ function resolveRootLayout(cwd, isDev) {
     };
 }
 function resolveRoutePagePath(cwd, routePath) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const normalizedRoute = normalizeNotFoundRoute(routePath);
     if (normalizedRoute === '/' || normalizedRoute === '/index') {
         for (const ext of FILE_EXTENSIONS) {
@@ -111,7 +112,7 @@ function resolveRoutePagePath(cwd, routePath) {
     return null;
 }
 function resolveNotFoundComponent(cwd, rootLayout, isDev) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const candidates = [];
     // 1. Explicit notFoundRoute (highest priority)
     if (rootLayout.notFoundRoute) {
@@ -177,7 +178,7 @@ function resolveNotFoundComponent(cwd, rootLayout, isDev) {
  * @param isDev   Bust require-cache in development
  */
 function resolveLayoutChain(cwd, pageDir, isDev) {
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     const chain = [];
     // Walk from app/ root down to the page's directory, collecting layouts
     // Normalise both to forward-slash for reliable prefix comparison

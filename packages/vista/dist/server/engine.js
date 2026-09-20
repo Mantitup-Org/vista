@@ -31,6 +31,7 @@ const logger_1 = require("./logger");
 const structure_log_1 = require("./structure-log");
 const module_compile_hook_1 = require("./module-compile-hook");
 const request_context_1 = require("./request-context");
+const app_dir_1 = require("./app-dir");
 // Support CSS imports on server runtime
 // - Regular .css: ignored (handled by PostCSS)
 // - .module.css: return empty class mapping (webpack build handles real mappings)
@@ -109,7 +110,7 @@ function initClientComponentRegistry(appDir, cwd) {
     try {
         clientComponentIdsByPath.clear();
         const appCount = registerClientComponents(appDir);
-        const componentsCount = registerClientComponents(path_1.default.join(cwd, 'components'), 'components/');
+        const componentsCount = registerClientComponents((0, app_dir_1.resolveComponentsDir)(cwd), 'components/');
         if (process.env.VISTA_DEBUG) {
             console.log(`[Vista JS RSC] Registered ${clientComponentIdsByPath.size} client component(s) for hydration wrapping (app=${appCount}, components=${componentsCount})`);
         }
@@ -213,7 +214,7 @@ function startServer(port = 3003, compiler) {
     const engineVariant = (0, config_1.resolveAndApplyEngineVariant)(vistaConfig);
     const typedApiConfig = (0, config_1.resolveTypedApiConfig)(vistaConfig);
     const isDev = process.env.NODE_ENV !== 'production';
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     if (process.env.VISTA_DEBUG) {
         (0, logger_1.logInfo)(`Engine variant: ${engineVariant}`);
     }
@@ -524,8 +525,8 @@ function startServer(port = 3003, compiler) {
                 // Route Matching Logic
                 const getExactPath = (p) => {
                     if (p === '/' || p === '/index')
-                        return path_1.default.resolve(cwd, 'app', 'index.tsx');
-                    return path_1.default.resolve(cwd, 'app', p.substring(1), 'page.tsx');
+                        return path_1.default.join(appDir, 'index.tsx');
+                    return path_1.default.join(appDir, p.substring(1), 'page.tsx');
                 };
                 const tryPath = getExactPath(req.path);
                 // Clear require cache for hot reloading in dev
@@ -542,7 +543,6 @@ function startServer(port = 3003, compiler) {
                 else {
                     // Dynamic Route Matching
                     const segments = req.path.split('/').filter(Boolean);
-                    const appDir = path_1.default.resolve(cwd, 'app');
                     if (segments.length === 2) {
                         const [section, paramVal] = segments;
                         const sectionPath = path_1.default.join(appDir, section);

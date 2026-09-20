@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { resolveTypedApiConfig } from '../config';
 import { validateVistaArtifacts } from '../server/artifact-validator';
+import { resolveAppDir } from '../server/app-dir';
 import type { DeployContext } from './types';
 import { readJsonSafe } from './utils';
 
@@ -71,7 +72,7 @@ export async function runStaticHostPreflight(ctx: DeployContext): Promise<string
     );
   }
 
-  const appApiDir = path.join(ctx.cwd, 'app', 'api');
+  const appApiDir = path.join(resolveAppDir(ctx.cwd), 'api');
   if (fs.existsSync(appApiDir)) {
     warnings.push(
       'Found app/api routes. Server-side API routes are not supported on static CDN deploy targets.'
