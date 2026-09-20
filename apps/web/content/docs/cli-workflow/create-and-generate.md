@@ -22,6 +22,8 @@ In interactive mode, `create-vista-app` now prompts for:
 
 Dependencies install automatically by default after scaffold. Use `--skip-install` when you only want the files without downloading packages yet.
 
+The CLI does not copy deploy configs or a `components/` folder. Theme lives in `vista/theme` (`ThemeProvider`, `ThemeScript`, `ThemeToggle`). Run `vista deploy` when you want platform files.
+
 To choose the Rust-first engine during scaffold:
 
 ```bash

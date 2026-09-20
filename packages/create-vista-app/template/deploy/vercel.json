@@ -1,7 +1,0 @@
-{
-  "version": 2,
-  "buildCommand": "npm run build",
-  "installCommand": "npm install --legacy-peer-deps --no-audit --no-fund",
-  "framework": null,
-  "devCommand": "npm run dev"
-}

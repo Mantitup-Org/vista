@@ -30,7 +30,6 @@ app/
 ├── index.tsx       # Home → /
 ├── globals.css
 └── about/page.tsx  # → /about
-components/
 public/
 vista.config.ts
 ```

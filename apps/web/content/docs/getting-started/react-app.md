@@ -24,7 +24,7 @@ Open `http://localhost:3003`.
 - Folders under `app/` (or `src/app/`) are URL routes.
 - Components are **Server Components** by default.
 - Add `'use client'` only where you need browser state, events, or hooks. Files in `components/`, `utils/`, `lib/`, or `src/` are scanned into the client manifest — they do not have to live under `app/`.
-- Shared UI goes in `components/` (or `src/components/` when you choose the `src/` layout).
+- Shared UI goes in `components/` (or `src/components/` when you choose the `src/` layout). The CLI does not create that folder; add it when you have shared UI. Theme toggle comes from `vista/theme`.
 
 ```txt
 my-app/
@@ -32,7 +32,6 @@ my-app/
     root.tsx           # shared layout
     index.tsx          # /
     about/page.tsx     # /about
-  components/          # or src/components/
   public/
   vista.config.ts
 ```

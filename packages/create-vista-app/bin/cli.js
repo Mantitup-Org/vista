@@ -50,7 +50,6 @@ const rawArgs = process.argv.slice(2);
 const useTypedApiStarter = rawArgs.includes('--typed-api') || rawArgs.includes('--typed');
 const skipInstall = rawArgs.includes('--skip-install');
 const skipGit = rawArgs.includes('--no-git');
-const includeDeployTemplates = !rawArgs.includes('--no-deploy-templates');
 const assumeYes = rawArgs.includes('--yes') || rawArgs.includes('-y');
 const canPrompt = !!(process.stdin.isTTY && process.stdout.isTTY);
 const detectedPackageManager = detectPackageManager();
@@ -80,7 +79,7 @@ const explicitSrcDir =
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
 Usage:
-  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--yes] [--no-deploy-templates] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--src-dir|--no-src-dir] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
+  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--yes] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--src-dir|--no-src-dir] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
 
 Example:
   npx create-vista-app@latest my-vista-app
@@ -264,14 +263,16 @@ function getCreateCommand(packageManager) {
   return 'npx create-vista-app@latest';
 }
 
-function copyRecursiveSync(src, dest) {
+function copyRecursiveSync(src, dest, options = {}) {
+  const skipNames = options.skipNames || new Set();
   const exists = fs.existsSync(src);
   const stats = exists && fs.statSync(src);
   const isDirectory = exists && stats.isDirectory();
   if (isDirectory) {
     fs.mkdirSync(dest, { recursive: true });
     fs.readdirSync(src).forEach((childItemName) => {
-      copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName));
+      if (skipNames.has(childItemName)) return;
+      copyRecursiveSync(path.join(src, childItemName), path.join(dest, childItemName), options);
     });
   } else {
     fs.copyFileSync(src, dest);
@@ -330,7 +331,7 @@ function applyReadmeSelections(projectDir, selectedEngine, useTypedApi, useSrcDi
       .replace(/`app\/agents\//g, '`src/app/agents/')
       .replace(
         /```\napp\/\n├── root\.tsx[\s\S]*?vista\.config\.ts\n```/,
-        '```\nsrc/\n├── app/\n│   ├── root.tsx        # Root layout\n│   ├── index.tsx       # Home → /\n│   ├── globals.css\n│   └── about/page.tsx  # → /about\n└── components/\npublic/\nvista.config.ts\n```'
+        '```\nsrc/\n├── app/\n│   ├── root.tsx        # Root layout\n│   ├── index.tsx       # Home → /\n│   ├── globals.css\n│   └── about/page.tsx  # → /about\npublic/\nvista.config.ts\n```'
       );
   }
 
@@ -394,24 +395,6 @@ function applySrcDirectoryLayout(projectDir) {
   }
 }
 
-function applyDeployTemplates(projectDir, options = {}) {
-  const deployTemplateDir = path.join(__dirname, '../template/deploy');
-  if (!fs.existsSync(deployTemplateDir)) return;
-
-  const includeAll = Boolean(options.all);
-  const defaultFiles = ['render.yaml', 'Dockerfile', '.dockerignore'];
-  const optionalFiles = ['wrangler.toml', 'netlify.toml', 'vercel.json'];
-  const filesToCopy = includeAll ? [...defaultFiles, ...optionalFiles] : defaultFiles;
-
-  for (const fileName of filesToCopy) {
-    const source = path.join(deployTemplateDir, fileName);
-    const target = path.join(projectDir, fileName);
-    if (fs.existsSync(source) && !fs.existsSync(target)) {
-      fs.copyFileSync(source, target);
-    }
-  }
-}
-
 async function main() {
   const useLocal = rawArgs.includes('--local');
   const currentDir = process.cwd();
@@ -444,7 +427,7 @@ async function main() {
 
   // 2. Copy Template
   const templateDir = path.join(__dirname, '../template');
-  copyRecursiveSync(templateDir, projectDir);
+  copyRecursiveSync(templateDir, projectDir, { skipNames: new Set(['deploy', 'components']) });
 
   if (useTypedApiStarter) {
     const typedTemplateDir = path.join(__dirname, '../template-typed');
@@ -457,14 +440,10 @@ async function main() {
   if (selectedEngine === 'flashpack') {
     applyFlashpackStarterTheme(projectDir);
   }
-  if (includeDeployTemplates) {
-    applyDeployTemplates(projectDir, { all: rawArgs.includes('--deploy-templates-all') });
-    console.log('Added deployment templates (render.yaml, Dockerfile).');
-  }
 
   if (useSrcDir) {
     applySrcDirectoryLayout(projectDir);
-    console.log('Using src/ directory layout (src/app, src/components).');
+    console.log('Using src/ directory layout (src/app).');
   }
 
   console.log('Scaffolding complete.');
@@ -484,8 +463,7 @@ async function main() {
       react: '^19.0.0',
       'react-dom': '^19.0.0',
       'react-server-dom-webpack': '^19.0.0',
-      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@0.3.5',
-      'lucide-react': '^0.468.0',
+      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@0.3.6',
       // CSS build (needed in production for vista build)
       postcss: '^8.0.0',
       tailwindcss: '^4.0.0',

@@ -38,7 +38,37 @@ function assertCommonScripts(packageJson) {
   assert.equal(packageJson.scripts.start, 'vista start');
   assert.equal(packageJson.scripts.deploy, 'vista deploy');
   assert.equal(packageJson.devDependencies.webpack, '^5.90.0');
-  assert.equal(packageJson.dependencies['lucide-react'], '^0.468.0');
+  assert.equal(packageJson.dependencies['lucide-react'], undefined);
+}
+
+function assertEngineOwnedScaffold(projectDir, useSrcDir = false) {
+  const appRoot = useSrcDir ? path.join(projectDir, 'src', 'app') : path.join(projectDir, 'app');
+  const indexSource = fs.readFileSync(path.join(appRoot, 'index.tsx'), 'utf8');
+  assert(
+    indexSource.includes("import { ThemeToggle } from 'vista/theme';"),
+    'starter should import ThemeToggle from vista/theme'
+  );
+  assert.equal(fs.existsSync(path.join(projectDir, 'components')), false, 'CLI should not scaffold components/');
+  assert.equal(
+    fs.existsSync(path.join(projectDir, 'src', 'components')),
+    false,
+    'CLI should not scaffold src/components/'
+  );
+  assert.equal(fs.existsSync(path.join(projectDir, 'deploy')), false, 'CLI should not scaffold deploy/');
+  for (const fileName of [
+    'render.yaml',
+    'Dockerfile',
+    '.dockerignore',
+    'wrangler.toml',
+    'netlify.toml',
+    'vercel.json',
+  ]) {
+    assert.equal(
+      fs.existsSync(path.join(projectDir, fileName)),
+      false,
+      `CLI should not scaffold ${fileName}; vista deploy owns platform files`
+    );
+  }
 }
 
 function assertEngineConfig(projectDir, expectedVariant) {
@@ -63,17 +93,9 @@ function assertNoTemplateTokens(projectDir, useSrcDir = false) {
   assert(!indexSource.includes('__VISTA_'), 'index.tsx should not contain unreplaced template tokens');
 }
 
-function assertThemeFiles(projectDir, useSrcDir = false) {
-  const componentsRoot = useSrcDir
-    ? path.join(projectDir, 'src', 'components')
-    : path.join(projectDir, 'components');
-  assert(fs.existsSync(path.join(componentsRoot, 'theme-toggle.tsx')));
-}
-
 function assertSrcLayout(projectDir) {
   assert(fs.existsSync(path.join(projectDir, 'src', 'app', 'root.tsx')));
   assert(fs.existsSync(path.join(projectDir, 'src', 'app', 'index.tsx')));
-  assert(fs.existsSync(path.join(projectDir, 'src', 'components', 'theme-toggle.tsx')));
   assert(!fs.existsSync(path.join(projectDir, 'app')), 'root app/ should not exist with --src-dir');
   assert(
     !fs.existsSync(path.join(projectDir, 'components')),
@@ -110,9 +132,7 @@ async function main() {
     assertEngineConfig(defaultProject, 'default');
     assertReadme(defaultProject, 'default', 'disabled');
     assertNoTemplateTokens(defaultProject, false);
-    assertThemeFiles(defaultProject, false);
-    assert.equal(fs.existsSync(path.join(defaultProject, 'render.yaml')), true);
-    assert.equal(fs.existsSync(path.join(defaultProject, 'Dockerfile')), true);
+    assertEngineOwnedScaffold(defaultProject, false);
     const defaultGitignore = fs.readFileSync(path.join(defaultProject, '.gitignore'), 'utf8');
     assert(!defaultGitignore.includes('.next/'), 'generated .gitignore should not contain .next/');
     const defaultRoot = fs.readFileSync(path.join(defaultProject, 'app', 'root.tsx'), 'utf8');
@@ -137,7 +157,7 @@ async function main() {
     const srcProject = await runCreate(tempRoot, 'src-app', ['--src-dir']);
     assertSrcLayout(srcProject);
     assertNoTemplateTokens(srcProject, true);
-    assertThemeFiles(srcProject, true);
+    assertEngineOwnedScaffold(srcProject, true);
     assertEngineConfig(srcProject, 'default');
 
     const flashpackProject = await runCreate(tempRoot, 'flashpack-app', ['--engine', 'flashpack', '--typed-api']);
@@ -146,7 +166,7 @@ async function main() {
     assertEngineConfig(flashpackProject, 'flashpack');
     assertReadme(flashpackProject, 'flashpack', 'enabled');
     assertNoTemplateTokens(flashpackProject, false);
-    assertThemeFiles(flashpackProject, false);
+    assertEngineOwnedScaffold(flashpackProject, false);
     const flashpackRoot = fs.readFileSync(path.join(flashpackProject, 'app', 'root.tsx'), 'utf8');
     const flashpackIndex = fs.readFileSync(path.join(flashpackProject, 'app', 'index.tsx'), 'utf8');
     assert(flashpackRoot.includes("from 'vista/theme'"));
@@ -179,6 +199,7 @@ async function main() {
       '--typed-api',
     ]);
     assertSrcLayout(flashpackSrcProject);
+    assertEngineOwnedScaffold(flashpackSrcProject, true);
     assert(fs.existsSync(path.join(flashpackSrcProject, 'src', 'app', 'api', 'typed.ts')));
     assertNoTemplateTokens(flashpackSrcProject, true);
 
