@@ -1602,27 +1602,36 @@ function startRSCServer(options = {}) {
                 return;
             }
             try {
-                // Metadata extraction: still done locally so we have <head> content
+                // Metadata extraction: still done locally so we have <head> content.
+                // notFound() here must not skip Flight — upstream renders the nearest
+                // segment not-found as a 404 Flight payload.
                 const rootLayout = (0, root_resolver_1.resolveRootLayout)(runtimeRoot, isDev);
                 const route = currentRoute;
                 let metadataHtml = '';
                 if (route) {
-                    if (isDev) {
-                        clearProjectRequireCache(runtimeRoot);
+                    try {
+                        if (isDev) {
+                            clearProjectRequireCache(runtimeRoot);
+                        }
+                        const PageModule = require(route.pagePath);
+                        let metadata = { ...(rootLayout.metadata || {}) };
+                        if (PageModule.metadata) {
+                            metadata = { ...metadata, ...PageModule.metadata };
+                        }
+                        if (typeof PageModule.generateMetadata === 'function') {
+                            const params = extractParams(req.path, route);
+                            const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
+                            const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+                            metadata = { ...metadata, ...dynamicMeta };
+                        }
+                        const { generateMetadataHtml } = require('../metadata/generate');
+                        metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
                     }
-                    const PageModule = require(route.pagePath);
-                    let metadata = { ...(rootLayout.metadata || {}) };
-                    if (PageModule.metadata) {
-                        metadata = { ...metadata, ...PageModule.metadata };
+                    catch (metadataError) {
+                        if (metadataError?.name !== 'NotFoundError') {
+                            throw metadataError;
+                        }
                     }
-                    if (typeof PageModule.generateMetadata === 'function') {
-                        const params = extractParams(req.path, route);
-                        const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                        const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-                        metadata = { ...metadata, ...dynamicMeta };
-                    }
-                    const { generateMetadataHtml } = require('../metadata/generate');
-                    metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
                 }
                 await renderFlightToHTMLStream(upstreamOrigin, req.path, req.query ? new URLSearchParams(req.query).toString() : '', metadataHtml, findChunkFiles(cwd, isDev), rootLayout.mode, flightSSRClient, ssrManifest, res, isDev);
                 return;
