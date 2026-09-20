@@ -71,13 +71,44 @@ async function main() {
     cwd: projectDir,
   });
   assert.equal(fs.existsSync(path.join(projectDir, '.vercel', 'output', 'config.json')), true);
+  assert.equal(
+    fs.existsSync(path.join(projectDir, '.vercel', 'output', 'functions', 'index.func', 'index.js')),
+    true,
+    'Vercel output must include a Node SSR function'
+  );
+  assert.equal(
+    fs.existsSync(path.join(projectDir, '.vercel', 'output', 'functions', 'index.func', '.vista', 'standalone', 'server.js')),
+    true,
+    'Vercel function must pack standalone Flight server'
+  );
+  const vercelConfig = JSON.parse(
+    fs.readFileSync(path.join(projectDir, '.vercel', 'output', 'functions', 'index.func', '.vc-config.json'), 'utf8')
+  );
+  assert.equal(vercelConfig.runtime, 'nodejs20.x');
+  assert.equal(vercelConfig.supportsResponseStreaming, true);
+  assert.equal(vercelConfig.maxDuration, 60);
+  const vercelHandler = fs.readFileSync(
+    path.join(projectDir, '.vercel', 'output', 'functions', 'index.func', 'index.js'),
+    'utf8'
+  );
+  assert.match(vercelHandler, /\.vista['"]?, ['"]standalone['"]?, ['"]server\.js['"]/);
 
   log('Dry-run deploy: cloudflare');
   runNode([vistaBin, 'deploy', '--target', 'cloudflare', '--dry-run', '--force', '--skip-build'], {
     cwd: projectDir,
   });
-  assert.equal(fs.existsSync(path.join(projectDir, '.vista', 'deploy', 'cloudflare', '_routes.json')), true);
-  assert.equal(fs.existsSync(path.join(projectDir, 'wrangler.toml')), true);
+  const wrangler = fs.readFileSync(path.join(projectDir, 'wrangler.toml'), 'utf8');
+  assert.match(wrangler, /\[\[containers\]\]/);
+  assert.match(wrangler, /VistaSSR/);
+  assert.match(wrangler, /new_sqlite_classes/);
+  const cfWorker = fs.readFileSync(
+    path.join(projectDir, '.vista', 'deploy', 'cloudflare', 'worker.js'),
+    'utf8'
+  );
+  assert.match(cfWorker, /export class VistaSSR/);
+  assert.match(cfWorker, /getTcpPort\(3003\)/);
+  assert.equal(fs.existsSync(path.join(projectDir, '.vista', 'deploy', 'cloudflare', 'worker.js')), true);
+  assert.equal(fs.existsSync(path.join(projectDir, 'Dockerfile')), true);
 
   log('Dry-run deploy: render');
   runNode([vistaBin, 'deploy', '--target', 'render', '--dry-run', '--skip-build'], {
@@ -92,13 +123,23 @@ async function main() {
   });
   const dockerfile = fs.readFileSync(path.join(projectDir, 'Dockerfile'), 'utf8');
   assert.match(dockerfile, /\.vista\/standalone\/server\.js/);
+  assert.match(dockerfile, /node_modules/);
 
   log('Dry-run deploy: netlify');
   runNode([vistaBin, 'deploy', '--target', 'netlify', '--dry-run', '--force', '--skip-build'], {
     cwd: projectDir,
   });
-  assert.equal(fs.existsSync(path.join(projectDir, '.vista', 'deploy', 'netlify', '_redirects')), true);
   assert.equal(fs.existsSync(path.join(projectDir, 'netlify.toml')), true);
+  assert.equal(fs.existsSync(path.join(projectDir, 'netlify', 'functions', 'ssr.js')), true);
+  assert.equal(
+    fs.existsSync(path.join(projectDir, 'netlify', 'functions', '.vista', 'standalone', 'server.js')),
+    true
+  );
+  const netlifyToml = fs.readFileSync(path.join(projectDir, 'netlify.toml'), 'utf8');
+  assert.match(netlifyToml, /\.netlify\/functions\/ssr/);
+  const netlifyHandler = fs.readFileSync(path.join(projectDir, 'netlify', 'functions', 'ssr.js'), 'utf8');
+  assert.match(netlifyHandler, /http\.IncomingMessage/);
+  assert.match(netlifyHandler, /http\.ServerResponse/);
 
   log('All deploy integration checks passed.');
 }

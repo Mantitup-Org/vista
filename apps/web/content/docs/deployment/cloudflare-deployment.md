@@ -1,59 +1,52 @@
 ---
-category: deployment
-slug: cloudflare-deployment
-title: Cloudflare Pages Deployment
-summary: Deploy pre-rendered Vista apps to Cloudflare Pages with vista deploy --target cloudflare.
+category: "deployment"
+slug: "cloudflare-deployment"
+title: "Cloudflare Deployment"
+summary: "Deploy Vista Flight SSR on Cloudflare Containers, or static Pages when you opt in."
 order: 4
-updatedAt: "2026-09-07"
+updatedAt: "2026-09-20"
 ---
 
-> Cloudflare Pages support in Vista v1 is static/pre-rendered output. Full dynamic SSR is not available on Workers yet.
+Cloudflare **Workers cannot run Vista’s dual-process Flight server** (no `child_process` with `--conditions react-server`). Full SSR uses **Cloudflare Containers** and the same Dockerfile as `vista deploy --target docker`.
 
-## One-Command Deploy
+## Full SSR (default)
 
 ```bash
 npm run deploy -- --target cloudflare --prod
 ```
 
-Dry-run to validate artifacts only:
+This emits:
+
+- `Dockerfile` — `node .vista/standalone/server.js` with production `node_modules`
+- `.vista/deploy/cloudflare/worker.js` — Durable Object that starts the container on port 3003
+- `wrangler.toml` — Containers + Durable Object binding + SQLite migration
+
+Then:
 
 ```bash
-npm run deploy -- --target cloudflare --dry-run --force
+npx wrangler login
+npx wrangler deploy --prod
 ```
 
-## What Vista Emits
+If Containers are not enabled on the account, run the same image on Fly, Railway, Render, or any Docker host.
 
-- `.vista/deploy/cloudflare/` static bundle
-- `_routes.json` and `_redirects`
-- `wrangler.toml` with `pages_build_output_dir`
-
-## Wrangler Fallback
-
-If Wrangler is installed and authenticated:
-
-```bash
-wrangler pages deploy .vista/deploy/cloudflare --project-name my-vista-app
-```
-
-Otherwise `vista deploy` prints next steps after emitting artifacts.
-
-## Static Host Configuration
-
-For image components on static hosts:
+## Static Pages (optional)
 
 ```ts title="vista.config.ts"
-images: {
-  unoptimized: true,
+deploy: {
+  target: 'cloudflare',
+  output: 'static',
 }
 ```
 
-## Limitations
+```bash
+npm run deploy -- --target cloudflare --prod
+```
 
-- No live Node RSC server on Pages static deploys
-- Server actions, typed API, and request-time SSR require Render or Docker
+Serves pre-rendered `.vista/static` on Cloudflare Pages only (no request-time SSR).
 
 ## Related
 
 - [Vista Deploy Command](/docs/deployment/vista-deploy-command)
 - [Platform Matrix](/docs/deployment/platform-matrix)
-- [Render Deployment (Recommended for full apps)](/docs/deployment/render-deployment)
+- [Render Deployment](/docs/deployment/render-deployment)

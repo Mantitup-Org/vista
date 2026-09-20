@@ -1,0 +1,11 @@
+import type { DeployContext } from './types';
+export declare function isStaticOnlyDeploy(ctx: DeployContext): boolean;
+export declare function resolveStandaloneServerPath(ctx: DeployContext): string;
+export declare function copyStandaloneRuntime(ctx: DeployContext, targetDir: string): void;
+export declare function packRuntimeNodeModules(cwd: string, destDir: string): void;
+export declare const VERCEL_SSR_FUNCTION_NAME = "index";
+export declare function writeVercelNodeHandler(funcDir: string): void;
+export declare function writeNetlifySsrHandler(functionDir: string): void;
+export declare function writeCloudflareContainerWorker(outputDir: string): void;
+export declare function writeCloudflareFullRuntimeToml(ctx: DeployContext): string;
+export declare function packVercelFullRuntime(ctx: DeployContext): string[];

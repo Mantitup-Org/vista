@@ -1236,9 +1236,32 @@ export interface RSCEngineOptions {
   compiler?: webpack.Compiler | null;
   projectRoot?: string;
   runtimeRoot?: string;
+  /** When false, return the Express app without binding a port (serverless). */
+  listen?: boolean;
 }
 
-export function startRSCServer(options: RSCEngineOptions = {}): void {
+function failRSCStartup(message: string, listen: boolean): never {
+  console.error(message);
+  if (!listen) {
+    throw new Error(message);
+  }
+  process.exit(1);
+}
+
+let cachedRequestListener: express.Express | null = null;
+
+export function createRSCApp(options: RSCEngineOptions = {}): express.Express {
+  return startRSCServer({ ...options, listen: false });
+}
+
+export function getRSCRequestListener(options: RSCEngineOptions = {}): express.Express {
+  if (!cachedRequestListener) {
+    cachedRequestListener = createRSCApp(options);
+  }
+  return cachedRequestListener;
+}
+
+export function startRSCServer(options: RSCEngineOptions = {}): express.Express {
   const app = express();
   const cwd = path.resolve(options.projectRoot || process.env.VISTA_ARTIFACT_ROOT || process.cwd());
   const runtimeRoot = resolveRuntimeProjectRoot(cwd, options.runtimeRoot);
@@ -1257,7 +1280,8 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
   // Request logger — logs GET/POST with timing
   app.use(requestLogger());
 
-  const port = resolvePort(String(options.port || vistaConfig.server?.port || 3003), 3003);
+  const shouldListen = options.listen !== false;
+  const port = resolvePort(String(options.port || vistaConfig.server?.port || process.env.PORT || 3003), 3003);
   const upstreamPort = resolvePort(String(process.env.RSC_UPSTREAM_PORT || port + 1), port + 1);
   const upstreamOrigin = `http://127.0.0.1:${upstreamPort}`;
 
@@ -1272,18 +1296,17 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
 
   const serverManifestPath = path.join(cwd, BUILD_DIR, 'server', 'server-manifest.json');
   if (!fs.existsSync(serverManifestPath)) {
-    console.error(
-      `[vista:rsc] Missing server manifest at ${serverManifestPath}. Run "vista build --rsc" first.`
+    failRSCStartup(
+      `[vista:rsc] Missing server manifest at ${serverManifestPath}. Run "vista build --rsc" first.`,
+      shouldListen
     );
-    process.exit(1);
   }
   try {
     if (!isDev || !options.compiler) {
       assertVistaArtifacts(cwd, 'rsc');
     }
   } catch (error) {
-    console.error((error as Error).message);
-    process.exit(1);
+    failRSCStartup((error as Error).message, shouldListen);
   }
 
   // ========================================================================
@@ -1441,11 +1464,15 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     }
 
     // 6. Force exit after brief grace period (Windows Ctrl+C fix)
-    setTimeout(() => process.exit(0), 500);
+    if (shouldListen) {
+      setTimeout(() => process.exit(0), 500);
+    }
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-  process.on('exit', shutdown);
+  if (shouldListen) {
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+    process.on('exit', shutdown);
+  }
 
   // ========================================================================
   // Live-Reload SSE for RSC dev mode
@@ -2049,6 +2076,10 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     );
   });
 
+  if (!shouldListen) {
+    return app;
+  }
+
   const server = app.listen(port, () => {
     printServerReady({ port, mode: 'rsc', rscFlight: useFlightSSR });
   });
@@ -2063,6 +2094,7 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     logError(`RSC startup failed: ${(error as Error)?.message || String(error)}`);
     process.exit(1);
   });
+  return app;
 }
 
 export { startRSCServer as default };

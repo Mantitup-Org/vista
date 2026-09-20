@@ -1,5 +1,5 @@
 export declare function ensureDir(absolutePath: string): void;
-export declare function copyDirectoryRecursive(sourceDir: string, targetDir: string): void;
+export declare function copyDirectoryRecursive(sourceDir: string, targetDir: string, seen?: Set<string>): void;
 export declare function copyFileIfPresent(sourceFile: string, targetFile: string): void;
 export declare function writeFileIfAllowed(targetFile: string, content: string, force: boolean): {
     written: boolean;

@@ -1,0 +1,38 @@
+name: Publish packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  github-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://npm.pkg.github.com
+          scope: '@mantitup-org'
+
+      - name: Publish @mantitup-org/vista
+        working-directory: packages/vista
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.name='@mantitup-org/vista'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');"
+          npm publish --access public
+
+      - name: Publish @mantitup-org/create-vista-app
+        working-directory: packages/create-vista-app
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.name='@mantitup-org/create-vista-app'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');"
+          npm publish --access public

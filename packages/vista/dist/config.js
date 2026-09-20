@@ -168,13 +168,7 @@ function resolveDeployConfig(config) {
         preferBuildOutputApi: merged.preferBuildOutputApi !== false,
     };
 }
-function inferDeployOutputForTarget(target) {
-    if (target === 'vercel' || target === 'cloudflare' || target === 'netlify') {
-        return 'static';
-    }
-    if (target === 'render' || target === 'docker') {
-        return 'standalone';
-    }
+function inferDeployOutputForTarget(_target) {
     return 'standalone';
 }
 function mergeConfig(userConfig) {

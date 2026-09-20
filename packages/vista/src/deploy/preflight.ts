@@ -61,14 +61,14 @@ export async function runStaticHostPreflight(ctx: DeployContext): Promise<string
 
   if (hasDynamicOnlyRoutes(ctx.vistaDir)) {
     errors.push(
-      'This app appears to rely on dynamic server rendering without static fallbacks. Deploy to Render or Docker for full runtime support.'
+      'This app appears to rely on dynamic server rendering without static fallbacks. Use the default standalone deploy (Vercel Node, Netlify Functions, Cloudflare Containers, Render, or Docker) instead of deploy.output "static".'
     );
   }
 
   const typedApi = resolveTypedApiConfig(ctx.config);
   if (typedApi.enabled) {
     errors.push(
-      'Typed API is enabled. Static CDN hosts cannot run typed API runtime. Use deploy.target "render" or "docker".'
+      'Typed API is enabled. Static CDN hosts cannot run typed API runtime. Omit deploy.output "static" so the Node Flight server is packed.'
     );
   }
 

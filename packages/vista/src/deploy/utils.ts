@@ -5,17 +5,50 @@ export function ensureDir(absolutePath: string): void {
   fs.mkdirSync(absolutePath, { recursive: true });
 }
 
-export function copyDirectoryRecursive(sourceDir: string, targetDir: string): void {
+const SKIP_COPY_DIRECTORY_NAMES = new Set(['.cache', '.turbo', '.vite', 'coverage']);
+
+export function copyDirectoryRecursive(
+  sourceDir: string,
+  targetDir: string,
+  seen: Set<string> = new Set()
+): void {
   if (!fs.existsSync(sourceDir)) return;
+
+  let realSource = sourceDir;
+  try {
+    realSource = fs.realpathSync(sourceDir);
+  } catch {
+    return;
+  }
+  if (seen.has(realSource)) return;
+  seen.add(realSource);
 
   ensureDir(targetDir);
   const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
 
   for (const entry of entries) {
+    if (SKIP_COPY_DIRECTORY_NAMES.has(entry.name)) continue;
+
     const from = path.join(sourceDir, entry.name);
     const to = path.join(targetDir, entry.name);
+
+    if (entry.isSymbolicLink()) {
+      try {
+        const targetStat = fs.statSync(from);
+        if (targetStat.isDirectory()) {
+          copyDirectoryRecursive(from, to, seen);
+        } else if (targetStat.isFile()) {
+          ensureDir(path.dirname(to));
+          fs.copyFileSync(from, to);
+        }
+      } catch {
+        // dangling symlink
+      }
+      continue;
+    }
+
     if (entry.isDirectory()) {
-      copyDirectoryRecursive(from, to);
+      copyDirectoryRecursive(from, to, seen);
     } else if (entry.isFile()) {
       fs.copyFileSync(from, to);
     }

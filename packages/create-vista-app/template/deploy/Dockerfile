@@ -11,7 +11,8 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3003
-COPY --from=builder /app/.vista ./.vista
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.vista ./.vista
 EXPOSE 3003
 CMD ["node", ".vista/standalone/server.js"]

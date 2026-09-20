@@ -2,9 +2,15 @@ import fs from 'fs';
 import path from 'path';
 
 import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runner';
-import { runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import { runStandalonePreflight, runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import {
+  isStaticOnlyDeploy,
+  writeCloudflareContainerWorker,
+  writeCloudflareFullRuntimeToml,
+} from '../runtime-pack';
 import type { DeployAdapter, DeployContext } from '../types';
 import { copyStaticHostAssets, ensureDir, writeFileIfAllowed } from '../utils';
+import { DOCKERFILE_TEMPLATE } from './docker';
 
 const CLOUDFLARE_OUTPUT_DIR = '.vista/deploy/cloudflare';
 
@@ -12,7 +18,7 @@ function getCloudflareOutputDir(ctx: DeployContext): string {
   return path.join(ctx.cwd, CLOUDFLARE_OUTPUT_DIR);
 }
 
-function writeWranglerToml(ctx: DeployContext, outputDir: string): string {
+function writeStaticWranglerToml(ctx: DeployContext, outputDir: string): string {
   const targetFile = path.join(ctx.cwd, 'wrangler.toml');
   const relativeOutput = path.relative(ctx.cwd, outputDir).replace(/\\/g, '/');
   const content = `name = "my-vista-app"
@@ -49,11 +55,14 @@ function writeRedirects(outputDir: string): string {
 
 export const cloudflareAdapter: DeployAdapter = {
   id: 'cloudflare',
-  requiredOutput: 'static',
-  supportsFullRuntime: false,
+  requiredOutput: 'standalone',
+  supportsFullRuntime: true,
 
   async preflight(ctx) {
-    return runStaticHostPreflight(ctx);
+    if (isStaticOnlyDeploy(ctx)) {
+      return runStaticHostPreflight(ctx);
+    }
+    return runStandalonePreflight(ctx);
   },
 
   async emit(ctx) {
@@ -61,18 +70,37 @@ export const cloudflareAdapter: DeployAdapter = {
     fs.rmSync(outputDir, { recursive: true, force: true });
     ensureDir(outputDir);
 
+    if (isStaticOnlyDeploy(ctx)) {
+      copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
+      const routesPath = writeRoutesJson(outputDir);
+      const redirectsPath = writeRedirects(outputDir);
+      const wranglerPath = writeStaticWranglerToml(ctx, outputDir);
+      return {
+        status: 'emitted',
+        target: 'cloudflare',
+        artifactPaths: [outputDir, routesPath, redirectsPath, wranglerPath],
+        instructions: [
+          'Static mode: Cloudflare Pages serves pre-rendered output.',
+          'For Flight SSR, omit deploy.output "static" and use Cloudflare Containers.',
+        ],
+      };
+    }
+
     copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
-    const routesPath = writeRoutesJson(outputDir);
-    const redirectsPath = writeRedirects(outputDir);
-    const wranglerPath = writeWranglerToml(ctx, outputDir);
+    writeCloudflareContainerWorker(outputDir);
+    const wranglerPath = writeCloudflareFullRuntimeToml(ctx);
+    const dockerfilePath = path.join(ctx.cwd, 'Dockerfile');
+    writeFileIfAllowed(dockerfilePath, DOCKERFILE_TEMPLATE, ctx.force);
 
     return {
       status: 'emitted',
       target: 'cloudflare',
-      artifactPaths: [outputDir, routesPath, redirectsPath, wranglerPath],
+      artifactPaths: [outputDir, wranglerPath, dockerfilePath],
       instructions: [
-        'Cloudflare Pages deploy uses pre-rendered static output.',
-        'Set images.unoptimized: true when using Vista Image on static hosts.',
+        'Cloudflare Workers cannot spawn Vista’s Node Flight process.',
+        'Full SSR uses Cloudflare Containers (same Dockerfile as docker deploy).',
+        'Run: npx wrangler login && npx wrangler deploy --prod',
+        'Or build/run the Dockerfile on any Node host (Fly, Railway, Render).',
       ],
     };
   },
@@ -94,23 +122,24 @@ export const cloudflareAdapter: DeployAdapter = {
     }
 
     const outputDir = getCloudflareOutputDir(ctx);
+    const staticOnly = isStaticOnlyDeploy(ctx);
+    const wranglerCommand = staticOnly
+      ? `wrangler pages deploy "${outputDir}" --project-name my-vista-app${ctx.prod ? '' : ' --branch preview'}`
+      : ctx.prod
+        ? 'wrangler deploy --prod'
+        : 'wrangler deploy';
+
     if (!isCliAvailable('wrangler')) {
       return {
         status: 'emitted',
         target: 'cloudflare',
         artifactPaths: emitted.artifactPaths,
         warnings: [...warnings, 'Wrangler CLI not found. Install with: npm i -g wrangler'],
-        instructions: [
-          'Install Wrangler: npm i -g wrangler',
-          `Then run: wrangler pages deploy "${outputDir}" --project-name my-vista-app`,
-          'Or connect the repo in the Cloudflare Pages dashboard.',
-        ],
+        instructions: emitted.instructions,
       };
     }
 
-    const branchFlag = ctx.prod ? '' : '--branch preview';
-    const command = `wrangler pages deploy "${outputDir}" --project-name my-vista-app ${branchFlag}`.trim();
-    const result = runCliCommand(command, { cwd: ctx.cwd, dryRun: ctx.dryRun });
+    const result = runCliCommand(wranglerCommand, { cwd: ctx.cwd, dryRun: ctx.dryRun });
     if (!result.ok) {
       return {
         status: 'emitted',
@@ -119,7 +148,8 @@ export const cloudflareAdapter: DeployAdapter = {
         warnings: [...warnings, result.stderr || 'Wrangler deploy failed.'],
         instructions: [
           'Run: wrangler login',
-          'Or set CLOUDFLARE_API_TOKEN in your environment.',
+          'Or set CLOUDFLARE_API_TOKEN.',
+          ...(staticOnly ? [] : ['If Containers are unavailable, deploy the Dockerfile to Fly/Railway/Render.']),
         ],
       };
     }

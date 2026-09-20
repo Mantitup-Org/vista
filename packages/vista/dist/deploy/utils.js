@@ -15,16 +15,45 @@ const path_1 = __importDefault(require("path"));
 function ensureDir(absolutePath) {
     fs_1.default.mkdirSync(absolutePath, { recursive: true });
 }
-function copyDirectoryRecursive(sourceDir, targetDir) {
+const SKIP_COPY_DIRECTORY_NAMES = new Set(['.cache', '.turbo', '.vite', 'coverage']);
+function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
     if (!fs_1.default.existsSync(sourceDir))
         return;
+    let realSource = sourceDir;
+    try {
+        realSource = fs_1.default.realpathSync(sourceDir);
+    }
+    catch {
+        return;
+    }
+    if (seen.has(realSource))
+        return;
+    seen.add(realSource);
     ensureDir(targetDir);
     const entries = fs_1.default.readdirSync(sourceDir, { withFileTypes: true });
     for (const entry of entries) {
+        if (SKIP_COPY_DIRECTORY_NAMES.has(entry.name))
+            continue;
         const from = path_1.default.join(sourceDir, entry.name);
         const to = path_1.default.join(targetDir, entry.name);
+        if (entry.isSymbolicLink()) {
+            try {
+                const targetStat = fs_1.default.statSync(from);
+                if (targetStat.isDirectory()) {
+                    copyDirectoryRecursive(from, to, seen);
+                }
+                else if (targetStat.isFile()) {
+                    ensureDir(path_1.default.dirname(to));
+                    fs_1.default.copyFileSync(from, to);
+                }
+            }
+            catch {
+                // dangling symlink
+            }
+            continue;
+        }
         if (entry.isDirectory()) {
-            copyDirectoryRecursive(from, to);
+            copyDirectoryRecursive(from, to, seen);
         }
         else if (entry.isFile()) {
             fs_1.default.copyFileSync(from, to);

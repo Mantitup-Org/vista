@@ -314,14 +314,20 @@ function startStandaloneServer(options = {}) {
       : path.join(__dirname, 'runtime', 'vista', 'server', 'rsc-engine.js');
   const runtime = require(runtimeEntry);
   const start = runtime.startRSCServer || runtime.default;
-  start({
+  const listen = options.listen !== false;
+  return start({
     port: options.port || process.env.PORT || 3003,
     projectRoot,
     runtimeRoot,
+    listen,
   });
 }
 
-module.exports = { startStandaloneServer };
+function createRequestListener(options = {}) {
+  return startStandaloneServer({ ...options, listen: false });
+}
+
+module.exports = { startStandaloneServer, createRequestListener };
 
 if (require.main === module) {
   startStandaloneServer();

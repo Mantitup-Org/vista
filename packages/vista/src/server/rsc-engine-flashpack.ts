@@ -1,3 +1,5 @@
+import type { Express } from 'express';
+
 import { prepareFlashpackRuntime } from '../flashpack/runtime';
 import { startRSCServer as startRSCCoreServer, type RSCEngineOptions } from './rsc-engine';
 
@@ -5,7 +7,11 @@ function resolveMode(): 'development' | 'production' {
   return process.env.NODE_ENV === 'development' ? 'development' : 'production';
 }
 
-export function startFlashpackRSCServer(options: RSCEngineOptions = {}): void {
+export function createRSCApp(options: RSCEngineOptions = {}): Express {
+  return startFlashpackRSCServer({ ...options, listen: false });
+}
+
+export function startFlashpackRSCServer(options: RSCEngineOptions = {}): Express {
   const cwd = process.cwd();
   const mode = resolveMode();
   const phase = mode === 'development' ? 'dev' : 'start';
@@ -36,7 +42,7 @@ export function startFlashpackRSCServer(options: RSCEngineOptions = {}): void {
   }
 
   // Same Flight SSR contract as webpack: inline Flight, React.use streaming, fail-closed.
-  startRSCCoreServer(options);
+  return startRSCCoreServer(options);
 }
 
 export const startRSCServer = startFlashpackRSCServer;

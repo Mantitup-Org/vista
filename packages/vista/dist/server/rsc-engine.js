@@ -12,6 +12,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.createRSCApp = createRSCApp;
+exports.getRSCRequestListener = getRSCRequestListener;
 exports.startRSCServer = startRSCServer;
 exports.default = startRSCServer;
 const path_1 = __importDefault(require("path"));
@@ -971,6 +973,23 @@ function renderCompilePendingHTML() {
 </body>
 </html>`;
 }
+function failRSCStartup(message, listen) {
+    console.error(message);
+    if (!listen) {
+        throw new Error(message);
+    }
+    process.exit(1);
+}
+let cachedRequestListener = null;
+function createRSCApp(options = {}) {
+    return startRSCServer({ ...options, listen: false });
+}
+function getRSCRequestListener(options = {}) {
+    if (!cachedRequestListener) {
+        cachedRequestListener = createRSCApp(options);
+    }
+    return cachedRequestListener;
+}
 function startRSCServer(options = {}) {
     const app = (0, express_1.default)();
     const cwd = path_1.default.resolve(options.projectRoot || process.env.VISTA_ARTIFACT_ROOT || process.cwd());
@@ -987,7 +1006,8 @@ function startRSCServer(options = {}) {
     cleanHotUpdateFiles(cwd);
     // Request logger — logs GET/POST with timing
     app.use((0, logger_1.requestLogger)());
-    const port = resolvePort(String(options.port || vistaConfig.server?.port || 3003), 3003);
+    const shouldListen = options.listen !== false;
+    const port = resolvePort(String(options.port || vistaConfig.server?.port || process.env.PORT || 3003), 3003);
     const upstreamPort = resolvePort(String(process.env.RSC_UPSTREAM_PORT || port + 1), port + 1);
     const upstreamOrigin = `http://127.0.0.1:${upstreamPort}`;
     installSingleReactResolution(runtimeRoot);
@@ -1000,8 +1020,7 @@ function startRSCServer(options = {}) {
     installSSRWebpackShim();
     const serverManifestPath = path_1.default.join(cwd, constants_1.BUILD_DIR, 'server', 'server-manifest.json');
     if (!fs_1.default.existsSync(serverManifestPath)) {
-        console.error(`[vista:rsc] Missing server manifest at ${serverManifestPath}. Run "vista build --rsc" first.`);
-        process.exit(1);
+        failRSCStartup(`[vista:rsc] Missing server manifest at ${serverManifestPath}. Run "vista build --rsc" first.`, shouldListen);
     }
     try {
         if (!isDev || !options.compiler) {
@@ -1009,8 +1028,7 @@ function startRSCServer(options = {}) {
         }
     }
     catch (error) {
-        console.error(error.message);
-        process.exit(1);
+        failRSCStartup(error.message, shouldListen);
     }
     // ========================================================================
     // Flight SSR Client + SSR Manifest
@@ -1151,11 +1169,15 @@ function startRSCServer(options = {}) {
             httpServer.close();
         }
         // 6. Force exit after brief grace period (Windows Ctrl+C fix)
-        setTimeout(() => process.exit(0), 500);
+        if (shouldListen) {
+            setTimeout(() => process.exit(0), 500);
+        }
     };
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-    process.on('exit', shutdown);
+    if (shouldListen) {
+        process.on('SIGINT', shutdown);
+        process.on('SIGTERM', shutdown);
+        process.on('exit', shutdown);
+    }
     // ========================================================================
     // Live-Reload SSE for RSC dev mode
     // - Pushes reload events when server components change (fs.watch)
@@ -1667,6 +1689,9 @@ function startRSCServer(options = {}) {
             }
         });
     });
+    if (!shouldListen) {
+        return app;
+    }
     const server = app.listen(port, () => {
         (0, logger_1.printServerReady)({ port, mode: 'rsc', rscFlight: useFlightSSR });
     });
@@ -1680,4 +1705,5 @@ function startRSCServer(options = {}) {
         (0, logger_1.logError)(`RSC startup failed: ${error?.message || String(error)}`);
         process.exit(1);
     });
+    return app;
 }

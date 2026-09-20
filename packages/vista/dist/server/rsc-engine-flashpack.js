@@ -1,12 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.startRSCServer = void 0;
+exports.createRSCApp = createRSCApp;
 exports.startFlashpackRSCServer = startFlashpackRSCServer;
 exports.default = startFlashpackRSCServer;
 const runtime_1 = require("../flashpack/runtime");
 const rsc_engine_1 = require("./rsc-engine");
 function resolveMode() {
     return process.env.NODE_ENV === 'development' ? 'development' : 'production';
+}
+function createRSCApp(options = {}) {
+    return startFlashpackRSCServer({ ...options, listen: false });
 }
 function startFlashpackRSCServer(options = {}) {
     const cwd = process.cwd();
@@ -29,6 +33,6 @@ function startFlashpackRSCServer(options = {}) {
         console.log(`[flashpack] server runtime prepared (rust=${prepared.rustPipelineUsed ? 'on' : 'fallback'}) at ${prepared.flashDir}`);
     }
     // Same Flight SSR contract as webpack: inline Flight, React.use streaming, fail-closed.
-    (0, rsc_engine_1.startRSCServer)(options);
+    return (0, rsc_engine_1.startRSCServer)(options);
 }
 exports.startRSCServer = startFlashpackRSCServer;
