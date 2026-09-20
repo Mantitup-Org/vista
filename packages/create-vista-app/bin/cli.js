@@ -378,7 +378,7 @@ async function main() {
       react: '^19.0.0',
       'react-dom': '^19.0.0',
       'react-server-dom-webpack': '^19.0.0',
-      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@latest',
+      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@0.3.2',
       'lucide-react': '^0.468.0',
       // CSS build (needed in production for vista build)
       postcss: '^8.0.0',
