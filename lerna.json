@@ -5,11 +5,11 @@
   "command": {
     "version": {
       "exact": true,
-      "allowBranch": ["development"]
+      "allowBranch": ["development", "main", "feat/dev-error-overlay"]
     },
     "publish": {
       "npmClient": "npm",
-      "allowBranch": ["development"],
+      "allowBranch": ["development", "main", "feat/dev-error-overlay"],
       "registry": "https://registry.npmjs.org/"
     }
   },
