@@ -55,6 +55,6 @@ Set `OPENAI_API_KEY` (or NVIDIA / Ollama embed endpoints) and change the agent `
 
 ## Learn more
 
-- Framework guide: [RAG with Vista AI](https://vista-js.vercel.app/docs/ai/rag)
+- Framework guide: [RAG with Vista AI](https://vistajs.pages.dev/docs/ai/rag)
 - Root README paths: React / fullstack / AI / RAG
 - `vista g agent <name>` scaffolds agents in any Vista app

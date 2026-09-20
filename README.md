@@ -2,7 +2,7 @@
 
 Vista.js is a React 19 framework for building apps the way you already think about Next.js: file-based routes under `app/`, React Server Components by default, and one CLI for `dev` / `build` / `start`.
 
-Official site: https://vista-js.vercel.app · Repo: https://github.com/Mantitup-Org/vista
+Official site: https://vistajs.pages.dev · Repo: https://github.com/Mantitup-Org/vista
 
 ## Which guide do you need?
 
@@ -15,10 +15,10 @@ Official site: https://vista-js.vercel.app · Repo: https://github.com/Mantitup-
 
 Docs site mirrors these paths:
 
-- [React app](https://vista-js.vercel.app/docs/getting-started/react-app)
-- [Fullstack app](https://vista-js.vercel.app/docs/getting-started/fullstack-app)
-- [AI overview](https://vista-js.vercel.app/docs/ai/overview)
-- [RAG](https://vista-js.vercel.app/docs/ai/rag)
+- [React app](https://vistajs.pages.dev/docs/getting-started/react-app)
+- [Fullstack app](https://vistajs.pages.dev/docs/getting-started/fullstack-app)
+- [AI overview](https://vistajs.pages.dev/docs/ai/overview)
+- [RAG](https://vistajs.pages.dev/docs/ai/rag)
 
 ---
 
@@ -333,6 +333,6 @@ After editing `packages/vista/src`, rebuild `packages/vista/dist` (committed).
 
 ## Learn more
 
-- Docs: https://vista-js.vercel.app/docs/getting-started/first-steps
+- Docs: https://vistajs.pages.dev/docs/getting-started/first-steps
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [developer.md](developer.md) · [AGENTS.md](AGENTS.md)
 - Contribution / CI notes for maintainers stay in those files; app authors start with the four paths above.
