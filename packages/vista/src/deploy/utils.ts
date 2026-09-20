@@ -88,6 +88,7 @@ export const STATIC_HOST_ROUTE_RULES = [
   { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
   { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
   { src: '^/$', dest: '/static/pages/index.html' },
+  { src: '^/([^.]+)?$', dest: '/static/pages/index.html' },
   { src: '^/(.+)$', dest: '/static/pages/$1.html' },
 ];
 
