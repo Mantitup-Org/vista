@@ -23,7 +23,7 @@ import {
   resolveStructureValidationConfig,
   resolveTypedApiConfig,
 } from '../config';
-import { ErrorOverlay, renderErrorHTML } from '../dev-error';
+import { ErrorOverlay, fromCaughtError, renderErrorHTML } from '../dev-error';
 import { assertVistaArtifacts } from './artifact-validator';
 import {
   resolveNotFoundComponent,
@@ -797,14 +797,7 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
         console.error(err);
       }
       // Render Server-Side Error Overlay
-      const errorInfo = {
-        type: 'runtime' as const,
-        message: err.message || 'Unknown Server Error',
-        stack: err.stack,
-        file: (err.message.match && err.message.match(/(app\/.*?):(\d+):(\d+)/)?.[1]) || undefined,
-      };
-
-      res.status(500).send(renderErrorHTML([errorInfo]));
+      res.status(500).send(renderErrorHTML([fromCaughtError(err, { source: 'server' })]));
     }
       }
     );
