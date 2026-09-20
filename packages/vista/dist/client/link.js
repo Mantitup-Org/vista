@@ -118,7 +118,7 @@ function resolvePrefetchBehavior(prefetch) {
 exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, shallow, passHref, prefetch = 'auto', legacyBehavior, children, onClick, onMouseEnter, onTouchStart, onNavigate, target, ...props }, ref) => {
     // Try the RSC router first — if we're inside an RSCRouter, use
     // Flight-based navigation. Otherwise fall back to the legacy router.
-    const rscRouter = (0, react_1.useContext)(rsc_router_1.RSCRouterContext);
+    const rscRouter = (0, rsc_router_1.useRSCRouter)();
     const legacyRouter = (0, react_1.useContext)(router_1.RouterContext);
     const fallbackPathname = (0, router_1.usePathname)();
     const pathname = rscRouter?.pathname ?? legacyRouter?.pathname ?? fallbackPathname;

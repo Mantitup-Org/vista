@@ -12,7 +12,8 @@ import path from 'path';
 import fs from 'fs';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import type { RouteEntry, ServerManifest } from '../build/rsc/server-manifest';
-import { BUILD_DIR, STATIC_CHUNKS_PATH, HYDRATE_DOCUMENT_FLAG } from '../constants';
+import { BUILD_DIR, RSC_DATA_FLAG, STATIC_CHUNKS_PATH, HYDRATE_DOCUMENT_FLAG } from '../constants';
+import { listHydrationChunkFiles } from './hydration-chunks';
 import {
   type CachedPage,
   type PrerenderManifest,
@@ -552,6 +553,36 @@ function injectBeforeClosingTag(html: string, tagName: string, injection: string
   return html;
 }
 
+function buildInlineFlightBootstrapScript(flightText: string): string {
+  return `<script>window.${RSC_DATA_FLAG}=${JSON.stringify(flightText)};</script>`;
+}
+
+/** Embed Flight on SSG HTML so the client can hydrate without a live /rsc server. */
+export function injectInlineFlightBootstrap(html: string, flightText: string): string {
+  if (!flightText || html.includes(`window.${RSC_DATA_FLAG}=`)) {
+    return html;
+  }
+  const script = `  ${buildInlineFlightBootstrapScript(flightText)}\n`;
+  const deferIdx = html.search(/<script\s+defer\b/i);
+  if (deferIdx !== -1) {
+    return `${html.slice(0, deferIdx)}${script}${html.slice(deferIdx)}`;
+  }
+  return injectBeforeClosingTag(html, 'body', `\n${script}`);
+}
+
+async function attachFlightPayload(
+  page: CachedPage,
+  flightData: string | undefined,
+  _cwd: string
+): Promise<void> {
+  if (!flightData) return;
+  page.flightData = flightData;
+  page.html = injectInlineFlightBootstrap(page.html, flightData);
+  if (page.shellHtml) {
+    page.shellHtml = injectInlineFlightBootstrap(page.shellHtml, flightData);
+  }
+}
+
 function getCSSLinks(cwd: string): string {
   const links = ['<link rel="stylesheet" href="/styles.css" />'];
   const chunksDir = path.join(cwd, BUILD_DIR, 'static', 'chunks');
@@ -571,35 +602,11 @@ function getCSSLinks(cwd: string): string {
 }
 
 function getChunkScripts(cwd: string): string {
-  const chunksDir = path.join(cwd, BUILD_DIR, 'static', 'chunks');
-
   try {
-    if (!fs.existsSync(chunksDir)) {
-      return '';
-    }
-
-    const files = fs
-      .readdirSync(chunksDir)
-      .filter(
-        (entry) =>
-          entry.endsWith('.js') && !entry.endsWith('.map') && !entry.includes('.hot-update.')
-      );
-
-    const priority = ['webpack.js', 'framework.js', 'vendor.js'];
-    files.sort((a, b) => {
-      const ai = priority.indexOf(a);
-      const bi = priority.indexOf(b);
-      if (ai !== -1 && bi !== -1) return ai - bi;
-      if (ai !== -1) return -1;
-      if (bi !== -1) return 1;
-      return a.localeCompare(b);
-    });
-
-    return files
+    return listHydrationChunkFiles(cwd, false)
       .map((file) => `<script defer src="${STATIC_CHUNKS_PATH}${file}"></script>`)
       .join('\n  ');
   } catch {
-    // Ignore chunk discovery failures during static generation.
     return '';
   }
 }
@@ -860,10 +867,7 @@ export async function generateStaticPages(
 
         if (page) {
           if (flightUpstream) {
-            const flightData = await flightUpstream.fetchFlight(urlPath);
-            if (flightData) {
-              page.flightData = flightData;
-            }
+            await attachFlightPayload(page, await flightUpstream.fetchFlight(urlPath), cwd);
           }
 
           setCachedPage(urlPath, page);
@@ -895,10 +899,7 @@ export async function generateStaticPages(
 
           if (page) {
             if (flightUpstream) {
-              const flightData = await flightUpstream.fetchFlight(urlPath);
-              if (flightData) {
-                page.flightData = flightData;
-              }
+              await attachFlightPayload(page, await flightUpstream.fetchFlight(urlPath), cwd);
             }
 
             setCachedPage(urlPath, page);

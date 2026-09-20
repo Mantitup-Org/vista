@@ -15,4 +15,10 @@ export declare const STATIC_HOST_ROUTE_RULES: ({
     dest: string;
     handle?: undefined;
 })[];
+/** Lift `.vista/static/pages/*.html` to pretty CDN paths (`docs/foo/index.html`). */
+export declare function flattenPrerenderedPages(pagesDir: string, targetDir: string): void;
+/** Serve Flight files at `/rsc/*.rsc` (extension avoids file/directory collisions). */
+export declare function flattenPrerenderedFlight(pagesDir: string, targetDir: string): void;
+/** Copy webpack assets to `/_vista/static` and flatten HTML + Flight for file-based CDNs. */
+export declare function prepareStaticCdnOutput(targetDir: string): void;
 export declare function copyStaticHostAssets(cwd: string, vistaDir: string, targetDir: string): void;

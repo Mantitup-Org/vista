@@ -9,6 +9,9 @@ exports.copyDirectoryRecursive = copyDirectoryRecursive;
 exports.copyFileIfPresent = copyFileIfPresent;
 exports.writeFileIfAllowed = writeFileIfAllowed;
 exports.readJsonSafe = readJsonSafe;
+exports.flattenPrerenderedPages = flattenPrerenderedPages;
+exports.flattenPrerenderedFlight = flattenPrerenderedFlight;
+exports.prepareStaticCdnOutput = prepareStaticCdnOutput;
 exports.copyStaticHostAssets = copyStaticHostAssets;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
@@ -84,15 +87,75 @@ function readJsonSafe(absolutePath) {
 }
 exports.STATIC_HOST_ROUTE_RULES = [
     { handle: 'filesystem' },
-    { src: '^/_vista/(.*)$', dest: '/$1' },
+    { src: '^/_vista/static/(.*)$', dest: '/static/$1' },
     { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
     { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
     { src: '^/$', dest: '/static/pages/index.html' },
     { src: '^/(.+)$', dest: '/static/pages/$1.html' },
 ];
+function walkFiles(dir, visitor, prefix = '') {
+    if (!fs_1.default.existsSync(dir))
+        return;
+    const entries = fs_1.default.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+        const absolutePath = path_1.default.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            walkFiles(absolutePath, visitor, relativePath);
+        }
+        else if (entry.isFile()) {
+            visitor(absolutePath, relativePath);
+        }
+    }
+}
+/** Lift `.vista/static/pages/*.html` to pretty CDN paths (`docs/foo/index.html`). */
+function flattenPrerenderedPages(pagesDir, targetDir) {
+    walkFiles(pagesDir, (absolutePath, relativePath) => {
+        const posix = relativePath.replace(/\\/g, '/');
+        if (!posix.endsWith('.html') || posix.endsWith('.shell.html'))
+            return;
+        const destRel = posix === 'index.html' || posix.endsWith('/index.html')
+            ? posix
+            : posix.replace(/\.html$/, '/index.html');
+        const dest = path_1.default.join(targetDir, destRel.split('/').join(path_1.default.sep));
+        ensureDir(path_1.default.dirname(dest));
+        fs_1.default.copyFileSync(absolutePath, dest);
+    });
+}
+/** Serve Flight files at `/rsc/*.rsc` (extension avoids file/directory collisions). */
+function flattenPrerenderedFlight(pagesDir, targetDir) {
+    walkFiles(pagesDir, (absolutePath, relativePath) => {
+        const posix = relativePath.replace(/\\/g, '/');
+        if (!posix.endsWith('.rsc'))
+            return;
+        const destRel = `rsc/${posix}`;
+        const dest = path_1.default.join(targetDir, destRel.split('/').join(path_1.default.sep));
+        ensureDir(path_1.default.dirname(dest));
+        fs_1.default.copyFileSync(absolutePath, dest);
+    });
+}
+function writeStaticRscRedirects(targetDir) {
+    const redirectsPath = path_1.default.join(targetDir, '_redirects');
+    const lines = [
+        '/rsc /rsc/index.rsc 200',
+        '/rsc/ /rsc/index.rsc 200',
+        '/rsc/*.rsc /rsc/:splat.rsc 200',
+        '/rsc/* /rsc/:splat.rsc 200',
+    ];
+    fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
+}
+/** Copy webpack assets to `/_vista/static` and flatten HTML + Flight for file-based CDNs. */
+function prepareStaticCdnOutput(targetDir) {
+    const staticDir = path_1.default.join(targetDir, 'static');
+    copyDirectoryRecursive(staticDir, path_1.default.join(targetDir, '_vista', 'static'));
+    flattenPrerenderedPages(path_1.default.join(staticDir, 'pages'), targetDir);
+    flattenPrerenderedFlight(path_1.default.join(staticDir, 'pages'), targetDir);
+    writeStaticRscRedirects(targetDir);
+}
 function copyStaticHostAssets(cwd, vistaDir, targetDir) {
     copyDirectoryRecursive(path_1.default.join(cwd, 'public'), targetDir);
     copyDirectoryRecursive(path_1.default.join(vistaDir, 'static'), path_1.default.join(targetDir, 'static'));
+    copyDirectoryRecursive(path_1.default.join(vistaDir, 'static'), path_1.default.join(targetDir, '_vista', 'static'));
     const clientCssPath = path_1.default.join(vistaDir, 'client.css');
     copyFileIfPresent(clientCssPath, path_1.default.join(targetDir, 'client.css'));
     copyFileIfPresent(clientCssPath, path_1.default.join(targetDir, 'styles.css'));

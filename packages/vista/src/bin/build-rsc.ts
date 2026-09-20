@@ -29,6 +29,7 @@ import {
   loadConfig,
   resolveCacheComponentsConfig,
   resolveAndApplyEngineVariant,
+  resolveDeployConfig,
   resolveStructureValidationConfig,
 } from '../config';
 import { FLASH_DIR, HYDRATE_DOCUMENT_FLAG, RSC_DATA_FLAG, SSE_ENDPOINT } from '../constants';
@@ -262,6 +263,14 @@ waitForInlineFlightPayload(4000).then(function (inlineFlight) {
     return;
   }
 
+  if (/(?:^|\\n)\\d+:E\\{/.test(inlineFlight)) {
+    reportDevRuntimeError(
+      'Hydration Error',
+      new Error('Inline Flight payload contains error rows. Keeping server HTML instead of hydrating the document.')
+    );
+    return;
+  }
+
   const initialResponse = createFromReadableStream(flightTextToReadableStream(inlineFlight), {
     callServer,
   }) as Promise<React.ReactNode>;
@@ -396,6 +405,15 @@ export async function buildRSC(watch: boolean = false): Promise<{
   const engineVariant = resolveAndApplyEngineVariant(vistaConfig);
   const structureConfig = resolveStructureValidationConfig(vistaConfig);
   const cacheComponentsConfig = resolveCacheComponentsConfig(vistaConfig);
+  const deployConfig = resolveDeployConfig(vistaConfig);
+  const imagesUnoptimized =
+    vistaConfig.images?.unoptimized === true || deployConfig.output === 'static';
+  if (imagesUnoptimized) {
+    process.env.VISTA_IMAGES_UNOPTIMIZED = '1';
+  }
+  if (deployConfig.output) {
+    process.env.VISTA_DEPLOY_OUTPUT = deployConfig.output;
+  }
   if (_debug) console.log(`[vista:build] Engine variant: ${engineVariant}`);
 
   if (structureConfig.enabled) {
@@ -564,6 +582,8 @@ export async function buildRSC(watch: boolean = false): Promise<{
     buildId,
     engineVariant,
     clientReferenceFiles,
+    imagesUnoptimized,
+    deployOutput: deployConfig.output,
   };
 
   // Build CSS

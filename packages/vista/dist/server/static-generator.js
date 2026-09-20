@@ -12,12 +12,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.injectInlineFlightBootstrap = injectInlineFlightBootstrap;
 exports.generateStaticPages = generateStaticPages;
 exports.revalidatePath = revalidatePath;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const child_process_1 = require("child_process");
 const constants_1 = require("../constants");
+const hydration_chunks_1 = require("./hydration-chunks");
 const static_cache_1 = require("./static-cache");
 const module_compile_hook_1 = require("./module-compile-hook");
 const request_context_1 = require("./request-context");
@@ -409,6 +411,30 @@ function injectBeforeClosingTag(html, tagName, injection) {
     }
     return html;
 }
+function buildInlineFlightBootstrapScript(flightText) {
+    return `<script>window.${constants_1.RSC_DATA_FLAG}=${JSON.stringify(flightText)};</script>`;
+}
+/** Embed Flight on SSG HTML so the client can hydrate without a live /rsc server. */
+function injectInlineFlightBootstrap(html, flightText) {
+    if (!flightText || html.includes(`window.${constants_1.RSC_DATA_FLAG}=`)) {
+        return html;
+    }
+    const script = `  ${buildInlineFlightBootstrapScript(flightText)}\n`;
+    const deferIdx = html.search(/<script\s+defer\b/i);
+    if (deferIdx !== -1) {
+        return `${html.slice(0, deferIdx)}${script}${html.slice(deferIdx)}`;
+    }
+    return injectBeforeClosingTag(html, 'body', `\n${script}`);
+}
+async function attachFlightPayload(page, flightData, _cwd) {
+    if (!flightData)
+        return;
+    page.flightData = flightData;
+    page.html = injectInlineFlightBootstrap(page.html, flightData);
+    if (page.shellHtml) {
+        page.shellHtml = injectInlineFlightBootstrap(page.shellHtml, flightData);
+    }
+}
 function getCSSLinks(cwd) {
     const links = ['<link rel="stylesheet" href="/styles.css" />'];
     const chunksDir = path_1.default.join(cwd, constants_1.BUILD_DIR, 'static', 'chunks');
@@ -426,32 +452,12 @@ function getCSSLinks(cwd) {
     return links.join('\n  ');
 }
 function getChunkScripts(cwd) {
-    const chunksDir = path_1.default.join(cwd, constants_1.BUILD_DIR, 'static', 'chunks');
     try {
-        if (!fs_1.default.existsSync(chunksDir)) {
-            return '';
-        }
-        const files = fs_1.default
-            .readdirSync(chunksDir)
-            .filter((entry) => entry.endsWith('.js') && !entry.endsWith('.map') && !entry.includes('.hot-update.'));
-        const priority = ['webpack.js', 'framework.js', 'vendor.js'];
-        files.sort((a, b) => {
-            const ai = priority.indexOf(a);
-            const bi = priority.indexOf(b);
-            if (ai !== -1 && bi !== -1)
-                return ai - bi;
-            if (ai !== -1)
-                return -1;
-            if (bi !== -1)
-                return 1;
-            return a.localeCompare(b);
-        });
-        return files
+        return (0, hydration_chunks_1.listHydrationChunkFiles)(cwd, false)
             .map((file) => `<script defer src="${constants_1.STATIC_CHUNKS_PATH}${file}"></script>`)
             .join('\n  ');
     }
     catch {
-        // Ignore chunk discovery failures during static generation.
         return '';
     }
 }
@@ -660,10 +666,7 @@ async function generateStaticPages(options) {
                 const page = await prerenderPage(urlPath, route, undefined, cwd, vistaDirRoot, appPprEnabled);
                 if (page) {
                     if (flightUpstream) {
-                        const flightData = await flightUpstream.fetchFlight(urlPath);
-                        if (flightData) {
-                            page.flightData = flightData;
-                        }
+                        await attachFlightPayload(page, await flightUpstream.fetchFlight(urlPath), cwd);
                     }
                     (0, static_cache_1.setCachedPage)(urlPath, page);
                     (0, static_cache_1.writeStaticPageToDisk)(vistaDirRoot, urlPath, page);
@@ -686,10 +689,7 @@ async function generateStaticPages(options) {
                     const page = await prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEnabled);
                     if (page) {
                         if (flightUpstream) {
-                            const flightData = await flightUpstream.fetchFlight(urlPath);
-                            if (flightData) {
-                                page.flightData = flightData;
-                            }
+                            await attachFlightPayload(page, await flightUpstream.fetchFlight(urlPath), cwd);
                         }
                         (0, static_cache_1.setCachedPage)(urlPath, page);
                         (0, static_cache_1.writeStaticPageToDisk)(vistaDirRoot, urlPath, page);

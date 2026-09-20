@@ -196,6 +196,11 @@ function assertSourceContracts() {
     /First load no longer refetches \/rsc/,
     'client entry must refuse first-load /rsc refetch when inline is missing'
   );
+  assert.match(
+    read(path.join(vistaSrc, 'server', 'static-generator.ts')),
+    /injectInlineFlightBootstrap/,
+    'SSG HTML must inline Flight bootstrap so static hosts can hydrate'
+  );
   // Initial hydrate path must not call createFromFetch — navigation still may via rsc-router.
   const hydrateSection = buildRsc.slice(
     buildRsc.indexOf('function generateRSCClientEntry'),

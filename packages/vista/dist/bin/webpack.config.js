@@ -13,7 +13,7 @@ const vista_flight_plugin_1 = require("../build/webpack/plugins/vista-flight-plu
 const constants_1 = require("../constants");
 const app_dir_1 = require("../server/app-dir");
 function createWebpackConfig(options) {
-    const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false } = options;
+    const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false, imagesUnoptimized = false, deployOutput, } = options;
     const vistaDir = path_1.default.join(cwd, constants_1.BUILD_DIR);
     const flashDir = path_1.default.join(cwd, constants_1.FLASH_DIR);
     const entryPoint = path_1.default.join(vistaDir, 'client.tsx');
@@ -166,6 +166,8 @@ function createWebpackConfig(options) {
                 'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
                 'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
                 'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+                'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+                'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
             }),
             new mini_css_extract_plugin_1.default({
                 filename: isDev ? 'modules.css' : 'modules-[contenthash:8].css',

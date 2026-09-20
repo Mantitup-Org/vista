@@ -61,7 +61,7 @@ exports.Image = (0, react_1.forwardRef)((props, ref) => {
         }
     }, [onError, useDirectSrc]);
     // Get processed img props
-    const imgProps = (0, get_img_props_1.getImgProps)({ ...restProps, priority, unoptimized: useDirectSrc || restProps.unoptimized }, image_config_1.imageConfigDefault, image_loader_1.defaultLoader);
+    const imgProps = (0, get_img_props_1.getImgProps)({ ...restProps, priority, unoptimized: useDirectSrc || restProps.unoptimized }, (0, image_config_1.resolveRuntimeImageConfig)(), image_loader_1.defaultLoader);
     const fallbackSrc = String(restProps.src || '');
     const effectiveSrc = useDirectSrc ? fallbackSrc : imgProps.src;
     const effectiveSrcSet = useDirectSrc ? undefined : imgProps.srcSet;

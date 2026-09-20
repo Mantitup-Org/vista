@@ -400,19 +400,46 @@ export function resolveParallelSlotMatches(input: {
   return matches;
 }
 
-export function resolveDirectoryChain(rootDir: string, entryFilePath: string): string[] {
-  const resolvedRootDir = path.resolve(rootDir);
-  const resolvedEntryDir = path.resolve(path.dirname(entryFilePath));
+function canonicalizeExistingPath(input: string): string {
+  const resolved = path.resolve(input);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    return resolved;
+  }
+}
 
-  if (!resolvedEntryDir.startsWith(resolvedRootDir)) {
+function posixPath(input: string): string {
+  return input.replace(/\\/g, '/');
+}
+
+export function isPathInside(parent: string, child: string): boolean {
+  const root = posixPath(canonicalizeExistingPath(parent));
+  const target = posixPath(canonicalizeExistingPath(child));
+  const normalize = (value: string) =>
+    process.platform === 'win32' ? value.toLowerCase() : value;
+  const a = normalize(root);
+  const b = normalize(target);
+  return b === a || b.startsWith(a.endsWith('/') ? a : `${a}/`);
+}
+
+export function resolveDirectoryChain(rootDir: string, entryFilePath: string): string[] {
+  const resolvedRootDir = canonicalizeExistingPath(rootDir);
+  const resolvedEntryDir = canonicalizeExistingPath(path.dirname(entryFilePath));
+
+  if (!isPathInside(resolvedRootDir, resolvedEntryDir)) {
     return [resolvedEntryDir];
   }
 
-  const relativeSegments = path
-    .relative(resolvedRootDir, resolvedEntryDir)
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter(Boolean);
+  let relativePath = path.relative(resolvedRootDir, resolvedEntryDir).replace(/\\/g, '/');
+  if (relativePath.startsWith('..')) {
+    const rootPosix = posixPath(resolvedRootDir);
+    const entryPosix = posixPath(resolvedEntryDir);
+    const rootKey = process.platform === 'win32' ? rootPosix.toLowerCase() : rootPosix;
+    const entryKey = process.platform === 'win32' ? entryPosix.toLowerCase() : entryPosix;
+    relativePath = entryKey.slice(rootKey.length).replace(/^\//, '');
+  }
+  const relativeSegments = relativePath.split('/').filter((segment) => segment && segment !== '.');
 
   const chain = [resolvedRootDir];
   let currentDir = resolvedRootDir;
@@ -431,7 +458,7 @@ export function resolveNearestSegmentNotFoundPath(
   let currentDir = path.resolve(startDir);
   const resolvedAppDir = path.resolve(appDir);
 
-  while (currentDir.startsWith(resolvedAppDir)) {
+  while (isPathInside(resolvedAppDir, currentDir)) {
     const notFoundPath = resolveConventionModule(currentDir, 'not-found');
     if (notFoundPath) {
       return notFoundPath;

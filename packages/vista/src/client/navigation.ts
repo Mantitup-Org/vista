@@ -13,7 +13,7 @@
 
 import * as React from 'react';
 import { useRouterContext } from '../router/context';
-import { RSCRouterContext } from './rsc-router';
+import { useRSCRouter } from './rsc-router';
 
 /**
  * Returns the current pathname.
@@ -21,7 +21,7 @@ import { RSCRouterContext } from './rsc-router';
  * to popstate events.
  */
 export function usePathname(): string {
-  const rscCtx = React.useContext(RSCRouterContext);
+  const rscCtx = useRSCRouter();
   if (rscCtx) return rscCtx.pathname;
 
   const [pathname, setPathname] = React.useState(() =>
@@ -45,7 +45,7 @@ export function usePathname(): string {
  * Uses the RSC router context when available.
  */
 export function useSearchParams(): URLSearchParams {
-  const rscCtx = React.useContext(RSCRouterContext);
+  const rscCtx = useRSCRouter();
   if (rscCtx) return rscCtx.searchParams;
 
   const [searchParams, setSearchParams] = React.useState(() =>

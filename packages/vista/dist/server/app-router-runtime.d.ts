@@ -21,6 +21,7 @@ export declare function resolveParallelSlotMatches(input: {
     layoutPath: string;
     pathname: string;
 }): ParallelSlotMatch[];
+export declare function isPathInside(parent: string, child: string): boolean;
 export declare function resolveDirectoryChain(rootDir: string, entryFilePath: string): string[];
 export declare function resolveNearestSegmentNotFoundPath(appDir: string, startDir: string): string | null;
 export {};

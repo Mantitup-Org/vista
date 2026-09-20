@@ -17,6 +17,27 @@ export const imageConfigDefault = {
   unoptimized: false,
 };
 
+function envDisablesImageOptimization(): boolean {
+  return (
+    process.env.VISTA_IMAGES_UNOPTIMIZED === '1' ||
+    process.env.VISTA_DEPLOY_OUTPUT === 'static' ||
+    process.env.CF_PAGES === '1' ||
+    process.env.NETLIFY === 'true'
+  );
+}
+
+/** Merge defaults with build-time env (`VISTA_IMAGES_UNOPTIMIZED`, static deploy). */
+export function resolveRuntimeImageConfig(overrides?: ImageConfig): ImageConfigComplete {
+  return {
+    ...imageConfigDefault,
+    ...overrides,
+    unoptimized:
+      overrides?.unoptimized === true ||
+      imageConfigDefault.unoptimized ||
+      envDisablesImageOptimization(),
+  };
+}
+
 export type ImageConfigComplete = typeof imageConfigDefault;
 export type ImageConfig = Partial<ImageConfigComplete>;
 export const VALID_LOADERS = ['default', 'imgix', 'cloudinary', 'akamai', 'custom'] as const;

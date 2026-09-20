@@ -12,7 +12,7 @@ const image_loader_1 = require("./image-loader");
  * react-server condition uses a plain SSR-friendly <img> wrapper.
  */
 function Image(props) {
-    const imgProps = (0, get_img_props_1.getImgProps)(props, image_config_1.imageConfigDefault, image_loader_1.defaultLoader);
+    const imgProps = (0, get_img_props_1.getImgProps)(props, (0, image_config_1.resolveRuntimeImageConfig)(), image_loader_1.defaultLoader);
     return ((0, jsx_runtime_1.jsx)("img", { ...imgProps, decoding: props.priority ? 'sync' : 'async', fetchPriority: props.priority ? 'high' : undefined }));
 }
 exports.default = Image;

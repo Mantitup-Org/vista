@@ -852,6 +852,17 @@ function transpileProjectSource(source: string, filename: string, fallback: stri
   }
 }
 
+function extraCompileRootsFromStandalone(cwd: string): string[] {
+  const resolved = path.resolve(cwd);
+  const normalized = resolved.replace(/\\/g, '/');
+  const marker = '/.vista/standalone/project';
+  const idx = normalized.toLowerCase().lastIndexOf(marker);
+  if (idx === -1) {
+    return [];
+  }
+  return [path.resolve(resolved.slice(0, idx))];
+}
+
 export function installModuleCompileHook(options: {
   cwd: string;
   createClientModuleProxy?: ClientModuleProxyFactory;
@@ -863,6 +874,7 @@ export function installModuleCompileHook(options: {
     new Set(
       [
         options.cwd,
+        ...extraCompileRootsFromStandalone(options.cwd),
         vistaRuntimeDir,
         vistaPackageRoot,
         path.join(vistaPackageRoot, 'src'),

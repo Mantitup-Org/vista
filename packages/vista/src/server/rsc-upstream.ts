@@ -453,6 +453,7 @@ async function renderAppSubtreeElement(input: {
   cwd: string;
   evaluateLeafMetadata?: boolean;
   disableParallelSlots?: boolean;
+  layoutPaths?: string[];
 }): Promise<React.ReactElement> {
   const appDir = resolveAppDir(input.cwd);
   let element = await createRenderableRouteModuleElement(
@@ -468,13 +469,19 @@ async function renderAppSubtreeElement(input: {
   );
 
   const directoryChain = resolveDirectoryChain(input.subtreeRootDir, input.entryFilePath);
-
   for (let i = directoryChain.length - 1; i >= 0; i--) {
-    const dir = directoryChain[i];
-    element = applySegmentBoundaries(dir, element);
+    element = applySegmentBoundaries(directoryChain[i], element);
+  }
 
-    const layoutPath =
-      resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout');
+  const layoutPaths =
+    input.layoutPaths && input.layoutPaths.length > 0
+      ? input.layoutPaths
+      : directoryChain
+          .map((dir) => resolveConventionModule(dir, 'root') ?? resolveConventionModule(dir, 'layout'))
+          .filter((layoutPath): layoutPath is string => Boolean(layoutPath));
+
+  for (let i = layoutPaths.length - 1; i >= 0; i--) {
+    const layoutPath = layoutPaths[i];
     if (!layoutPath || path.resolve(layoutPath) === path.resolve(input.entryFilePath)) {
       continue;
     }
@@ -554,6 +561,7 @@ async function createRouteElement(
     cwd: runtimeRoot,
     evaluateLeafMetadata: true,
     disableParallelSlots: options.disableParallelSlots,
+    layoutPaths: route.layoutPaths,
   });
 }
 

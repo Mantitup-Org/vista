@@ -1,11 +1,12 @@
 const config = {
   images: {
     domains: ['example.com'],
+    unoptimized: true,
   },
-  // Optional: override server port
-  // server: {
-  //     port: 3000
-  // }
+  deploy: {
+    target: 'cloudflare',
+    output: 'static',
+  },
 };
 
 export default config;

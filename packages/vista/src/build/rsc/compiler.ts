@@ -17,7 +17,7 @@ import {
   normalizeReactServerConsumerManifest,
 } from './react-client-reference-manifest';
 import { STATIC_CHUNKS_PATH, BUILD_ID_DEFINE, SERVER_DEFINE, SSE_ENDPOINT } from '../../constants';
-import type { VistaEngineVariant } from '../../config';
+import type { DeployOutput, VistaEngineVariant } from '../../config';
 import { resolveAppDir } from '../../server/app-dir';
 
 export interface RSCCompilerOptions {
@@ -27,6 +27,8 @@ export interface RSCCompilerOptions {
   buildId: string;
   engineVariant?: VistaEngineVariant;
   clientReferenceFiles?: string[];
+  imagesUnoptimized?: boolean;
+  deployOutput?: DeployOutput;
 }
 
 // Find module path (handles monorepo hoisting)
@@ -70,7 +72,15 @@ function resolveFromWorkspace(specifier: string, cwd: string): string {
  * Output goes to .vista/server/ and is NEVER sent to the client.
  */
 export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.Configuration {
-  const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default' } = options;
+  const {
+    cwd,
+    isDev,
+    vistaDirs,
+    buildId,
+    engineVariant = 'default',
+    imagesUnoptimized = false,
+    deployOutput,
+  } = options;
   const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
   const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
   const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -208,6 +218,8 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
         'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
         'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+        'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+        'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
         [BUILD_ID_DEFINE]: JSON.stringify(buildId),
         [SERVER_DEFINE]: 'true',
       }),
@@ -225,8 +237,16 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
  * Server components are replaced with client references.
  */
 export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.Configuration {
-  const { cwd, isDev, vistaDirs, buildId, engineVariant = 'default', clientReferenceFiles = [] } =
-    options;
+  const {
+    cwd,
+    isDev,
+    vistaDirs,
+    buildId,
+    engineVariant = 'default',
+    clientReferenceFiles = [],
+    imagesUnoptimized = false,
+    deployOutput,
+  } = options;
   const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
   const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
   const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
@@ -269,7 +289,7 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
 
     output: {
       path: vistaDirs.chunks,
-      filename: isDev ? '[name].js' : 'main-[contenthash:8].js',
+      filename: isDev ? '[name].js' : '[name]-[contenthash:8].js',
       chunkFilename: isDev ? '[name].js' : '[name]-[contenthash:8].js',
       publicPath: STATIC_CHUNKS_PATH,
       clean: !isDev,
@@ -478,6 +498,8 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
         'process.env.NODE_ENV': JSON.stringify(isDev ? 'development' : 'production'),
         'process.env.VISTA_ENGINE': JSON.stringify(engineVariant),
         'process.env.VISTA_ENGINE_VARIANT': JSON.stringify(engineVariant),
+        'process.env.VISTA_IMAGES_UNOPTIMIZED': JSON.stringify(imagesUnoptimized ? '1' : ''),
+        'process.env.VISTA_DEPLOY_OUTPUT': JSON.stringify(deployOutput || ''),
         [BUILD_ID_DEFINE]: JSON.stringify(buildId),
         [SERVER_DEFINE]: 'false',
       }),
