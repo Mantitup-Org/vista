@@ -21,8 +21,7 @@ my-app/
       typed.ts
       auth/[...vista]/route.ts
     agents/              # from vista g agent
-  components/
-    theme-toggle.tsx     # 'use client' — scanned even outside app/
+  components/            # optional shared UI you add
   utils/
   lib/
   public/
@@ -35,6 +34,7 @@ my-app/
 ## Folder Responsibilities
 
 - `app/` contains routes and route-local UI.
+- Theme comes from `vista/theme` (`ThemeProvider`, `ThemeScript`, `ThemeToggle`). Add your own `components/` only when you need shared app UI.
 - `components/`, `utils/`, `lib/`, and `src/` may contain `'use client'` modules; the client manifest scans those extra roots (not only `app/`).
 - `lib/` contains pure helpers and adapters.
 - `app/api/` is for HTTP APIs, route handlers, and the typed API entrypoint.

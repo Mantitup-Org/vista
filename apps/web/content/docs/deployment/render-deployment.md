@@ -23,7 +23,7 @@ npm run deploy -- --target render --dry-run
 
 ## render.yaml Blueprint
 
-New apps scaffolded with `create-vista-app` include a starter `render.yaml`:
+`vista deploy --target render` writes a starter `render.yaml`. New apps from `create-vista-app` do not include deploy files; generate them with the deploy command:
 
 ```yaml title="render.yaml"
 services:

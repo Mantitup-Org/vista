@@ -1,6 +1,6 @@
 {
   "name": "@vistagenic/vista",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "The React Framework for Visionaries - Rust-powered SSR with Server Components",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
