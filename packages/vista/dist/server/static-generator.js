@@ -431,9 +431,8 @@ async function attachFlightPayload(page, flightData, _cwd) {
         return;
     page.flightData = flightData;
     page.html = injectInlineFlightBootstrap(page.html, flightData);
-    if (page.shellHtml) {
-        page.shellHtml = injectInlineFlightBootstrap(page.shellHtml, flightData);
-    }
+    // PPR shells are loading-only. Inlining the full-page Flight would leak
+    // resumed content (e.g. ppr-page-content) into the shell response.
 }
 function getCSSLinks(cwd) {
     const links = ['<link rel="stylesheet" href="/styles.css" />'];
