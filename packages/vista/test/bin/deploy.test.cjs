@@ -246,6 +246,20 @@ test('svg Image props skip /_vista/image srcSet', () => {
   assert.equal(props.srcSet, undefined);
 });
 
+test('PPR shell HTML does not inline the full-page Flight payload', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/server/static-generator.ts'), 'utf8');
+  const fn = src.slice(
+    src.indexOf('async function attachFlightPayload'),
+    src.indexOf('function getCSSLinks')
+  );
+  assert.match(fn, /page\.html = injectInlineFlightBootstrap/);
+  assert.doesNotMatch(
+    fn,
+    /shellHtml = injectInlineFlightBootstrap/,
+    'PPR shells must stay loading-only; full Flight belongs on page.html'
+  );
+});
+
 test('SSG HTML inlines Flight payload before deferred chunks', () => {
   const { injectInlineFlightBootstrap } = require('../../dist/server/static-generator');
   const html = [
