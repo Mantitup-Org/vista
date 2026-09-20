@@ -53,8 +53,8 @@ Set `VISTA_AI_MODEL`, for example:
 
 ## Learn more
 
-- [React app guide](https://vista-js.vercel.app/docs/getting-started/react-app)
-- [Fullstack guide](https://vista-js.vercel.app/docs/getting-started/fullstack-app)
-- [AI overview](https://vista-js.vercel.app/docs/ai/overview)
-- [RAG guide](https://vista-js.vercel.app/docs/ai/rag)
+- [React app guide](https://vistajs.pages.dev/docs/getting-started/react-app)
+- [Fullstack guide](https://vistajs.pages.dev/docs/getting-started/fullstack-app)
+- [AI overview](https://vistajs.pages.dev/docs/ai/overview)
+- [RAG guide](https://vistajs.pages.dev/docs/ai/rag)
 - [GitHub](https://github.com/Mantitup-Org/vista)
