@@ -21,21 +21,29 @@ Open `http://localhost:3003`.
 
 ## Mental model
 
-- Folders under `app/` are URL routes.
+- Folders under `app/` (or `src/app/`) are URL routes.
 - Components are **Server Components** by default.
 - Add `'use client'` only where you need browser state, events, or hooks. Files in `components/`, `utils/`, `lib/`, or `src/` are scanned into the client manifest — they do not have to live under `app/`.
-- Shared UI goes in `components/`.
+- Shared UI goes in `components/` (or `src/components/` when you choose the `src/` layout).
 
 ```txt
 my-app/
-  app/
-    root.tsx       # shared layout
-    index.tsx      # /
-    about/page.tsx # /about
-  components/
+  app/                 # or src/app/ if you answered yes to "Use a src/ directory?"
+    root.tsx           # shared layout
+    index.tsx          # /
+    about/page.tsx     # /about
+  components/          # or src/components/
   public/
   vista.config.ts
 ```
+
+Create with the `src/` layout:
+
+```bash
+npx create-vista-app@latest my-app --src-dir
+```
+
+Interactive create also asks: **Would you like to use a `src/` directory?**
 
 ## Server page
 

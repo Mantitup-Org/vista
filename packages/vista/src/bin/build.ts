@@ -27,6 +27,7 @@ import { getDevErrorOverlayBootstrapSource } from './dev-error-overlay-snippet';
 import { generateDeploymentOutputs } from './deploy-output';
 import { validateModuleBoundaries } from '../server/module-boundary-validator';
 import { discoverProjectClientRoots } from '../build/rsc/client-manifest';
+import { resolveAppDir } from '../server/app-dir';
 
 const _debug = !!process.env.VISTA_DEBUG;
 
@@ -38,13 +39,14 @@ interface RouteArtifactEntry {
 
 // Helper to run PostCSS
 function runPostCSS(cwd: string, vistaDir: string) {
-  const globalsCss = path.join(cwd, 'app/globals.css');
+  const globalsCss = path.join(resolveAppDir(cwd), 'globals.css');
   if (fs.existsSync(globalsCss)) {
     if (_debug) console.log('Building CSS with PostCSS...');
     const { execSync } = require('child_process');
     try {
       const cssOut = path.join(vistaDir, 'client.css');
-      execSync(`npx postcss app/globals.css -o "${cssOut}"`, {
+      const globalsCssRelative = path.relative(cwd, globalsCss).replace(/\\/g, '/');
+      execSync(`npx postcss "${globalsCssRelative}" -o "${cssOut}"`, {
         stdio: _debug ? 'inherit' : 'pipe',
         cwd,
       });
@@ -103,7 +105,7 @@ function generateClientEntry(
   isDev: boolean = false
 ) {
   const devToolsBootId = `legacy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
 
   // Generate imports ONLY for client components
   const clientImports: string[] = [];
@@ -336,7 +338,7 @@ export async function buildClient(
   }
 
   // Scan app directory using Rust bindings to get client components
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const additionalClientRoots = discoverProjectClientRoots(cwd).filter(
     (root) => path.resolve(root.dir) !== path.resolve(appDir)
   );
@@ -456,7 +458,7 @@ export async function buildClient(
     // Watch CSS + source files that may affect Tailwind output.
     const chokidar = require('chokidar');
     try {
-      const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data']
+      const styleWatchRoots = ['app', 'components', 'content', 'lib', 'ctx', 'data', 'src']
         .map((entry) => path.join(cwd, entry))
         .filter((entry) => fs.existsSync(entry));
       let cssTimer: ReturnType<typeof setTimeout> | null = null;

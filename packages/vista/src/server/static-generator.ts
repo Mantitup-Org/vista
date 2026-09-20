@@ -41,6 +41,7 @@ import {
 } from './ppr';
 import { resolveVistaSourceRequest } from './vista-import-map';
 import { createProjectAliasResolver } from './project-alias-resolver';
+import { resolveAppDir } from './app-dir';
 
 const CjsModule = require('module');
 
@@ -364,7 +365,7 @@ async function prerenderPage(
           searchParams: Record<string, string>;
           disableParallelSlots?: boolean;
         }): Promise<React.ReactNode> => {
-          const appDir = path.join(cwd, 'app');
+          const appDir = resolveAppDir(cwd);
           const RouteModule = require(input.entryFilePath);
           const RouteComponent = RouteModule.default;
 
@@ -482,7 +483,7 @@ async function prerenderPage(
         }
 
         const element = await renderStaticSubtree({
-          subtreeRootDir: path.join(cwd, 'app'),
+          subtreeRootDir: resolveAppDir(cwd),
           entryFilePath: route.pagePath,
           pathname: urlPath,
           params: params || {},
@@ -496,7 +497,7 @@ async function prerenderPage(
         if (pprEnabled && route.loadingPath) {
           try {
             const shellElement = await renderStaticSubtree({
-              subtreeRootDir: path.join(cwd, 'app'),
+              subtreeRootDir: resolveAppDir(cwd),
               entryFilePath: route.loadingPath,
               pathname: urlPath,
               params: params || {},

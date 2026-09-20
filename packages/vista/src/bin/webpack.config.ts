@@ -6,6 +6,7 @@ import { VistaServerComponentPlugin } from './server-component-plugin';
 import { VistaFlightPlugin } from '../build/webpack/plugins/vista-flight-plugin';
 import { BUILD_DIR, FLASH_DIR } from '../constants';
 import type { VistaEngineVariant } from '../config';
+import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
 
 export interface WebpackConfigOptions {
   cwd: string;
@@ -154,12 +155,12 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
     plugins: [
       // Server Component enforcement - runs on every compile
       new VistaServerComponentPlugin({
-        appDir: path.join(cwd, 'app'),
-        componentsDir: path.join(cwd, 'components'),
+        appDir: resolveAppDir(cwd),
+        componentsDir: resolveComponentsDir(cwd),
         cacheComponentsEnabled,
       }),
       // Vista Flight Plugin - RSC bundle separation and manifest
-      new VistaFlightPlugin({ appDir: path.join(cwd, 'app'), dev: isDev }),
+      new VistaFlightPlugin({ appDir: resolveAppDir(cwd), dev: isDev }),
       ...(isDev
         ? [
             new webpack.HotModuleReplacementPlugin(),

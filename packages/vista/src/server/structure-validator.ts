@@ -10,6 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { resolveAppDir } from './app-dir';
 
 // ============================================================================
 // Types
@@ -453,7 +454,7 @@ export interface ValidateAppStructureInput {
 
 export function validateAppStructure(input: ValidateAppStructureInput): StructureValidationResult {
   const { cwd, notFoundRoute } = input;
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const issues: StructureIssue[] = [];
 
   // 1. Root exists

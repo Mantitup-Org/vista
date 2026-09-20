@@ -24,6 +24,7 @@ const http_1 = __importDefault(require("http"));
 const https_1 = __importDefault(require("https"));
 const url_1 = require("url");
 const image_config_1 = require("../image/image-config");
+const app_dir_1 = require("./app-dir");
 // ---------------------------------------------------------------------------
 // Cache
 // ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ function fetchLocalFile(filePath, cwd) {
         return fs_1.default.promises.readFile(publicPath);
     }
     // Also try app/ directory
-    const appPath = path_1.default.join(cwd, 'app', filePath);
+    const appPath = path_1.default.join((0, app_dir_1.resolveAppDir)(cwd), filePath);
     if (fs_1.default.existsSync(appPath)) {
         return fs_1.default.promises.readFile(appPath);
     }

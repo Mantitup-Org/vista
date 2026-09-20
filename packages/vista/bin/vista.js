@@ -59,7 +59,13 @@ if (command === 'deploy') {
 }
 
 const useLegacy = flags.includes('--legacy') || process.env.VISTA_LEGACY === 'true';
-const useRSC = !useLegacy;
+if (useLegacy) {
+  console.error(
+    '[vista] --legacy / VISTA_LEGACY island SSR has been removed. Use default Flight RSC/SSR (omit --legacy) or --flashpack.'
+  );
+  process.exit(1);
+}
+
 const explicitFlashpack = flags.includes('--flashpack');
 const explicitDefaultEngine = flags.includes('--default-engine') || flags.includes('--webpack');
 const explicitEngineFlag = getFlagValue('--engine');
@@ -113,125 +119,91 @@ markStartTime();
 
 if (command === 'dev') {
   forceRuntimeEnv('development');
-  if (useRSC) {
-    console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-    const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
-    if (useFlashpack) {
-      const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-      runFlashpackEngineCommand('dev', {
-        cwd: process.cwd(),
-        port: process.env.PORT || 3003,
-      }).catch((err) => {
-        console.error('Flashpack dev failed:', err);
-        process.exit(1);
-      });
-      return;
-    }
-    const { buildRSC } = require('../dist/bin/build-rsc');
-    const { startRSCServer } = require('../dist/server/rsc-engine');
-
-    buildRSC(true)
-      .then(({ clientCompiler }) => {
-        startRSCServer({
-          port: process.env.PORT || 3003,
-          compiler: clientCompiler,
-        });
-      })
-      .catch((err) => {
-        console.error('RSC Build failed:', err);
-        process.exit(1);
-      });
-  } else {
-    // Legacy SSR Mode (--legacy)
-    const { startServer } = require('../dist/server/engine');
-    const { buildClient } = require('../dist/bin/build');
-
-    buildClient(true)
-      .then((compiler) => {
-        startServer(process.env.PORT || 3003, compiler);
-      })
-      .catch((err) => {
-        console.error('Build failed:', err);
-        process.exit(1);
-      });
+  console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
+  const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
+  if (useFlashpack) {
+    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
+    runFlashpackEngineCommand('dev', {
+      cwd: process.cwd(),
+      port: process.env.PORT || 3003,
+    }).catch((err) => {
+      console.error('Flashpack dev failed:', err);
+      process.exit(1);
+    });
+    return;
   }
+  const { buildRSC } = require('../dist/bin/build-rsc');
+  const { startRSCServer } = require('../dist/server/rsc-engine');
+
+  buildRSC(true)
+    .then(({ clientCompiler }) => {
+      startRSCServer({
+        port: process.env.PORT || 3003,
+        compiler: clientCompiler,
+      });
+    })
+    .catch((err) => {
+      console.error('RSC Build failed:', err);
+      process.exit(1);
+    });
 } else if (command === 'build') {
   forceRuntimeEnv('production');
-  if (useRSC) {
-    console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-    const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
-    if (useFlashpack) {
-      const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-      runFlashpackEngineCommand('build', {
-        cwd: process.cwd(),
-      })
-        .then(() => {
-          console.log('');
-          console.log('Production build complete!');
-        })
-        .catch((err) => {
-          console.error('Flashpack build failed:', err);
-          process.exit(1);
-        });
-      return;
-    }
-    const { buildRSC } = require('../dist/bin/build-rsc');
-
-    buildRSC(false)
+  console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
+  const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
+  if (useFlashpack) {
+    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
+    runFlashpackEngineCommand('build', {
+      cwd: process.cwd(),
+    })
       .then(() => {
         console.log('');
         console.log('Production build complete!');
       })
       .catch((err) => {
-        console.error('RSC Build failed:', err);
+        console.error('Flashpack build failed:', err);
         process.exit(1);
       });
-  } else {
-    // Legacy Build (--legacy)
-    const { buildClient } = require('../dist/bin/build');
-
-    buildClient(false)
-      .then(() => {
-        console.log('Production build complete!');
-      })
-      .catch((err) => {
-        console.error('Build failed:', err);
-        process.exit(1);
-      });
+    return;
   }
+  const { buildRSC } = require('../dist/bin/build-rsc');
+
+  buildRSC(false)
+    .then(() => {
+      console.log('');
+      console.log('Production build complete!');
+    })
+    .catch((err) => {
+      console.error('RSC Build failed:', err);
+      process.exit(1);
+    });
 } else if (command === 'start') {
   forceRuntimeEnv('production');
-  if (useRSC) {
-    console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-    if (process.env.VISTA_ENGINE === 'flashpack') {
-      const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-      runFlashpackEngineCommand('start', {
-        cwd: process.cwd(),
-        port: process.env.PORT || 3003,
-      }).catch((err) => {
-        console.error('Flashpack start failed:', err);
-        process.exit(1);
-      });
-      return;
-    }
-    const standaloneServerPath = path.join(process.cwd(), '.vista', 'standalone', 'server.js');
-    if (fs.existsSync(standaloneServerPath)) {
-      const standalone = require(standaloneServerPath);
-      const startStandaloneServer =
-        standalone.startStandaloneServer || standalone.default || standalone;
-      startStandaloneServer({
-        port: process.env.PORT || 3003,
-        engine: process.env.VISTA_ENGINE,
-      });
-      return;
-    }
-
-    const { startRSCServer } = require('../dist/server/rsc-engine');
-    startRSCServer({ port: process.env.PORT || 3003 });
-  } else {
-    const { startServer } = require('../dist/server/engine');
-    startServer(process.env.PORT || 3003);
+  console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
+  if (process.env.VISTA_ENGINE === 'flashpack') {
+    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
+    runFlashpackEngineCommand('start', {
+      cwd: process.cwd(),
+      port: process.env.PORT || 3003,
+    }).catch((err) => {
+      console.error('Flashpack start failed:', err);
+      process.exit(1);
+    });
+    return;
   }
+  const standaloneServerPath = path.join(process.cwd(), '.vista', 'standalone', 'server.js');
+  if (fs.existsSync(standaloneServerPath)) {
+    const standalone = require(standaloneServerPath);
+    const startStandaloneServer =
+      standalone.startStandaloneServer || standalone.default || standalone;
+    startStandaloneServer({
+      port: process.env.PORT || 3003,
+      engine: process.env.VISTA_ENGINE,
+    });
+    return;
+  }
+
+  const { startRSCServer } = require('../dist/server/rsc-engine');
+  startRSCServer({ port: process.env.PORT || 3003 });
 } else {
   console.log('');
   console.log('Vista JS Framework CLI');
@@ -246,7 +218,6 @@ if (command === 'dev') {
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
   console.log('');
   console.log('Options:');
-  console.log('  --legacy   Use traditional SSR mode (instead of RSC)');
   console.log('  --engine <default|flashpack>   Select engine variant');
   console.log('  --flashpack   Use Rust-first Flashpack engine path');
   console.log('  --default-engine   Force default engine path');
@@ -255,10 +226,9 @@ if (command === 'dev') {
   console.log('  deploy --dry-run             Validate and emit deploy artifacts only');
   console.log('');
   console.log('Examples:');
-  console.log('  vista dev            # Start dev server (RSC mode)');
-  console.log('  vista dev --legacy   # Start dev server with legacy SSR');
+  console.log('  vista dev            # Start Flight RSC/SSR dev server');
   console.log('  vista dev --flashpack   # Start dev server with Flashpack mode');
-  console.log('  vista build          # Production build with RSC');
+  console.log('  vista build          # Production Flight RSC/SSR build');
   console.log('  vista g api-init     # Generate typed API starter files');
   console.log('');
 }

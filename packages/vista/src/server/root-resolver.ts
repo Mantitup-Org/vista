@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
+import { resolveAppDir } from './app-dir';
 
 export type RootRenderMode = 'document' | 'legacy';
 
@@ -48,14 +49,14 @@ function detectRootMode(rootPath: string): RootRenderMode {
 }
 
 export function resolveRootLayout(cwd: string, isDev: boolean): ResolvedRootLayout {
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const rootPath = resolveAppModuleByStem(appDir, 'root');
   const layoutPath = resolveAppModuleByStem(appDir, 'layout');
 
   const selectedPath = rootPath ?? layoutPath;
   if (!selectedPath) {
     throw new Error(
-      'Missing app/root.(tsx|ts|jsx|js). Add app/root.tsx (canonical) or app/layout.tsx (fallback).'
+      'Missing app/root.(tsx|ts|jsx|js). Add app/root.tsx or src/app/root.tsx (canonical), or app/layout.tsx / src/app/layout.tsx (fallback).'
     );
   }
 
@@ -97,7 +98,7 @@ export function resolveRootLayout(cwd: string, isDev: boolean): ResolvedRootLayo
 }
 
 export function resolveRoutePagePath(cwd: string, routePath: string): string | null {
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const normalizedRoute = normalizeNotFoundRoute(routePath);
 
   if (normalizedRoute === '/' || normalizedRoute === '/index') {
@@ -142,7 +143,7 @@ export function resolveNotFoundComponent(
   rootLayout: ResolvedRootLayout,
   isDev: boolean
 ): ResolvedNotFoundComponent | null {
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const candidates: string[] = [];
 
   // 1. Explicit notFoundRoute (highest priority)
@@ -230,7 +231,7 @@ export interface ResolvedLayout {
  * @param isDev   Bust require-cache in development
  */
 export function resolveLayoutChain(cwd: string, pageDir: string, isDev: boolean): ResolvedLayout[] {
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const chain: ResolvedLayout[] = [];
 
   // Walk from app/ root down to the page's directory, collecting layouts

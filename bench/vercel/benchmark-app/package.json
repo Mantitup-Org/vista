@@ -11,7 +11,7 @@
     "dev": "vista dev",
     "start": "vista start",
     "start-flashpack": "vista start",
-    "start-default": "vista start --legacy",
+    "start-default": "vista start --default-engine",
     "start-application": "vista start"
   }
 }

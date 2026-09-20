@@ -188,9 +188,9 @@ Flashpack is the Rust-backed engine path. The CLI routes `vista dev`, `vista bui
 
 Flashpack records state in `.flash/`.
 
-### 6.3 `--legacy`
+### 6.3 Legacy island SSR (removed)
 
-Legacy SSR still exists behind `--legacy`, but most current parity work is on the RSC/app-router path.
+`--legacy` / `VISTA_LEGACY` island SSR has been removed. Use Flight RSC/SSR (`vista dev` / `vista build`) or Flashpack (`--flashpack`).
 
 ## 7. `.vista` and `.flash`
 

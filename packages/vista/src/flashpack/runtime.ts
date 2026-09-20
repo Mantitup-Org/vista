@@ -3,6 +3,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { FLASH_DIR } from '../constants';
 import { isNativeAvailable, scanAppNative } from '../build/rsc/native-scanner';
+import { resolveAppDir } from '../server/app-dir';
 
 export type FlashpackPhase = 'dev' | 'build' | 'start';
 export type FlashpackMode = 'development' | 'production';
@@ -245,7 +246,7 @@ export function prepareFlashpackRuntime(options: FlashpackPrepareOptions): Flash
     timestamp: now,
   });
 
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   if (isNativeAvailable() && fs.existsSync(appDir)) {
     const nativeScan = scanAppNative(appDir);
     if (nativeScan) {

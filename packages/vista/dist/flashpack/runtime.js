@@ -13,6 +13,7 @@ const path_1 = __importDefault(require("path"));
 const child_process_1 = require("child_process");
 const constants_1 = require("../constants");
 const native_scanner_1 = require("../build/rsc/native-scanner");
+const app_dir_1 = require("../server/app-dir");
 function ensureDir(absolutePath) {
     fs_1.default.mkdirSync(absolutePath, { recursive: true });
 }
@@ -191,7 +192,7 @@ function prepareFlashpackRuntime(options) {
         generatedBy: 'vista-ts-bootstrap',
         timestamp: now,
     });
-    const appDir = path_1.default.join(cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
     if ((0, native_scanner_1.isNativeAvailable)() && fs_1.default.existsSync(appDir)) {
         const nativeScan = (0, native_scanner_1.scanAppNative)(appDir);
         if (nativeScan) {

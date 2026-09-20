@@ -51,19 +51,36 @@ function assertEngineConfig(projectDir, expectedVariant) {
 
 function assertReadme(projectDir, expectedVariant, expectedTypedApiState) {
   const readme = fs.readFileSync(path.join(projectDir, 'README.md'), 'utf8');
-  assert(readme.includes(`Selected engine for this app: \`${expectedVariant}\``));
+  assert(readme.includes(`Selected engine: \`${expectedVariant}\``));
   assert(readme.includes(`Typed API starter: \`${expectedTypedApiState}\``));
 }
 
-function assertNoTemplateTokens(projectDir) {
-  const rootSource = fs.readFileSync(path.join(projectDir, 'app', 'root.tsx'), 'utf8');
-  const indexSource = fs.readFileSync(path.join(projectDir, 'app', 'index.tsx'), 'utf8');
+function assertNoTemplateTokens(projectDir, useSrcDir = false) {
+  const appRoot = useSrcDir ? path.join(projectDir, 'src', 'app') : path.join(projectDir, 'app');
+  const rootSource = fs.readFileSync(path.join(appRoot, 'root.tsx'), 'utf8');
+  const indexSource = fs.readFileSync(path.join(appRoot, 'index.tsx'), 'utf8');
   assert(!rootSource.includes('__VISTA_'), 'root.tsx should not contain unreplaced template tokens');
   assert(!indexSource.includes('__VISTA_'), 'index.tsx should not contain unreplaced template tokens');
 }
 
-function assertThemeFiles(projectDir) {
-  assert(fs.existsSync(path.join(projectDir, 'components', 'theme-toggle.tsx')));
+function assertThemeFiles(projectDir, useSrcDir = false) {
+  const componentsRoot = useSrcDir
+    ? path.join(projectDir, 'src', 'components')
+    : path.join(projectDir, 'components');
+  assert(fs.existsSync(path.join(componentsRoot, 'theme-toggle.tsx')));
+}
+
+function assertSrcLayout(projectDir) {
+  assert(fs.existsSync(path.join(projectDir, 'src', 'app', 'root.tsx')));
+  assert(fs.existsSync(path.join(projectDir, 'src', 'app', 'index.tsx')));
+  assert(fs.existsSync(path.join(projectDir, 'src', 'components', 'theme-toggle.tsx')));
+  assert(!fs.existsSync(path.join(projectDir, 'app')), 'root app/ should not exist with --src-dir');
+  assert(
+    !fs.existsSync(path.join(projectDir, 'components')),
+    'root components/ should not exist with --src-dir'
+  );
+  const tsconfig = readJson(path.join(projectDir, 'tsconfig.json'));
+  assert.deepEqual(tsconfig.compilerOptions.paths['@/*'], ['./src/*']);
 }
 
 async function main() {
@@ -92,8 +109,8 @@ async function main() {
     assertCommonScripts(defaultPackage);
     assertEngineConfig(defaultProject, 'default');
     assertReadme(defaultProject, 'default', 'disabled');
-    assertNoTemplateTokens(defaultProject);
-    assertThemeFiles(defaultProject);
+    assertNoTemplateTokens(defaultProject, false);
+    assertThemeFiles(defaultProject, false);
     assert.equal(fs.existsSync(path.join(defaultProject, 'render.yaml')), true);
     assert.equal(fs.existsSync(path.join(defaultProject, 'Dockerfile')), true);
     const defaultGitignore = fs.readFileSync(path.join(defaultProject, '.gitignore'), 'utf8');
@@ -117,13 +134,19 @@ async function main() {
       'default starter should include the polished default starter sections'
     );
 
+    const srcProject = await runCreate(tempRoot, 'src-app', ['--src-dir']);
+    assertSrcLayout(srcProject);
+    assertNoTemplateTokens(srcProject, true);
+    assertThemeFiles(srcProject, true);
+    assertEngineConfig(srcProject, 'default');
+
     const flashpackProject = await runCreate(tempRoot, 'flashpack-app', ['--engine', 'flashpack', '--typed-api']);
     const flashpackPackage = readJson(path.join(flashpackProject, 'package.json'));
     assertCommonScripts(flashpackPackage);
     assertEngineConfig(flashpackProject, 'flashpack');
     assertReadme(flashpackProject, 'flashpack', 'enabled');
-    assertNoTemplateTokens(flashpackProject);
-    assertThemeFiles(flashpackProject);
+    assertNoTemplateTokens(flashpackProject, false);
+    assertThemeFiles(flashpackProject, false);
     const flashpackRoot = fs.readFileSync(path.join(flashpackProject, 'app', 'root.tsx'), 'utf8');
     const flashpackIndex = fs.readFileSync(path.join(flashpackProject, 'app', 'index.tsx'), 'utf8');
     assert(flashpackRoot.includes("from 'vista/theme'"));
@@ -148,6 +171,16 @@ async function main() {
       flashpackIndex.includes("import Image from 'vista/image';"),
       'flashpack starter should use vista/image'
     );
+
+    const flashpackSrcProject = await runCreate(tempRoot, 'flashpack-src-app', [
+      '--engine',
+      'flashpack',
+      '--src-dir',
+      '--typed-api',
+    ]);
+    assertSrcLayout(flashpackSrcProject);
+    assert(fs.existsSync(path.join(flashpackSrcProject, 'src', 'app', 'api', 'typed.ts')));
+    assertNoTemplateTokens(flashpackSrcProject, true);
 
     const pnpmProject = await runCreate(tempRoot, 'pnpm-app', ['--pnpm']);
     const pnpmPackage = readJson(path.join(pnpmProject, 'package.json'));

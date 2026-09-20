@@ -28,6 +28,7 @@ import { resolveRuntimeProjectRoot } from './runtime-artifacts';
 import { loadConfig, resolveCacheComponentsConfig } from '../config';
 import { resolveVistaSourceRequest } from './vista-import-map';
 import { createProjectAliasResolver } from './project-alias-resolver';
+import { resolveAppDir } from './app-dir';
 
 // NOTE: RouteErrorBoundary and RouteSuspense are 'use client' components.
 // Under --conditions react-server, React.Component is not available, so we
@@ -453,7 +454,7 @@ async function renderAppSubtreeElement(input: {
   evaluateLeafMetadata?: boolean;
   disableParallelSlots?: boolean;
 }): Promise<React.ReactElement> {
-  const appDir = path.join(input.cwd, 'app');
+  const appDir = resolveAppDir(input.cwd);
   let element = await createRenderableRouteModuleElement(
     input.entryFilePath,
     {
@@ -544,7 +545,7 @@ async function createRouteElement(
   }
 
   return renderAppSubtreeElement({
-    subtreeRootDir: path.join(runtimeRoot, 'app'),
+    subtreeRootDir: resolveAppDir(runtimeRoot),
     entryFilePath: route.pagePath,
     pathname,
     params,
@@ -941,7 +942,7 @@ function startUpstream(): void {
               setCurrentSegmentConfig(route?.segmentConfig);
               if (route) {
                 const segmentNotFoundPath = resolveNearestSegmentNotFoundPath(
-                  path.join(runtimeRoot, 'app'),
+                  resolveAppDir(runtimeRoot),
                   route.routeDir
                 );
                 if (segmentNotFoundPath) {

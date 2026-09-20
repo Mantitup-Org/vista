@@ -31,7 +31,7 @@ import {
   resolveAndApplyEngineVariant,
   resolveStructureValidationConfig,
 } from '../config';
-import { FLASH_DIR, HYDRATE_DOCUMENT_FLAG, SSE_ENDPOINT } from '../constants';
+import { FLASH_DIR, HYDRATE_DOCUMENT_FLAG, RSC_DATA_FLAG, SSE_ENDPOINT } from '../constants';
 import {
   validateAppStructure,
   type StructureValidationResult,
@@ -43,6 +43,7 @@ import { getDevErrorOverlayBootstrapSource } from './dev-error-overlay-snippet';
 import { generateDeploymentOutputs } from './deploy-output';
 import { validateModuleBoundaries } from '../server/module-boundary-validator';
 import { generateStandaloneOutput } from '../build/standalone';
+import { resolveAppDir } from '../server/app-dir';
 
 const _debug = !!process.env.VISTA_DEBUG;
 
@@ -50,13 +51,14 @@ const _debug = !!process.env.VISTA_DEBUG;
  * Run PostCSS for CSS compilation
  */
 function runPostCSS(cwd: string, vistaDir: string): void {
-  const globalsCss = path.join(cwd, 'app/globals.css');
+  const globalsCss = path.join(resolveAppDir(cwd), 'globals.css');
   if (fs.existsSync(globalsCss)) {
     if (_debug) console.log('[Vista JS RSC] Building CSS with PostCSS...');
     const { execSync } = require('child_process');
     try {
       const cssOut = path.join(vistaDir, 'client.css');
-      execSync(`npx postcss app/globals.css -o "${cssOut}"`, {
+      const globalsCssRelative = path.relative(cwd, globalsCss).replace(/\\/g, '/');
+      execSync(`npx postcss "${globalsCssRelative}" -o "${cssOut}"`, {
         stdio: _debug ? 'inherit' : 'pipe',
         cwd,
       });
@@ -133,13 +135,14 @@ function generateRSCClientEntry(cwd: string, vistaDir: string, isDev: boolean): 
  * Vista RSC Client Entry
  *
  * This file is auto-generated. Do not edit directly.
- * It hydrates using React Flight data from /rsc and enables
- * RSC-aware client-side navigation via RSCRouter.
+ * It hydrates from the inline Flight payload in the HTML document when
+ * present (no /rsc refetch on first load). Client navigations still use
+ * /rsc via RSCRouter.
  */
 
 import * as React from 'react';
 import { hydrateRoot, createRoot } from 'react-dom/client';
-import { createFromFetch } from 'react-server-dom-webpack/client';
+import { createFromReadableStream } from 'react-server-dom-webpack/client';
 import { RSCRouter } from 'vista/client/rsc-router';
 import { callServer } from 'vista/client/server-actions';
 
@@ -215,43 +218,85 @@ if (typeof window !== 'undefined') {
   });
 }
 
+function flightTextToReadableStream(flightText: string): ReadableStream<Uint8Array> {
+  var encoder = new TextEncoder();
+  var bytes = encoder.encode(flightText);
+  return new ReadableStream({
+    start: function (controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
+function waitForInlineFlightPayload(timeoutMs: number): Promise<string | null> {
+  var existing = (window as any).${RSC_DATA_FLAG};
+  if (typeof existing === 'string' && existing.length > 0) {
+    return Promise.resolve(existing);
+  }
+  return new Promise(function (resolve) {
+    var started = Date.now();
+    var timer = setInterval(function () {
+      var value = (window as any).${RSC_DATA_FLAG};
+      if (typeof value === 'string' && value.length > 0) {
+        clearInterval(timer);
+        resolve(value);
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        clearInterval(timer);
+        resolve(null);
+      }
+    }, 8);
+  });
+}
+
 const pathname = window.location.pathname;
-const search = window.location.search;
-const initialResponse = createFromFetch(
-  fetch(\`/rsc\${pathname}\${search}\`, { headers: { Accept: 'text/x-component' } }),
-  { callServer }
-) as Promise<React.ReactNode>;
 
-var appElement = React.createElement(RSCRouter, {
-  initialResponse,
-  initialPathname: pathname,
-});
+waitForInlineFlightPayload(4000).then(function (inlineFlight) {
+  if (typeof inlineFlight !== 'string' || inlineFlight.length === 0) {
+    reportDevRuntimeError(
+      'Hydration Error',
+      new Error('Missing inline Flight payload (window.${RSC_DATA_FLAG}). First load no longer refetches /rsc.')
+    );
+    return;
+  }
 
-try {
-  hydrateRoot(
-    rootElement as Document | Element,
-    appElement,
-    {
-      onRecoverableError(error) {
-        var message = String((error as any)?.message || error || '');
-        if (/hydration|did not match|server rendered html|text content/i.test(message)) {
-          reportDevRuntimeError('Hydration Error', error);
-          return;
-        }
-        reportDevRuntimeError('Recoverable Error', error);
-      },
-    }
-  );
-} catch (error) {
-  reportDevRuntimeError('Hydration Error', error);
-  if (!hydrateDocument && rootElement instanceof Element) {
-    try {
-      createRoot(rootElement).render(appElement);
-    } catch (fallbackError) {
-      reportDevRuntimeError('Client Render Fallback Failed', fallbackError);
+  const initialResponse = createFromReadableStream(flightTextToReadableStream(inlineFlight), {
+    callServer,
+  }) as Promise<React.ReactNode>;
+
+  var appElement = React.createElement(RSCRouter, {
+    initialResponse,
+    initialPathname: pathname,
+  });
+
+  try {
+    hydrateRoot(
+      rootElement as Document | Element,
+      appElement,
+      {
+        onRecoverableError(error) {
+          var message = String((error as any)?.message || error || '');
+          if (/hydration|did not match|server rendered html|text content/i.test(message)) {
+            reportDevRuntimeError('Hydration Error', error);
+            return;
+          }
+          reportDevRuntimeError('Recoverable Error', error);
+        },
+      }
+    );
+  } catch (error) {
+    reportDevRuntimeError('Hydration Error', error);
+    if (!hydrateDocument && rootElement instanceof Element) {
+      try {
+        createRoot(rootElement).render(appElement);
+      } catch (fallbackError) {
+        reportDevRuntimeError('Client Render Fallback Failed', fallbackError);
+      }
     }
   }
-}
+});
 
 ${
   isDev
@@ -319,7 +364,7 @@ export async function buildRSC(watch: boolean = false): Promise<{
   clientCompiler: webpack.Compiler | null;
 }> {
   const cwd = process.cwd();
-  const appDir = path.join(cwd, 'app');
+  const appDir = resolveAppDir(cwd);
   const projectClientRoots = discoverProjectClientRoots(cwd);
   const additionalClientRoots = projectClientRoots.filter(
     (root) => path.resolve(root.dir) !== path.resolve(appDir)

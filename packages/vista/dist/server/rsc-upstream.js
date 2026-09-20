@@ -21,6 +21,7 @@ const runtime_artifacts_1 = require("./runtime-artifacts");
 const config_1 = require("../config");
 const vista_import_map_1 = require("./vista-import-map");
 const project_alias_resolver_1 = require("./project-alias-resolver");
+const app_dir_1 = require("./app-dir");
 // NOTE: RouteErrorBoundary and RouteSuspense are 'use client' components.
 // Under --conditions react-server, React.Component is not available, so we
 // must NOT import them at the top level.  Instead we lazy-require them after
@@ -379,7 +380,7 @@ function applySegmentBoundaries(dir, element) {
     return wrappedElement;
 }
 async function renderAppSubtreeElement(input) {
-    const appDir = path_1.default.join(input.cwd, 'app');
+    const appDir = (0, app_dir_1.resolveAppDir)(input.cwd);
     let element = await createRenderableRouteModuleElement(input.entryFilePath, {
         params: input.params,
         searchParams: input.searchParams,
@@ -437,7 +438,7 @@ async function createRouteElement(route, context, isDev, runtimeRoot, options = 
         clearProjectRequireCache(runtimeRoot);
     }
     return renderAppSubtreeElement({
-        subtreeRootDir: path_1.default.join(runtimeRoot, 'app'),
+        subtreeRootDir: (0, app_dir_1.resolveAppDir)(runtimeRoot),
         entryFilePath: route.pagePath,
         pathname,
         params,
@@ -744,7 +745,7 @@ function startUpstream() {
                         const route = matchRoute(pathname, serverManifest.routes);
                         (0, request_context_1.setCurrentSegmentConfig)(route?.segmentConfig);
                         if (route) {
-                            const segmentNotFoundPath = (0, app_router_runtime_1.resolveNearestSegmentNotFoundPath)(path_1.default.join(runtimeRoot, 'app'), route.routeDir);
+                            const segmentNotFoundPath = (0, app_router_runtime_1.resolveNearestSegmentNotFoundPath)((0, app_dir_1.resolveAppDir)(runtimeRoot), route.routeDir);
                             if (segmentNotFoundPath) {
                                 const params = extractParams(pathname, route);
                                 const searchParams = getSearchParamsFromRequest(req);

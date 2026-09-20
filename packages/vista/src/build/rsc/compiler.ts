@@ -18,6 +18,7 @@ import {
 } from './react-client-reference-manifest';
 import { STATIC_CHUNKS_PATH, BUILD_ID_DEFINE, SERVER_DEFINE, SSE_ENDPOINT } from '../../constants';
 import type { VistaEngineVariant } from '../../config';
+import { resolveAppDir } from '../../server/app-dir';
 
 export interface RSCCompilerOptions {
   cwd: string;
@@ -75,7 +76,7 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
   const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
 
   // Generate server manifest first
-  const serverManifest = generateServerManifest(cwd, path.join(cwd, 'app'));
+  const serverManifest = generateServerManifest(cwd, resolveAppDir(cwd));
   fs.writeFileSync(
     path.join(vistaDirs.server, 'server-manifest.json'),
     JSON.stringify(serverManifest, null, 2)
@@ -89,7 +90,7 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
     // Entry: All pages and layouts for SSR
     entry: () => {
       const entries: Record<string, string> = {};
-      const appDir = path.join(cwd, 'app');
+      const appDir = resolveAppDir(cwd);
 
       // Scan for all page.tsx, layout.tsx files
       function scanDir(dir: string, prefix: string = '') {
@@ -232,7 +233,7 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
   const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
   // Generate client manifest
-  const clientManifest = generateClientManifest(cwd, path.join(cwd, 'app'));
+  const clientManifest = generateClientManifest(cwd, resolveAppDir(cwd));
   fs.writeFileSync(
     path.join(vistaDirs.root, 'client-manifest.json'),
     JSON.stringify(clientManifest, null, 2)
@@ -394,7 +395,7 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
             ? flightClientReferences
             : [
                 {
-                  directory: path.join(cwd, 'app'),
+                  directory: resolveAppDir(cwd),
                   recursive: true,
                   include: /\.[jt]sx?$/,
                 },
