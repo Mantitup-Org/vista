@@ -2,9 +2,10 @@ import fs from 'fs';
 import path from 'path';
 
 import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runner';
-import { runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import { runStandalonePreflight, runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import { isStaticOnlyDeploy, packRuntimeNodeModules, writeNetlifySsrHandler } from '../runtime-pack';
 import type { DeployAdapter } from '../types';
-import { copyStaticHostAssets, ensureDir, writeFileIfAllowed } from '../utils';
+import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, writeFileIfAllowed } from '../utils';
 
 const NETLIFY_OUTPUT_DIR = '.vista/deploy/netlify';
 
@@ -12,7 +13,7 @@ function getNetlifyOutputDir(ctx: { cwd: string }): string {
   return path.join(ctx.cwd, NETLIFY_OUTPUT_DIR);
 }
 
-function writeNetlifyToml(ctx: { cwd: string; force: boolean }): string {
+function writeStaticNetlifyToml(ctx: { cwd: string; force: boolean }): string {
   const targetFile = path.join(ctx.cwd, 'netlify.toml');
   const content = `[build]
   command = "npm run build"
@@ -26,7 +27,36 @@ function writeNetlifyToml(ctx: { cwd: string; force: boolean }): string {
   return targetFile;
 }
 
-function writeRedirects(outputDir: string): string {
+function writeFullRuntimeNetlifyToml(ctx: { cwd: string; force: boolean }): string {
+  const targetFile = path.join(ctx.cwd, 'netlify.toml');
+  const content = `[build]
+  command = "npm run build"
+  publish = ".vista/deploy/netlify"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "none"
+  included_files = ["netlify/functions/.vista/**", "netlify/functions/node_modules/**"]
+
+[dev]
+  command = "npm run dev"
+  port = 3003
+
+[[redirects]]
+  from = "/_vista/*"
+  to = "/_vista/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/ssr"
+  status = 200
+`;
+  writeFileIfAllowed(targetFile, content, ctx.force);
+  return targetFile;
+}
+
+function writeStaticRedirects(outputDir: string): string {
   const redirectsPath = path.join(outputDir, '_redirects');
   const lines = [
     '/_vista/* /:splat 200',
@@ -41,11 +71,14 @@ function writeRedirects(outputDir: string): string {
 
 export const netlifyAdapter: DeployAdapter = {
   id: 'netlify',
-  requiredOutput: 'static',
-  supportsFullRuntime: false,
+  requiredOutput: 'standalone',
+  supportsFullRuntime: true,
 
   async preflight(ctx) {
-    return runStaticHostPreflight(ctx);
+    if (isStaticOnlyDeploy(ctx)) {
+      return runStaticHostPreflight(ctx);
+    }
+    return runStandalonePreflight(ctx);
   },
 
   async emit(ctx) {
@@ -53,16 +86,38 @@ export const netlifyAdapter: DeployAdapter = {
     fs.rmSync(outputDir, { recursive: true, force: true });
     ensureDir(outputDir);
 
+    if (isStaticOnlyDeploy(ctx)) {
+      copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
+      const redirectsPath = writeStaticRedirects(outputDir);
+      const netlifyTomlPath = writeStaticNetlifyToml(ctx);
+      return {
+        status: 'emitted',
+        target: 'netlify',
+        artifactPaths: [outputDir, redirectsPath, netlifyTomlPath],
+        instructions: ['Static mode: Netlify serves pre-rendered pages only.'],
+      };
+    }
+
     copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
-    const redirectsPath = writeRedirects(outputDir);
-    const netlifyTomlPath = writeNetlifyToml(ctx);
+    copyDirectoryRecursive(
+      path.join(ctx.vistaDir, 'static'),
+      path.join(outputDir, '_vista', 'static')
+    );
+
+    const functionDir = path.join(ctx.cwd, 'netlify', 'functions');
+    fs.rmSync(functionDir, { recursive: true, force: true });
+    writeNetlifySsrHandler(functionDir);
+    copyDirectoryRecursive(ctx.vistaDir, path.join(functionDir, '.vista'));
+    packRuntimeNodeModules(ctx.cwd, functionDir);
+    const netlifyTomlPath = writeFullRuntimeNetlifyToml(ctx);
 
     return {
       status: 'emitted',
       target: 'netlify',
-      artifactPaths: [outputDir, redirectsPath, netlifyTomlPath],
+      artifactPaths: [outputDir, functionDir, netlifyTomlPath],
       instructions: [
-        'Netlify deploy uses pre-rendered static output from .vista/deploy/netlify.',
+        'Netlify Functions run the Vista Flight SSR server.',
+        'Deploy with: netlify deploy --prod --dir=".vista/deploy/netlify" --functions="netlify/functions"',
       ],
     };
   },
@@ -83,7 +138,6 @@ export const netlifyAdapter: DeployAdapter = {
       };
     }
 
-    const outputDir = getNetlifyOutputDir(ctx);
     if (!isCliAvailable('netlify')) {
       return {
         status: 'emitted',
@@ -92,14 +146,14 @@ export const netlifyAdapter: DeployAdapter = {
         warnings: [...warnings, 'Netlify CLI not found. Install with: npm i -g netlify-cli'],
         instructions: [
           'Install Netlify CLI: npm i -g netlify-cli',
-          `Then run: netlify deploy --prod --dir="${outputDir}"`,
+          'Then run: netlify deploy --prod --dir=".vista/deploy/netlify" --functions="netlify/functions"',
         ],
       };
     }
 
     const command = ctx.prod
-      ? `netlify deploy --prod --dir="${outputDir}"`
-      : `netlify deploy --dir="${outputDir}"`;
+      ? 'netlify deploy --prod --dir=".vista/deploy/netlify" --functions="netlify/functions"'
+      : 'netlify deploy --dir=".vista/deploy/netlify" --functions="netlify/functions"';
     const result = runCliCommand(command, { cwd: ctx.cwd, dryRun: ctx.dryRun });
     if (!result.ok) {
       return {
@@ -107,10 +161,7 @@ export const netlifyAdapter: DeployAdapter = {
         target: 'netlify',
         artifactPaths: emitted.artifactPaths,
         warnings: [...warnings, result.stderr || 'Netlify deploy failed.'],
-        instructions: [
-          'Run: netlify login',
-          'Or set NETLIFY_AUTH_TOKEN in your environment.',
-        ],
+        instructions: ['Run: netlify login', 'Or set NETLIFY_AUTH_TOKEN.'],
       };
     }
 

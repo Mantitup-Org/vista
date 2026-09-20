@@ -12,11 +12,13 @@ npm run deploy -- --target vercel --dry-run
 
 | Platform | Command | Notes |
 |---|---|---|
-| Render | `npm run deploy -- --target render` | Full SSR, recommended for production |
+| Render | `npm run deploy -- --target render` | Long-running Node Flight server |
 | Docker | `npm run deploy -- --target docker` | Portable Node standalone image |
-| Vercel | `npm run deploy -- --target vercel` | Static/pre-rendered pages |
-| Cloudflare | `npm run deploy -- --target cloudflare` | Pages static bundle |
-| Netlify | `npm run deploy -- --target netlify` | Static/pre-rendered pages |
+| Vercel | `npm run deploy -- --target vercel` | Node serverless function (Build Output v3) |
+| Cloudflare | `npm run deploy -- --target cloudflare` | Containers + Dockerfile (Workers cannot spawn Flight) |
+| Netlify | `npm run deploy -- --target netlify` | Node Function wrapping the standalone server |
+
+Set `deploy.output: 'static'` on Vercel, Cloudflare, or Netlify for CDN-only pre-rendered sites.
 
 ## Monorepo (this repository)
 
@@ -35,6 +37,9 @@ npm run dev
 - [Vista Deploy Command](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/vista-deploy-command.md)
 - [Platform Matrix](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/platform-matrix.md)
 - [Render Deployment](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/render-deployment.md)
+- [Vercel Deployment](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/vercel-deployment.md)
+- [Cloudflare Deployment](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/cloudflare-deployment.md)
+- [Netlify Deployment](https://github.com/Mantitup-Org/vista/blob/main/apps/web/content/docs/deployment/netlify-deployment.md)
 
 ## Keep Free Render Service Awake
 

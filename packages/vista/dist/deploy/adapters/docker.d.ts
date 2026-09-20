@@ -1,2 +1,3 @@
 import type { DeployAdapter } from '../types';
+export declare const DOCKERFILE_TEMPLATE = "# syntax=docker/dockerfile:1\n\nFROM node:20-alpine AS builder\nWORKDIR /app\nCOPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./\nRUN npm install --no-audit --no-fund\nCOPY . .\nRUN npm run build\n\nFROM node:20-alpine AS runner\nWORKDIR /app\nENV NODE_ENV=production\nENV PORT=3003\nCOPY --from=builder /app/package.json ./package.json\nCOPY --from=builder /app/node_modules ./node_modules\nCOPY --from=builder /app/.vista ./.vista\nEXPOSE 3003\nCMD [\"node\", \".vista/standalone/server.js\"]\n";
 export declare const dockerAdapter: DeployAdapter;

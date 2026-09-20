@@ -272,13 +272,7 @@ export function resolveDeployConfig(config: VistaConfig): ResolvedDeployConfig {
   };
 }
 
-export function inferDeployOutputForTarget(target: Exclude<DeployTarget, 'auto'>): DeployOutput {
-  if (target === 'vercel' || target === 'cloudflare' || target === 'netlify') {
-    return 'static';
-  }
-  if (target === 'render' || target === 'docker') {
-    return 'standalone';
-  }
+export function inferDeployOutputForTarget(_target: Exclude<DeployTarget, 'auto'>): DeployOutput {
   return 'standalone';
 }
 

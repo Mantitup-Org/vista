@@ -59,6 +59,7 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./deployment/render-deployment.md'),
   loadMarkdownDoc('./deployment/vercel-deployment.md'),
   loadMarkdownDoc('./deployment/cloudflare-deployment.md'),
+  loadMarkdownDoc('./deployment/netlify-deployment.md'),
   loadMarkdownDoc('./auth/overview.md'),
   loadMarkdownDoc('./ai/overview.md'),
   loadMarkdownDoc('./ai/agents.md'),

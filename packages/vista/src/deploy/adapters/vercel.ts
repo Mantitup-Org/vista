@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 
 import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runner';
-import { runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import { runStandalonePreflight, runStaticHostPreflight, splitPreflightMessages } from '../preflight';
+import { isStaticOnlyDeploy, packVercelFullRuntime } from '../runtime-pack';
 import type { BuildHookOptions, DeployAdapter, DeployContext, DeployResult } from '../types';
 import {
   STATIC_HOST_ROUTE_RULES,
@@ -26,46 +27,72 @@ export function writeVercelBuildOutput(options: BuildHookOptions & { force?: boo
     return false;
   }
 
-  if (!force && hasUserVercelConfig(cwd)) {
-    if (debug) {
-      console.log('[vista:deploy] Found custom vercel.json, skipping internal Vercel output.');
+  const standaloneServer = path.join(vistaDir, 'standalone', 'server.js');
+  const staticOnly = !fs.existsSync(standaloneServer);
+
+  if (staticOnly) {
+    if (!force && hasUserVercelConfig(cwd)) {
+      if (debug) {
+        console.log('[vista:deploy] Found custom vercel.json, skipping internal Vercel output.');
+      }
+      return false;
     }
-    return false;
+
+    const vercelOutputDir = path.join(cwd, '.vercel', 'output');
+    const vercelStaticDir = path.join(vercelOutputDir, 'static');
+    fs.rmSync(vercelOutputDir, { recursive: true, force: true });
+    ensureDir(vercelStaticDir);
+    copyStaticHostAssets(cwd, vistaDir, vercelStaticDir);
+    fs.writeFileSync(
+      path.join(vercelOutputDir, 'config.json'),
+      JSON.stringify({ version: 3, routes: STATIC_HOST_ROUTE_RULES }, null, 2)
+    );
+    return true;
   }
 
-  const vercelOutputDir = path.join(cwd, '.vercel', 'output');
-  const vercelStaticDir = path.join(vercelOutputDir, 'static');
-
-  fs.rmSync(vercelOutputDir, { recursive: true, force: true });
-  ensureDir(vercelStaticDir);
-
-  copyStaticHostAssets(cwd, vistaDir, vercelStaticDir);
-
-  const config = {
-    version: 3,
-    routes: STATIC_HOST_ROUTE_RULES,
-  };
-
-  fs.writeFileSync(path.join(vercelOutputDir, 'config.json'), JSON.stringify(config, null, 2));
+  packVercelFullRuntime({
+    cwd,
+    vistaDir,
+    config: {},
+    deployConfig: {
+      target: 'vercel',
+      output: 'standalone',
+      prod: true,
+      preferBuildOutputApi: true,
+    },
+    target: 'vercel',
+    dryRun: true,
+    skipBuild: true,
+    prod: true,
+    preview: false,
+    force: true,
+    debug,
+  } as DeployContext);
 
   if (debug) {
-    console.log('[vista:deploy] Generated internal Vercel Build Output at .vercel/output/');
+    console.log('[vista:deploy] Generated Vercel Node SSR output at .vercel/output/');
   }
-
   return true;
 }
 
-function writeLegacyVercelJson(ctx: DeployContext): string | null {
+function writeVercelJson(ctx: DeployContext, fullRuntime: boolean): string | null {
   const targetFile = path.join(ctx.cwd, 'vercel.json');
-  const payload = {
-    version: 2,
-    buildCommand: 'npm run build',
-    outputDirectory: '.vista',
-    framework: null,
-    installCommand: 'npm install --legacy-peer-deps --no-audit --no-fund',
-    devCommand: 'npm run dev',
-    routes: STATIC_HOST_ROUTE_RULES,
-  };
+  const payload = fullRuntime
+    ? {
+        version: 2,
+        buildCommand: 'npm run build',
+        installCommand: 'npm install --legacy-peer-deps --no-audit --no-fund',
+        framework: null,
+      }
+    : {
+        version: 2,
+        buildCommand: 'npm run build',
+        outputDirectory: '.vista',
+        framework: null,
+        installCommand: 'npm install --legacy-peer-deps --no-audit --no-fund',
+        devCommand: 'npm run dev',
+        routes: STATIC_HOST_ROUTE_RULES,
+      };
 
   const result = writeFileIfAllowed(targetFile, `${JSON.stringify(payload, null, 2)}\n`, ctx.force);
   return result.written || result.skipped ? targetFile : null;
@@ -73,46 +100,53 @@ function writeLegacyVercelJson(ctx: DeployContext): string | null {
 
 export const vercelAdapter: DeployAdapter = {
   id: 'vercel',
-  requiredOutput: 'static',
-  supportsFullRuntime: false,
+  requiredOutput: 'standalone',
+  supportsFullRuntime: true,
 
   async preflight(ctx) {
-    return runStaticHostPreflight(ctx);
+    if (isStaticOnlyDeploy(ctx)) {
+      return runStaticHostPreflight(ctx);
+    }
+    return runStandalonePreflight(ctx);
   },
 
   async emit(ctx) {
     const artifactPaths: string[] = [];
     const warnings: string[] = [];
+    const staticOnly = isStaticOnlyDeploy(ctx);
 
-    if (ctx.deployConfig.preferBuildOutputApi) {
+    if (staticOnly) {
       const wrote = writeVercelBuildOutput({
         cwd: ctx.cwd,
         vistaDir: ctx.vistaDir,
         debug: ctx.debug,
         force: true,
       });
-      if (wrote) {
-        artifactPaths.push(path.join(ctx.cwd, '.vercel', 'output'));
-      }
-    } else if (!hasUserVercelConfig(ctx.cwd) || ctx.force) {
-      const legacyPath = writeLegacyVercelJson(ctx);
-      if (legacyPath) artifactPaths.push(legacyPath);
+      if (wrote) artifactPaths.push(path.join(ctx.cwd, '.vercel', 'output'));
+      artifactPaths.push(path.join(ctx.vistaDir, 'static'));
     } else {
-      artifactPaths.push(path.join(ctx.cwd, 'vercel.json'));
+      artifactPaths.push(...packVercelFullRuntime(ctx));
     }
 
-    copyStaticHostAssets(ctx.cwd, ctx.vistaDir, path.join(ctx.vistaDir));
-    artifactPaths.push(path.join(ctx.vistaDir, 'static'));
+    const vercelJson = writeVercelJson(ctx, !staticOnly);
+    if (vercelJson) artifactPaths.push(vercelJson);
 
     return {
       status: 'emitted',
       target: 'vercel',
       artifactPaths,
       warnings,
-      instructions: [
-        'Vercel deploy uses pre-rendered static pages from .vista/static.',
-        'For full SSR, server actions, and typed API, deploy with --target render or --target docker.',
-      ],
+      instructions: staticOnly
+        ? [
+            'Static mode: Vercel serves pre-rendered pages from .vista/static.',
+            'For Flight SSR, omit deploy.output "static" (default is standalone).',
+          ]
+        : [
+            'Vercel Build Output includes a Node.js serverless function that runs Flight SSR.',
+            'Deploy with: vercel deploy --prebuilt --prod',
+            'Connect the Git repo on Vercel; build command is "npm run build".',
+            'Cold start spawns the Flight upstream in-process. Raise maxDuration in .vc-config.json if pages are slow.',
+          ],
     };
   },
 
@@ -153,8 +187,8 @@ export const vercelAdapter: DeployAdapter = {
         ],
         instructions: [
           'Install Vercel CLI: npm i -g vercel',
-          'Then run: vercel deploy --prod',
-          'Or connect this repository in the Vercel dashboard with buildCommand "npm run build".',
+          'Then run: vercel login && vercel deploy --prebuilt --prod',
+          'Or import the Git repository in the Vercel dashboard (build: npm run build).',
         ],
       };
     }
@@ -166,11 +200,7 @@ export const vercelAdapter: DeployAdapter = {
         target: 'vercel',
         artifactPaths: emitted.artifactPaths,
         warnings: [...warnings, result.stderr || 'Vercel deploy failed.'],
-        instructions: [
-          'Ensure you are logged in: vercel login',
-          'Or set VERCEL_TOKEN in your environment.',
-          'You can also deploy from the Vercel dashboard using npm run build.',
-        ],
+        instructions: ['Ensure you are logged in: vercel login', 'Or set VERCEL_TOKEN.'],
       };
     }
 

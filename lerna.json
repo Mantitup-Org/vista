@@ -5,13 +5,13 @@
   "command": {
     "version": {
       "exact": true,
-      "allowBranch": ["development", "main", "feat/dev-error-overlay"]
+      "allowBranch": ["development", "main", "feat/dev-error-overlay", "feat/production-grade-deploy"]
     },
     "publish": {
       "npmClient": "npm",
-      "allowBranch": ["development", "main", "feat/dev-error-overlay"],
+      "allowBranch": ["development", "main", "feat/dev-error-overlay", "feat/production-grade-deploy"],
       "registry": "https://registry.npmjs.org/"
     }
   },
-  "version": "0.3.2"
+  "version": "0.3.3"
 }

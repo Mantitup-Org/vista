@@ -1,13 +1,13 @@
 ---
 category: deployment
 slug: render-deployment
-title: Render Deployment (Recommended)
+title: Render Deployment
 summary: Deploy full-feature Vista apps to Render with npm run deploy or render.yaml.
 order: 2
 updatedAt: "2026-09-07"
 ---
 
-> Render is the recommended production target for full Vista apps (SSR, server actions, typed API).
+> Render is a long-running Node host for full Vista apps (SSR, server actions, typed API). Vercel, Netlify, Cloudflare Containers, and Docker use the same standalone Flight server.
 
 ## One-Command Deploy
 
@@ -76,4 +76,5 @@ jobs:
 
 - [Vista Deploy Command](/docs/deployment/vista-deploy-command)
 - [Platform Matrix](/docs/deployment/platform-matrix)
-- [Vercel Deployment (Experimental static)](/docs/deployment/vercel-deployment)
+- [Vercel Deployment](/docs/deployment/vercel-deployment)
+- [Netlify Deployment](/docs/deployment/netlify-deployment)

@@ -4,47 +4,47 @@ slug: platform-matrix
 title: Deployment Platform Matrix
 summary: Feature support and recommended targets for Vista apps on major hosting providers.
 order: 0
-updatedAt: "2026-09-07"
+updatedAt: "2026-09-20"
 ---
 
 ## Choose the Right Target
 
-| Feature | Render | Docker | Vercel | Cloudflare Pages | Netlify |
+| Feature | Render | Docker | Vercel | Cloudflare | Netlify |
 |---|---|---|---|---|---|
-| Dynamic SSR | Yes | Yes | No | No | No |
-| Server actions | Yes | Yes | No | No | No |
-| Typed API | Yes | Yes | No | No | No |
-| ISR / live revalidation | Yes | Yes | Limited | Limited | Limited |
+| Dynamic Flight SSR | Yes | Yes | Yes (Node serverless) | Yes (Containers) | Yes (Functions) |
+| Server actions | Yes | Yes | Yes | Yes | Yes |
+| Typed API | Yes | Yes | Yes | Yes | Yes |
+| ISR / live revalidation | Yes | Yes | Yes | Yes | Yes |
 | SSG / pre-rendered pages | Yes | Yes | Yes | Yes | Yes |
-| Edge route handlers only | Yes | Yes | Partial | Partial | Partial |
+
+Default is **standalone** (Node Flight server). Set `deploy.output: 'static'` for CDN-only pre-rendered sites.
 
 ## Recommended Defaults
 
-- **Full Vista apps:** `render` or `docker`
-- **Marketing/docs sites (mostly static):** `vercel`, `cloudflare`, or `netlify`
-- **Local/production parity testing:** `docker`
+- **Full Vista apps:** `vercel`, `render`, `docker`, `netlify`, or Cloudflare Containers
+- **Marketing/docs (SSG only):** `deploy.output: 'static'` on Vercel, Cloudflare Pages, or Netlify
+- **Local/production parity:** `docker`
 
 ## Deploy Commands
 
 ```bash
+npm run deploy -- --target vercel --prod
+npm run deploy -- --target cloudflare --dry-run
+npm run deploy -- --target netlify --force
 npm run deploy -- --target render --prod
-npm run deploy -- --target vercel --dry-run
-npm run deploy -- --target cloudflare --force
 ```
 
-## Static Host Notes
+## Notes
 
-Static CDN targets serve files from `.vista/static`. They do not run the Node RSC server.
-
-For static hosts:
-
-- Ensure pages are pre-rendered at build time
-- Set `images.unoptimized: true` when using `vista/image`
-- Avoid typed API and server-side API routes unless you accept degraded behavior
+- **Vercel** emits Build Output API v3 with a Node.js function that runs `.vista/standalone`.
+- **Netlify** emits a Function that runs the same standalone server.
+- **Cloudflare Workers** cannot spawn the Flight upstream process. Vista deploys SSR there as a **Container** (same Dockerfile as `docker`).
+- Static CDN mode still works when you set `deploy.output: 'static'`.
 
 ## Related
 
 - [Vista Deploy Command](/docs/deployment/vista-deploy-command)
-- [Render Deployment](/docs/deployment/render-deployment)
 - [Vercel Deployment](/docs/deployment/vercel-deployment)
 - [Cloudflare Deployment](/docs/deployment/cloudflare-deployment)
+- [Netlify Deployment](/docs/deployment/netlify-deployment)
+- [Render Deployment](/docs/deployment/render-deployment)

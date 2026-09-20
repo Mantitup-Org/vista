@@ -138,6 +138,10 @@ test('vercel adapter dry-run emits build output when forced', async () => {
 
     assert.equal(result.status, 'emitted');
     assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'config.json')), true);
+    assert.equal(
+      fs.existsSync(path.join(cwd, '.vercel', 'output', 'functions', 'index.func', '.vista', 'standalone', 'server.js')),
+      true
+    );
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
@@ -180,6 +184,39 @@ test('runDeploy dry-run succeeds for docker target with existing artifacts', asy
     assert.equal(result.status, 'emitted');
     assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), true);
     assert.match(fs.readFileSync(path.join(cwd, 'Dockerfile'), 'utf8'), /standalone\/server\.js/);
+    assert.match(fs.readFileSync(path.join(cwd, 'Dockerfile'), 'utf8'), /node_modules/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('netlify adapter emit packs Flight function with .vista standalone', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    const adapter = getDeployAdapter('netlify');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'netlify',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    assert.equal(fs.existsSync(path.join(cwd, 'netlify', 'functions', 'ssr.js')), true);
+    assert.equal(
+      fs.existsSync(path.join(cwd, 'netlify', 'functions', '.vista', 'standalone', 'server.js')),
+      true
+    );
+    const handler = fs.readFileSync(path.join(cwd, 'netlify', 'functions', 'ssr.js'), 'utf8');
+    assert.match(handler, /http\.ServerResponse/);
+    assert.match(fs.readFileSync(path.join(cwd, 'netlify.toml'), 'utf8'), /\.netlify\/functions\/ssr/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

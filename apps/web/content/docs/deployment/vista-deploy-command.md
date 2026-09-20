@@ -4,7 +4,7 @@ slug: vista-deploy-command
 title: Vista Deploy Command
 summary: Deploy Vista apps with npm run deploy or vista deploy across Render, Vercel, Cloudflare, Netlify, and Docker.
 order: 1
-updatedAt: "2026-09-07"
+updatedAt: "2026-09-20"
 ---
 
 > Use `npm run deploy` or `vista deploy` as the single entrypoint for production deployment.
@@ -30,9 +30,11 @@ npm run deploy -- --target cloudflare --force
 |---|---|---|
 | `render` | Node standalone | Yes |
 | `docker` | Node standalone | Yes |
-| `vercel` | Static CDN | Pre-rendered pages only |
-| `cloudflare` | Pages static | Pre-rendered pages only |
-| `netlify` | Static CDN | Pre-rendered pages only |
+| `vercel` | Node serverless (Build Output v3) | Yes |
+| `cloudflare` | Containers (Docker) | Yes |
+| `netlify` | Node Functions | Yes |
+
+Set `deploy.output: 'static'` on Vercel, Cloudflare, or Netlify for CDN-only pre-rendered sites.
 
 ## Command Options
 
@@ -71,8 +73,8 @@ export default {
 `vista deploy` tries the platform CLI when installed:
 
 - Vercel: `vercel deploy`
-- Cloudflare: `wrangler pages deploy`
-- Netlify: `netlify deploy`
+- Cloudflare: `wrangler deploy` (Containers) or `wrangler pages deploy` when `deploy.output` is `static`
+- Netlify: `netlify deploy --dir=.vista/deploy/netlify --functions=netlify/functions`
 - Render: `render deploy` or Blueprint/git instructions
 - Docker: `docker build`
 
@@ -84,3 +86,4 @@ If the CLI is missing or auth fails, Vista still emits deploy artifacts and prin
 - [Render Deployment](/docs/deployment/render-deployment)
 - [Vercel Deployment](/docs/deployment/vercel-deployment)
 - [Cloudflare Deployment](/docs/deployment/cloudflare-deployment)
+- [Netlify Deployment](/docs/deployment/netlify-deployment)

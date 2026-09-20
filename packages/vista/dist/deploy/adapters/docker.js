@@ -3,12 +3,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.dockerAdapter = void 0;
+exports.dockerAdapter = exports.DOCKERFILE_TEMPLATE = void 0;
 const path_1 = __importDefault(require("path"));
 const cli_runner_1 = require("../cli-runner");
 const preflight_1 = require("../preflight");
 const utils_1 = require("../utils");
-const DOCKERFILE_TEMPLATE = `# syntax=docker/dockerfile:1
+exports.DOCKERFILE_TEMPLATE = `# syntax=docker/dockerfile:1
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -21,8 +21,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3003
-COPY --from=builder /app/.vista ./.vista
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/.vista ./.vista
 EXPOSE 3003
 CMD ["node", ".vista/standalone/server.js"]
 `;
@@ -47,7 +48,7 @@ exports.dockerAdapter = {
     async emit(ctx) {
         const dockerfilePath = path_1.default.join(ctx.cwd, 'Dockerfile');
         const dockerignorePath = path_1.default.join(ctx.cwd, '.dockerignore');
-        (0, utils_1.writeFileIfAllowed)(dockerfilePath, DOCKERFILE_TEMPLATE, ctx.force);
+        (0, utils_1.writeFileIfAllowed)(dockerfilePath, exports.DOCKERFILE_TEMPLATE, ctx.force);
         (0, utils_1.writeFileIfAllowed)(dockerignorePath, DOCKERIGNORE_TEMPLATE, ctx.force);
         return {
             status: 'emitted',

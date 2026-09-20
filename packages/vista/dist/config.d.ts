@@ -87,5 +87,5 @@ export declare function resolveTypedApiConfig(config: VistaConfig): ResolvedType
 export declare function resolveCacheComponentsConfig(config: VistaConfig): ResolvedCacheComponentsConfig;
 export type ResolvedDeployConfig = Required<DeployConfig>;
 export declare function resolveDeployConfig(config: VistaConfig): ResolvedDeployConfig;
-export declare function inferDeployOutputForTarget(target: Exclude<DeployTarget, 'auto'>): DeployOutput;
+export declare function inferDeployOutputForTarget(_target: Exclude<DeployTarget, 'auto'>): DeployOutput;
 export declare function loadConfig(cwd?: string): VistaConfig;
