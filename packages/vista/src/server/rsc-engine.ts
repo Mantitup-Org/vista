@@ -1963,33 +1963,41 @@ export function startRSCServer(options: RSCEngineOptions = {}): void {
     }
 
     try {
-      // Metadata extraction: still done locally so we have <head> content
+      // Metadata extraction: still done locally so we have <head> content.
+      // notFound() here must not skip Flight — upstream renders the nearest
+      // segment not-found as a 404 Flight payload.
       const rootLayout = resolveRootLayout(runtimeRoot, isDev);
       const route = currentRoute;
 
       let metadataHtml = '';
       if (route) {
-        if (isDev) {
-          clearProjectRequireCache(runtimeRoot);
+        try {
+          if (isDev) {
+            clearProjectRequireCache(runtimeRoot);
+          }
+          const PageModule = require(route.pagePath);
+          let metadata: any = { ...(rootLayout.metadata || {}) };
+          if (PageModule.metadata) {
+            metadata = { ...metadata, ...PageModule.metadata };
+          }
+          if (typeof PageModule.generateMetadata === 'function') {
+            const params = extractParams(req.path, route);
+            const searchParams = Object.fromEntries(
+              new URLSearchParams(req.query as any).entries()
+            );
+            const dynamicMeta = await PageModule.generateMetadata(
+              { params, searchParams },
+              metadata
+            );
+            metadata = { ...metadata, ...dynamicMeta };
+          }
+          const { generateMetadataHtml } = require('../metadata/generate');
+          metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
+        } catch (metadataError: any) {
+          if (metadataError?.name !== 'NotFoundError') {
+            throw metadataError;
+          }
         }
-        const PageModule = require(route.pagePath);
-        let metadata: any = { ...(rootLayout.metadata || {}) };
-        if (PageModule.metadata) {
-          metadata = { ...metadata, ...PageModule.metadata };
-        }
-        if (typeof PageModule.generateMetadata === 'function') {
-          const params = extractParams(req.path, route);
-          const searchParams = Object.fromEntries(
-            new URLSearchParams(req.query as any).entries()
-          );
-          const dynamicMeta = await PageModule.generateMetadata(
-            { params, searchParams },
-            metadata
-          );
-          metadata = { ...metadata, ...dynamicMeta };
-        }
-        const { generateMetadataHtml } = require('../metadata/generate');
-        metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
       }
 
       await renderFlightToHTMLStream(
