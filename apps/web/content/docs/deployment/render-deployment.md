@@ -33,7 +33,7 @@ services:
     buildCommand: |
       npm install --no-audit --no-fund
       npm run build
-    startCommand: npm run start
+    startCommand: node .vista/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -47,7 +47,7 @@ Connect the repo on [Render](https://dashboard.render.com) and apply the Bluepri
 ## Why This Works
 
 - `npm run build` emits `.vista/standalone/server.js`
-- `npm run start` runs the standalone Node server
+- `node .vista/standalone/server.js` runs the standalone Node server
 - Full RSC runtime features are supported
 
 ## Keep Free Render Service Awake

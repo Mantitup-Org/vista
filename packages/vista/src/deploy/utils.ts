@@ -138,11 +138,19 @@ export function flattenPrerenderedFlight(pagesDir: string, targetDir: string): v
 
 function writeStaticRscRedirects(targetDir: string): void {
   const redirectsPath = path.join(targetDir, '_redirects');
+  let customLines: string[] = [];
+  if (fs.existsSync(redirectsPath)) {
+    customLines = fs
+      .readFileSync(redirectsPath, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('/rsc'));
+  }
   const lines = [
     '/rsc /rsc/index.rsc 200',
     '/rsc/ /rsc/index.rsc 200',
-    '/rsc/*.rsc /rsc/:splat.rsc 200',
     '/rsc/* /rsc/:splat.rsc 200',
+    ...customLines,
   ];
   fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
 }

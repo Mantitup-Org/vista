@@ -226,8 +226,62 @@ test('cloudflare static emit flattens pages and copies /_vista/static', async ()
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'index.rsc'), 'utf8'), 'flight-index');
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'docs.rsc'), 'utf8'), 'flight-docs');
     const redirects = fs.readFileSync(path.join(outputDir, '_redirects'), 'utf8');
-    assert.match(redirects, /\/rsc\/\*\.rsc \/rsc\/:splat\.rsc 200/);
+    assert.equal(redirects.includes('/rsc/*.rsc'), false);
     assert.match(redirects, /\/rsc\/\* \/rsc\/:splat\.rsc 200/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('render adapter emits startCommand pointing to standalone server.js', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    const adapter = getDeployAdapter('render');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'render',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+    assert.equal(result.status, 'emitted');
+    const yaml = fs.readFileSync(path.join(cwd, 'render.yaml'), 'utf8');
+    assert.match(yaml, /startCommand: node \.vista\/standalone\/server\.js/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('cloudflare adapter auto-detects static Pages from wrangler.toml', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.writeFileSync(
+      path.join(cwd, 'wrangler.toml'),
+      'pages_build_output_dir = ".vista/deploy/cloudflare"\n',
+      'utf8'
+    );
+    const adapter = getDeployAdapter('cloudflare');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'cloudflare',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+    assert.equal(result.status, 'emitted');
+    assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), false);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
