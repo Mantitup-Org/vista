@@ -141,10 +141,14 @@ function writeStaticRscRedirects(targetDir: string): void {
   const lines = [
     '/rsc /rsc/index.rsc 200',
     '/rsc/ /rsc/index.rsc 200',
-    '/rsc/*.rsc /rsc/:splat.rsc 200',
     '/rsc/* /rsc/:splat.rsc 200',
   ];
-  fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
+  let existing = '';
+  if (fs.existsSync(redirectsPath)) {
+    existing = fs.readFileSync(redirectsPath, 'utf8');
+    if (existing && !existing.endsWith('\n')) existing += '\n';
+  }
+  fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n${existing}`, 'utf8');
 }
 
 /** Copy webpack assets to `/_vista/static` and flatten HTML + Flight for file-based CDNs. */

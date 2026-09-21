@@ -226,7 +226,6 @@ test('cloudflare static emit flattens pages and copies /_vista/static', async ()
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'index.rsc'), 'utf8'), 'flight-index');
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'docs.rsc'), 'utf8'), 'flight-docs');
     const redirects = fs.readFileSync(path.join(outputDir, '_redirects'), 'utf8');
-    assert.match(redirects, /\/rsc\/\*\.rsc \/rsc\/:splat\.rsc 200/);
     assert.match(redirects, /\/rsc\/\* \/rsc\/:splat\.rsc 200/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });

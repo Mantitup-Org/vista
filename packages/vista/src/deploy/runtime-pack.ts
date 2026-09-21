@@ -39,7 +39,18 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.VISTA_ARTIFACT_ROOT = process.env.VISTA_ARTIFACT_ROOT || __dirname;
 process.chdir(__dirname);
 
-const standalone = require(path.join(__dirname, '.vista', 'standalone', 'server.js'));
+let standalone;
+try {
+  standalone = require(path.join(__dirname, '.vista', 'standalone', 'server.js'));
+} catch (err) {
+  standalone = {
+    createRequestListener: () => (req, res) => {
+      res.statusCode = 500;
+      res.end('Vista SSR handler successfully deployed, but .vista/standalone/server.js is missing. Please run \`vista build\` before deployment.');
+    }
+  };
+}
+
 const listener = standalone.createRequestListener
   ? standalone.createRequestListener()
   : standalone.startStandaloneServer({ listen: false });
@@ -78,7 +89,18 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.VISTA_ARTIFACT_ROOT = process.env.VISTA_ARTIFACT_ROOT || __dirname;
 process.chdir(__dirname);
 
-const standalone = require(path.join(__dirname, '.vista', 'standalone', 'server.js'));
+let standalone;
+try {
+  standalone = require(path.join(__dirname, '.vista', 'standalone', 'server.js'));
+} catch (err) {
+  standalone = {
+    createRequestListener: () => (req, res) => {
+      res.statusCode = 500;
+      res.end('Vista SSR handler successfully deployed, but .vista/standalone/server.js is missing. Please run \`vista build\` before deployment.');
+    }
+  };
+}
+
 const listener = standalone.createRequestListener
   ? standalone.createRequestListener()
   : standalone.startStandaloneServer({ listen: false });

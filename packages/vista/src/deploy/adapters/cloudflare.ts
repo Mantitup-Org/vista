@@ -18,17 +18,6 @@ function getCloudflareOutputDir(ctx: DeployContext): string {
   return path.join(ctx.cwd, CLOUDFLARE_OUTPUT_DIR);
 }
 
-function writeStaticWranglerToml(ctx: DeployContext, outputDir: string): string {
-  const targetFile = path.join(ctx.cwd, 'wrangler.toml');
-  const relativeOutput = path.relative(ctx.cwd, outputDir).replace(/\\/g, '/');
-  const content = `name = "my-vista-app"
-compatibility_date = "2024-09-01"
-pages_build_output_dir = "${relativeOutput}"
-`;
-  writeFileIfAllowed(targetFile, content, ctx.force);
-  return targetFile;
-}
-
 export const cloudflareAdapter: DeployAdapter = {
   id: 'cloudflare',
   requiredOutput: 'standalone',
@@ -49,11 +38,10 @@ export const cloudflareAdapter: DeployAdapter = {
     if (isStaticOnlyDeploy(ctx)) {
       copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
       prepareStaticCdnOutput(outputDir);
-      const wranglerPath = writeStaticWranglerToml(ctx, outputDir);
       return {
         status: 'emitted',
         target: 'cloudflare',
-        artifactPaths: [outputDir, wranglerPath],
+        artifactPaths: [outputDir],
         instructions: [
           'Static mode: Cloudflare Pages serves pre-rendered output.',
           'For Flight SSR, omit deploy.output "static" and use Cloudflare Containers.',
