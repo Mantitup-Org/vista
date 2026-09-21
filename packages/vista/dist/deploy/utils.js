@@ -134,23 +134,33 @@ function flattenPrerenderedFlight(pagesDir, targetDir) {
         fs_1.default.copyFileSync(absolutePath, dest);
     });
 }
-function writeStaticRscRedirects(targetDir) {
+function writeStaticRscRedirects(pagesDir, targetDir) {
     const redirectsPath = path_1.default.join(targetDir, '_redirects');
     const lines = [
         '/rsc /rsc/index.rsc 200',
         '/rsc/ /rsc/index.rsc 200',
-        '/rsc/*.rsc /rsc/:splat.rsc 200',
-        '/rsc/* /rsc/:splat.rsc 200',
     ];
+    walkFiles(pagesDir, (_absolutePath, relativePath) => {
+        const posix = relativePath.replace(/\\/g, '/');
+        if (!posix.endsWith('.rsc'))
+            return;
+        const routePath = posix.replace(/\.rsc$/, '');
+        const flightPath = `/rsc/${posix}`;
+        lines.push(`${flightPath} ${flightPath} 200`);
+        if (routePath === 'index')
+            return;
+        lines.push(`/rsc/${routePath} ${flightPath} 200`);
+    });
     fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
 }
 /** Copy webpack assets to `/_vista/static` and flatten HTML + Flight for file-based CDNs. */
 function prepareStaticCdnOutput(targetDir) {
     const staticDir = path_1.default.join(targetDir, 'static');
+    const pagesDir = path_1.default.join(staticDir, 'pages');
     copyDirectoryRecursive(staticDir, path_1.default.join(targetDir, '_vista', 'static'));
-    flattenPrerenderedPages(path_1.default.join(staticDir, 'pages'), targetDir);
-    flattenPrerenderedFlight(path_1.default.join(staticDir, 'pages'), targetDir);
-    writeStaticRscRedirects(targetDir);
+    flattenPrerenderedPages(pagesDir, targetDir);
+    flattenPrerenderedFlight(pagesDir, targetDir);
+    writeStaticRscRedirects(pagesDir, targetDir);
 }
 function copyStaticHostAssets(cwd, vistaDir, targetDir) {
     copyDirectoryRecursive(path_1.default.join(cwd, 'public'), targetDir);
