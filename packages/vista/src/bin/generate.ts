@@ -133,6 +133,19 @@ function insertTypedApiConfigIntoObject(source: string, objectStartIndex: number
     return null;
   }
 
+  const objectContent = source.slice(openBraceIndex, closeBraceIndex);
+  const expMatch = objectContent.match(/\bexperimental\s*:\s*\{/);
+  if (expMatch && typeof expMatch.index === 'number') {
+    const absExpBrace = openBraceIndex + expMatch.index + expMatch[0].lastIndexOf('{');
+    const expCloseBrace = findMatchingBrace(source, absExpBrace);
+    if (expCloseBrace >= 0) {
+      const expBefore = source.slice(0, expCloseBrace);
+      const expAfter = source.slice(expCloseBrace);
+      const insertion = `  typedApi: {\n      enabled: true,\n    },\n  `;
+      return `${expBefore}${insertion}${expAfter}`;
+    }
+  }
+
   const before = source.slice(0, closeBraceIndex);
   const after = source.slice(closeBraceIndex);
   const insertion = `\n  experimental: {\n    typedApi: {\n      enabled: true,\n    },\n  },`;
