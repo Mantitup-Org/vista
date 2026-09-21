@@ -17,7 +17,28 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const utils_1 = require("./utils");
 function isStaticOnlyDeploy(ctx) {
-    return ctx.deployConfig.output === 'static';
+    if (ctx.deployConfig.output === 'static') {
+        return true;
+    }
+    if (ctx.target === 'cloudflare') {
+        if (ctx.config.deploy?.output === 'standalone') {
+            return false;
+        }
+        if (process.env.CF_PAGES === '1' || process.env.CLOUDFLARE_PAGES) {
+            return true;
+        }
+        const wranglerPath = path_1.default.join(ctx.cwd, 'wrangler.toml');
+        if (fs_1.default.existsSync(wranglerPath)) {
+            const content = fs_1.default.readFileSync(wranglerPath, 'utf8');
+            if (content.includes('pages_build_output_dir')) {
+                return true;
+            }
+            if (content.includes('[[containers]]') || content.includes('main =')) {
+                return false;
+            }
+        }
+    }
+    return false;
 }
 function resolveStandaloneServerPath(ctx) {
     return path_1.default.join(ctx.vistaDir, 'standalone', 'server.js');
