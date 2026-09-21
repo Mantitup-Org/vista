@@ -112,8 +112,27 @@ if (explicitEngine && !['default', 'flashpack'].includes(explicitEngine)) {
   process.exit(1);
 }
 
+function getPositionalArgs(args = rawArgs) {
+  const positionals = [];
+  const optionsWithValues = new Set(['--engine', '--package-manager']);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (optionsWithValues.has(arg)) {
+      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+        i++;
+      }
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      continue;
+    }
+    positionals.push(arg);
+  }
+  return positionals;
+}
+
 async function resolveProjectName() {
-  const args = rawArgs.filter((arg) => !arg.startsWith('-'));
+  const args = getPositionalArgs();
   if (args[0]) return args[0];
 
   if (!canPrompt) {
@@ -611,6 +630,7 @@ module.exports = {
   applyReadmeSelections,
   applyFlashpackStarterTheme,
   applySrcDirectoryLayout,
+  getPositionalArgs,
 };
 
 if (require.main === module) {

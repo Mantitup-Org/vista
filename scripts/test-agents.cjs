@@ -69,6 +69,25 @@ async function main() {
     assert.equal(code, 0);
     assert.equal(fs.existsSync(path.join(cwd, 'app', 'AGENTS.md')), true);
     assert.match(fs.readFileSync(path.join(cwd, 'app', 'AGENTS.md'), 'utf8'), /groq:/);
+
+    const routeContent = fs.readFileSync(
+      path.join(cwd, 'app', 'api', 'agents', 'support', 'route.ts'),
+      'utf8'
+    );
+    assert.match(
+      routeContent,
+      /import \{ supportAgent \} from '\.\.\/\.\.\/\.\.\/agents\/support\/agent';/,
+      'Route handler must import supportAgent from three directory levels up'
+    );
+
+    const authCode = await runGenerateCommand(['auth'], { cwd, log() {} });
+    assert.equal(authCode, 0);
+    const accountPageContent = fs.readFileSync(path.join(cwd, 'app', 'account', 'page.tsx'), 'utf8');
+    assert.match(
+      accountPageContent,
+      /export const dynamic = 'force-dynamic';/,
+      'Account page must export force-dynamic to prevent static prerender crash'
+    );
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

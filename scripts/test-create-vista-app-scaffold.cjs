@@ -28,6 +28,25 @@ async function runCreate(tempRoot, name, extraArgs = []) {
   return path.join(tempRoot, name);
 }
 
+async function runCreateWithRawArgs(tempRoot, expectedName, argv) {
+  const previousArgv = process.argv.slice();
+  const previousCwd = process.cwd();
+
+  process.chdir(tempRoot);
+  process.argv = [process.execPath, cliPath, ...argv];
+  delete require.cache[require.resolve(cliPath)];
+
+  try {
+    const cliModule = require(cliPath);
+    await cliModule.main();
+  } finally {
+    process.argv = previousArgv;
+    process.chdir(previousCwd);
+  }
+
+  return path.join(tempRoot, expectedName);
+}
+
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
@@ -208,6 +227,31 @@ async function main() {
     assertCommonScripts(pnpmPackage);
     assertEngineConfig(pnpmProject, 'default');
     assertReadme(pnpmProject, 'default', 'disabled');
+
+    // Positional argument parser unit tests
+    const { getPositionalArgs } = cliModule;
+    assert.deepEqual(getPositionalArgs(['--engine', 'flashpack', 'my-app']), ['my-app']);
+    assert.deepEqual(getPositionalArgs(['--package-manager', 'pnpm', 'my-app']), ['my-app']);
+    assert.deepEqual(getPositionalArgs(['--skip-install', '--engine', 'flashpack', 'my-app', '--no-git']), ['my-app']);
+    assert.deepEqual(getPositionalArgs(['--engine=flashpack', 'my-app']), ['my-app']);
+    assert.deepEqual(getPositionalArgs(['--engine', 'flashpack', '--yes']), []);
+
+    // End-to-end scaffold with option values preceding the project name
+    const flagsFirstProject = await runCreateWithRawArgs(tempRoot, 'flags-first-app', [
+      '--engine',
+      'flashpack',
+      '--package-manager',
+      'pnpm',
+      'flags-first-app',
+      '--skip-install',
+      '--no-git',
+      '--yes',
+    ]);
+    assert(fs.existsSync(flagsFirstProject), 'Project should be created at flags-first-app directory');
+    assert(!fs.existsSync(path.join(tempRoot, 'flashpack')), 'Flag argument must not be treated as project name');
+    assert(!fs.existsSync(path.join(tempRoot, 'pnpm')), 'Flag argument must not be treated as project name');
+    const flagsFirstPackage = readJson(path.join(flagsFirstProject, 'package.json'));
+    assert.equal(flagsFirstPackage.name, 'flags-first-app');
 
     console.log('[test:create-vista-app-scaffold] OK');
   } finally {

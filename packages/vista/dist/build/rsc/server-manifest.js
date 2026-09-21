@@ -286,17 +286,18 @@ function scanForServerComponents(dir, appDir, components) {
                 continue;
             try {
                 const source = fs_1.default.readFileSync(fullPath, 'utf-8');
-                // Only add if NOT a client component
-                if (!hasClientDirective(source)) {
+                const componentType = getComponentType(item.name);
+                const isClient = hasClientDirective(source);
+                if (!isClient || componentType !== 'component') {
                     const relativePath = (0, component_identity_1.relativeComponentPath)(appDir, fullPath);
-                    const moduleId = (0, component_identity_1.createComponentId)('server', relativePath);
+                    const moduleId = (0, component_identity_1.createComponentId)(isClient ? 'client' : 'server', relativePath);
                     const metadata = analyzeMetadata(source);
                     const renderConfig = analyzeRenderConfig(source);
                     components.push({
                         id: moduleId,
                         path: relativePath,
                         absolutePath: fullPath,
-                        type: getComponentType(item.name),
+                        type: componentType,
                         hasMetadata: metadata.hasMetadata,
                         hasGenerateMetadata: metadata.hasGenerateMetadata,
                         hasGenerateStaticParams: renderConfig.hasGenerateStaticParams,
