@@ -47,6 +47,7 @@ function createContext(options: RunDeployOptions): DeployContext {
     prod: options.preview ? false : options.prod !== false,
     preview: Boolean(options.preview),
     force: Boolean(options.force),
+    outputExplicit: Boolean(options.output),
     debug: options.debug,
     log: options.log,
     warn: options.warn,
