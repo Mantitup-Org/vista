@@ -17,7 +17,7 @@ const RENDER_YAML_TEMPLATE = `services:
     buildCommand: |
       npm install --no-audit --no-fund
       npm run build
-    startCommand: npm run start
+    startCommand: node .vista/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -45,7 +45,7 @@ exports.renderAdapter = {
             artifactPaths,
             instructions: [
                 'Connect this repository on Render and select Blueprint (render.yaml).',
-                'Or create a Web Service with buildCommand "npm run build" and startCommand "npm run start".',
+                'Or create a Web Service with buildCommand "npm run build" and startCommand "node .vista/standalone/server.js".',
             ],
         };
     },

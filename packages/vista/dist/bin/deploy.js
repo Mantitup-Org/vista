@@ -26,6 +26,7 @@ function printHelp() {
     console.log('');
     console.log('Options:');
     console.log('  --target <auto|render|vercel|cloudflare|netlify|docker>');
+    console.log('  --output <standalone|static|hybrid>');
     console.log('  --prod                 Production deploy (default)');
     console.log('  --preview              Preview/staging deploy');
     console.log('  --dry-run              Build + emit + validate only');
@@ -64,6 +65,11 @@ async function runDeployCommand(flags, options = {}) {
         (options.error ?? console.error)(`[vista:deploy] Unsupported target "${target}". Use one of: ${(0, deploy_1.listKnownTargets)().join(', ')}`);
         return 1;
     }
+    const output = getFlagValue(flags, '--output');
+    if (output && !['standalone', 'static', 'hybrid'].includes(output)) {
+        (options.error ?? console.error)(`[vista:deploy] Unsupported output "${output}". Use one of: standalone, static, hybrid`);
+        return 1;
+    }
     const cwd = options.cwd ?? process.cwd();
     const dryRun = flags.includes('--dry-run');
     const skipBuild = flags.includes('--skip-build');
@@ -78,6 +84,7 @@ async function runDeployCommand(flags, options = {}) {
         const result = await (0, deploy_1.runDeploy)({
             cwd,
             target,
+            output: output,
             dryRun,
             skipBuild,
             prod,

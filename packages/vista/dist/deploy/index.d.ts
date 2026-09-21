@@ -5,6 +5,7 @@ export type { DeployContext, DeployResult, DeployAdapter, ResolvedDeployTarget }
 export interface RunDeployOptions {
     cwd?: string;
     target?: string | null;
+    output?: 'standalone' | 'static' | 'hybrid';
     dryRun?: boolean;
     skipBuild?: boolean;
     prod?: boolean;

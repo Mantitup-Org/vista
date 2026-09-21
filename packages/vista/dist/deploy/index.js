@@ -23,6 +23,9 @@ function createContext(options) {
     const cwd = options.cwd ?? process.cwd();
     const config = (0, config_1.loadConfig)(cwd);
     const deployConfig = (0, config_1.resolveDeployConfig)(config);
+    if (options.output) {
+        deployConfig.output = options.output;
+    }
     const target = (0, detect_1.resolveDeployTarget)(cwd, deployConfig, options.target ?? null);
     return {
         cwd,

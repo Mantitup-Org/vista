@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 
-import { listKnownTargets, runDeploy } from '../deploy';
+import { listKnownTargets, runDeploy, type ResolvedDeployTarget } from '../deploy';
 
 export interface RunDeployCommandOptions {
   cwd?: string;
@@ -29,6 +29,7 @@ function printHelp(): void {
   console.log('');
   console.log('Options:');
   console.log('  --target <auto|render|vercel|cloudflare|netlify|docker>');
+  console.log('  --output <standalone|static|hybrid>');
   console.log('  --prod                 Production deploy (default)');
   console.log('  --preview              Preview/staging deploy');
   console.log('  --dry-run              Build + emit + validate only');
@@ -73,9 +74,17 @@ export async function runDeployCommand(
     return 1;
   }
 
-  if (target && !listKnownTargets().includes(target as any)) {
+  if (target && !listKnownTargets().includes(target as ResolvedDeployTarget)) {
     (options.error ?? console.error)(
       `[vista:deploy] Unsupported target "${target}". Use one of: ${listKnownTargets().join(', ')}`
+    );
+    return 1;
+  }
+
+  const output = getFlagValue(flags, '--output');
+  if (output && !['standalone', 'static', 'hybrid'].includes(output)) {
+    (options.error ?? console.error)(
+      `[vista:deploy] Unsupported output "${output}". Use one of: standalone, static, hybrid`
     );
     return 1;
   }
@@ -96,6 +105,7 @@ export async function runDeployCommand(
     const result = await runDeploy({
       cwd,
       target,
+      output: output as 'standalone' | 'static' | 'hybrid' | undefined,
       dryRun,
       skipBuild,
       prod,

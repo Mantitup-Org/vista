@@ -5,7 +5,28 @@ import type { DeployContext } from './types';
 import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, writeFileIfAllowed } from './utils';
 
 export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
-  return ctx.deployConfig.output === 'static';
+  if (ctx.deployConfig.output === 'static') {
+    return true;
+  }
+  if (ctx.target === 'cloudflare') {
+    if (ctx.config.deploy?.output === 'standalone') {
+      return false;
+    }
+    if (process.env.CF_PAGES === '1' || process.env.CLOUDFLARE_PAGES) {
+      return true;
+    }
+    const wranglerPath = path.join(ctx.cwd, 'wrangler.toml');
+    if (fs.existsSync(wranglerPath)) {
+      const content = fs.readFileSync(wranglerPath, 'utf8');
+      if (content.includes('pages_build_output_dir')) {
+        return true;
+      }
+      if (content.includes('[[containers]]') || content.includes('main =')) {
+        return false;
+      }
+    }
+  }
+  return false;
 }
 
 export function resolveStandaloneServerPath(ctx: DeployContext): string {

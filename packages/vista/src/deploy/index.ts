@@ -14,6 +14,7 @@ export type { DeployContext, DeployResult, DeployAdapter, ResolvedDeployTarget }
 export interface RunDeployOptions {
   cwd?: string;
   target?: string | null;
+  output?: 'standalone' | 'static' | 'hybrid';
   dryRun?: boolean;
   skipBuild?: boolean;
   prod?: boolean;
@@ -30,6 +31,9 @@ function createContext(options: RunDeployOptions): DeployContext {
   const cwd = options.cwd ?? process.cwd();
   const config = loadConfig(cwd);
   const deployConfig = resolveDeployConfig(config);
+  if (options.output) {
+    deployConfig.output = options.output;
+  }
   const target = resolveDeployTarget(cwd, deployConfig, options.target ?? null);
 
   return {
