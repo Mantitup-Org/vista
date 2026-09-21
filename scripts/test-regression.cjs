@@ -136,6 +136,16 @@ function createFixtureApp() {
     ].join('\n')
   );
 
+  // client-only/page.js — client component page with 'use client'
+  writeFile(
+    path.join(appDir, 'client-only', 'page.js'),
+    [
+      "'use client';",
+      "exports.metadata = { title: 'Client Only' };",
+      "exports.default = function ClientOnlyPage() { return 'client-only'; };",
+    ].join('\n')
+  );
+
   // vista.config
   writeFile(path.join(tempRoot, 'vista.config.ts'), 'export default {};');
 
@@ -238,6 +248,13 @@ function suiteHiddenRouteSafety(fixtureRoot) {
         `Route pattern "${route.pattern}" contains literal [not-found]`
       );
     }
+  });
+
+  // 1.7 — Client component routes ('use client') are preserved in manifest
+  test('Client component routes are present in manifest', () => {
+    const manifest = generateServerManifest(fixtureRoot, fixtureAppDir);
+    const patterns = manifest.routes.map((r) => r.pattern);
+    assert(patterns.includes('/client-only'), 'Missing client component route /client-only');
   });
 }
 

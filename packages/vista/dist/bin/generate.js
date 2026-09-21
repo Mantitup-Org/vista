@@ -62,7 +62,7 @@ function renderAgent(kebabName) {
 function renderAgentRoute(kebabName) {
     const camelName = toCamelCase(kebabName);
     return [
-        `import { ${camelName}Agent } from '../../agents/${kebabName}/agent';`,
+        `import { ${camelName}Agent } from '../../../agents/${kebabName}/agent';`,
         '',
         'export async function POST(req: Request) {',
         '  const { prompt, messages, sessionId } = await req.json();',
@@ -335,6 +335,8 @@ function renderSignInPage() {
 }
 function renderAccountPage() {
     return [
+        "export const dynamic = 'force-dynamic';",
+        '',
         "import { auth } from '../../auth';",
         '',
         'export default async function AccountPage() {',
