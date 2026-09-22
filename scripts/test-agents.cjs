@@ -8,16 +8,17 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const vistaSrc = path.join(repoRoot, 'packages', 'vista', 'src');
 
+const searchRoots = [repoRoot, path.join(repoRoot, 'packages', 'vista')];
+const resolveFromWorkspace = (specifier) => {
+  for (const root of searchRoots) {
+    try {
+      return require.resolve(specifier, { paths: [root] });
+    } catch {}
+  }
+  throw new Error(`Unable to resolve ${specifier}`);
+};
+
 function registerTypeScriptRuntime() {
-  const searchRoots = [repoRoot, path.join(repoRoot, 'packages', 'vista')];
-  const resolveFromWorkspace = (specifier) => {
-    for (const root of searchRoots) {
-      try {
-        return require.resolve(specifier, { paths: [root] });
-      } catch {}
-    }
-    throw new Error(`Unable to resolve ${specifier}`);
-  };
   try {
     require(resolveFromWorkspace('@swc-node/register'));
     return;
@@ -93,6 +94,52 @@ async function main() {
   }
 
   assert.equal(fs.existsSync(path.join(repoRoot, 'AGENTS.md')), true);
+
+  // Regression test for issue #84: useAgent SSE error chunk handling
+  const React = require(resolveFromWorkspace('react'));
+  const ReactDOMServer = require(resolveFromWorkspace('react-dom/server'));
+  const { useAgent } = require(path.join(vistaSrc, 'ai', 'react', 'use-agent.ts'));
+
+  let finishCalled = false;
+  let errorReceived = null;
+  let hookInstance;
+
+  function TestHookComponent() {
+    hookInstance = useAgent({
+      api: 'http://localhost:9999/chat',
+      onError: (err) => {
+        errorReceived = err;
+      },
+      onFinish: () => {
+        finishCalled = true;
+      },
+    });
+    return null;
+  }
+
+  ReactDOMServer.renderToString(React.createElement(TestHookComponent));
+
+  globalThis.fetch = async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"type":"error","error":"provider failed"}\n\ndata: [DONE]\n\n'
+          )
+        );
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  };
+
+  await hookInstance.handleSubmit(null, { prompt: 'test error propagation' });
+  assert.equal(finishCalled, false, 'onFinish must NOT be called when SSE returns an error chunk');
+  assert.ok(errorReceived, 'onError must be called when SSE returns an error chunk');
+  assert.equal(errorReceived.message, 'provider failed');
 
   console.log('[test:agents] ALL PASSED');
 }
