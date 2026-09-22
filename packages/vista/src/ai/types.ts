@@ -73,6 +73,7 @@ export interface StreamChunk {
   toolResult?: ToolResult;
   usage?: TokenUsage;
   error?: string;
+  finishReason?: string;
 }
 
 export interface LanguageModel {

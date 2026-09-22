@@ -411,7 +411,7 @@ export class Agent {
         await self.memory.save(sessionId, conversationHistory);
       }
 
-      yield { type: 'done', usage: totalUsage };
+      yield { type: 'done', usage: totalUsage, finishReason: currentStep > maxSteps ? 'length' : 'stop' };
     }
 
     return new AgentStream(streamGenerator());
