@@ -146,7 +146,6 @@ function writeStaticRscRedirects(pagesDir, targetDir) {
             return;
         const routePath = posix.replace(/\.rsc$/, '');
         const flightPath = `/rsc/${posix}`;
-        lines.push(`${flightPath} ${flightPath} 200`);
         if (routePath === 'index')
             return;
         lines.push(`/rsc/${routePath} ${flightPath} 200`);

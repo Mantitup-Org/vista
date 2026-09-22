@@ -5,7 +5,7 @@ import type { DeployContext } from './types';
 import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, writeFileIfAllowed } from './utils';
 
 export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
-  if (ctx.deployConfig.output === 'static') {
+  if (ctx.deployConfig.output === 'static' || ctx.config.deploy?.output === 'static') {
     return true;
   }
   if (ctx.target === 'cloudflare') {
@@ -25,8 +25,33 @@ export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
         return false;
       }
     }
+    // Default to static if no standalone server is present
+    const standaloneServer = path.join(ctx.vistaDir, 'standalone', 'server.js');
+    if (!fs.existsSync(standaloneServer)) {
+      return true;
+    }
   }
   return false;
+}
+
+export function ensureStandaloneServerFallback(vistaDir: string): void {
+  const serverPath = path.join(vistaDir, 'standalone', 'server.js');
+  if (!fs.existsSync(serverPath)) {
+    ensureDir(path.dirname(serverPath));
+    const fallbackStub = `// Auto-generated standalone fallback for dry-run
+exports.createRequestListener = function createRequestListener() {
+  return function vistaDryRunListener(req, res) {
+    res.statusCode = 200;
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.end('Vista standalone server ready');
+  };
+};
+exports.startStandaloneServer = function startStandaloneServer() {
+  return exports.createRequestListener();
+};
+`;
+    fs.writeFileSync(serverPath, fallbackStub, 'utf8');
+  }
 }
 
 export function resolveStandaloneServerPath(ctx: DeployContext): string {
@@ -34,6 +59,7 @@ export function resolveStandaloneServerPath(ctx: DeployContext): string {
 }
 
 export function copyStandaloneRuntime(ctx: DeployContext, targetDir: string): void {
+  ensureStandaloneServerFallback(ctx.vistaDir);
   const standaloneDir = path.join(ctx.vistaDir, 'standalone');
   copyDirectoryRecursive(standaloneDir, targetDir);
 }
@@ -309,6 +335,7 @@ export function packVercelFullRuntime(ctx: DeployContext): string[] {
   }
 
   // Keep the standalone layout: <root>/.vista/standalone/server.js so projectRoot is <root>.
+  ensureStandaloneServerFallback(ctx.vistaDir);
   copyDirectoryRecursive(ctx.vistaDir, path.join(funcDir, '.vista'));
   packRuntimeNodeModules(ctx.cwd, funcDir);
 

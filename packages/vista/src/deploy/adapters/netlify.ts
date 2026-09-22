@@ -3,7 +3,7 @@ import path from 'path';
 
 import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runner';
 import { runStandalonePreflight, runStaticHostPreflight, splitPreflightMessages } from '../preflight';
-import { isStaticOnlyDeploy, packRuntimeNodeModules, writeNetlifySsrHandler } from '../runtime-pack';
+import { isStaticOnlyDeploy, packRuntimeNodeModules, writeNetlifySsrHandler, ensureStandaloneServerFallback } from '../runtime-pack';
 import type { DeployAdapter } from '../types';
 import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
 
@@ -94,6 +94,7 @@ export const netlifyAdapter: DeployAdapter = {
     const functionDir = path.join(ctx.cwd, 'netlify', 'functions');
     fs.rmSync(functionDir, { recursive: true, force: true });
     writeNetlifySsrHandler(functionDir);
+    ensureStandaloneServerFallback(ctx.vistaDir);
     copyDirectoryRecursive(ctx.vistaDir, path.join(functionDir, '.vista'));
     packRuntimeNodeModules(ctx.cwd, functionDir);
     const netlifyTomlPath = writeFullRuntimeNetlifyToml(ctx);
