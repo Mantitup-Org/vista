@@ -158,13 +158,40 @@ function createIncomingMessage(event) {
 function createServerResponse(req) {
   const chunks = [];
   const res = new http.ServerResponse(req);
-  const sink = new stream.Writable({
-    write(chunk, _enc, cb) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
+  const dummySocket = new stream.Duplex({
+    read() {},
+    write(_chunk, _enc, cb) { cb(); },
   });
-  res.assignSocket(sink);
+  dummySocket.cork = function() {};
+  dummySocket.uncork = function() {};
+  dummySocket.destroy = function() {};
+  res.assignSocket(dummySocket);
+
+  const origWrite = res.write.bind(res);
+  const origEnd = res.end.bind(res);
+
+  res.write = function write(chunk, encoding, cb) {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') {
+      cb = encoding;
+      encoding = undefined;
+    }
+    return origWrite(chunk, encoding, cb);
+  };
+
+  res.end = function end(chunk, encoding, cb) {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') {
+      cb = encoding;
+      encoding = undefined;
+    }
+    return origEnd(chunk, encoding, cb);
+  };
+
   res.flushHeaders = res.flushHeaders || function flushHeaders() {
     if (!this._header) this._implicitHeader();
   };

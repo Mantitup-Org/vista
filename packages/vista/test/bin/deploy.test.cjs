@@ -362,3 +362,69 @@ test('netlify adapter emit packs Flight function with .vista standalone', async 
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('netlify emitted ssr handler serializes body without wire headers or chunk framing', async () => {
+  const cwd = makeTempWorkspace();
+  const vm = require('node:vm');
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    const adapter = getDeployAdapter('netlify');
+    await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'netlify',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+
+    const handlerSource = fs.readFileSync(path.join(cwd, 'netlify', 'functions', 'ssr.js'), 'utf8');
+
+    async function probe(streamed) {
+      const output = {};
+      vm.runInNewContext(handlerSource, {
+        exports: output,
+        __dirname: path.join(cwd, 'netlify', 'functions'),
+        Buffer,
+        URLSearchParams,
+        process: { env: {}, chdir() {} },
+        require(name) {
+          if (name === path.join(cwd, 'netlify', 'functions', '.vista', 'standalone', 'server.js')) {
+            return {
+              createRequestListener: () => (_req, res) => {
+                res.sendDate = false;
+                res.setHeader('Content-Type', 'text/plain');
+                res.setHeader('Set-Cookie', ['a=1', 'b=2']);
+                if (streamed) {
+                  res.write('O');
+                  res.end('K');
+                } else {
+                  res.end('OK');
+                }
+              },
+            };
+          }
+          if (['path', 'http', 'stream'].includes(name)) return require(name);
+          throw new Error(`Unexpected handler import: ${name}`);
+        },
+      });
+
+      const response = await output.handler({ path: '/docs', httpMethod: 'GET', headers: {} });
+      const decoded = Buffer.from(response.body, 'base64').toString();
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.headers['content-type'], 'text/plain');
+      assert.equal(JSON.stringify(response.multiValueHeaders['set-cookie']), '["a=1","b=2"]');
+      assert.equal(decoded, 'OK');
+      assert.doesNotMatch(decoded, /^HTTP\/1\.1/);
+    }
+
+    await probe(false);
+    await probe(true);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
