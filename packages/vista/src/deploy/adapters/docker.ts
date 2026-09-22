@@ -11,9 +11,21 @@ export const DOCKERFILE_TEMPLATE = `# syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
-RUN npm install --no-audit --no-fund
+RUN if [ -f pnpm-lock.yaml ]; then \\
+      corepack enable pnpm && pnpm install --no-audit --no-fund; \\
+    elif [ -f yarn.lock ]; then \\
+      yarn install --no-audit --no-fund; \\
+    else \\
+      npm install --no-audit --no-fund; \\
+    fi
 COPY . .
-RUN npm run build
+RUN if [ -f pnpm-lock.yaml ]; then \\
+      pnpm run build; \\
+    elif [ -f yarn.lock ]; then \\
+      yarn build; \\
+    else \\
+      npm run build; \\
+    fi
 
 FROM node:20-alpine AS runner
 WORKDIR /app
