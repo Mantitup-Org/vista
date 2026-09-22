@@ -124,6 +124,7 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
     const pathname = rscRouter?.pathname ?? legacyRouter?.pathname ?? fallbackPathname;
     const linkRef = (0, react_1.useRef)(null);
     const targetPath = formatUrl(as || href);
+    const targetPathname = (0, react_1.useMemo)(() => targetPath.split(/[?#]/)[0] || '/', [targetPath]);
     const [isActive, setIsActive] = (0, react_1.useState)(false);
     const internal = (0, react_1.useMemo)(() => isInternalUrl(targetPath), [targetPath]);
     const prefetchBehavior = (0, react_1.useMemo)(() => resolvePrefetchBehavior(prefetch), [prefetch]);
@@ -140,12 +141,12 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
     // Check if link is active (current route)
     (0, react_1.useEffect)(() => {
         if (typeof window !== 'undefined') {
-            // Exact match or starts-with for nested routes
-            const exact = pathname === targetPath;
-            const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+            // Exact match or starts-with for nested routes (excluding query/hash)
+            const exact = pathname === targetPathname;
+            const partial = targetPathname !== '/' && pathname.startsWith(targetPathname + '/');
             setIsActive(exact || partial);
         }
-    }, [targetPath, pathname]);
+    }, [targetPathname, pathname]);
     // Prefetch on viewport intersection (skip for external links & auto mode)
     (0, react_1.useEffect)(() => {
         if (!prefetchBehavior.viewport)
@@ -154,7 +155,7 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
             return;
         if (typeof window === 'undefined')
             return;
-        if (pathname === targetPath)
+        if (pathname === targetPathname)
             return;
         const element = linkRef.current;
         if (!element)
@@ -177,12 +178,12 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
         });
         observer.observe(element);
         return () => observer.disconnect();
-    }, [prefetchBehavior.viewport, targetPath, pathname, rscRouter, internal]);
+    }, [prefetchBehavior.viewport, targetPath, targetPathname, pathname, rscRouter, internal]);
     // Prefetch on hover
     const handleMouseEnter = (0, react_1.useCallback)((e) => {
         if (onMouseEnter)
             onMouseEnter(e);
-        if (prefetchBehavior.intent && internal && pathname !== targetPath) {
+        if (prefetchBehavior.intent && internal && pathname !== targetPathname) {
             if (rscRouter) {
                 rscRouter.prefetch(targetPath);
             }
@@ -190,12 +191,12 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
                 prefetchUrl(targetPath);
             }
         }
-    }, [onMouseEnter, prefetchBehavior.intent, targetPath, pathname, rscRouter, internal]);
+    }, [onMouseEnter, prefetchBehavior.intent, targetPath, targetPathname, pathname, rscRouter, internal]);
     // Prefetch on touch (mobile devices)
     const handleTouchStart = (0, react_1.useCallback)((e) => {
         if (onTouchStart)
             onTouchStart(e);
-        if (prefetchBehavior.intent && internal && pathname !== targetPath) {
+        if (prefetchBehavior.intent && internal && pathname !== targetPathname) {
             if (rscRouter) {
                 rscRouter.prefetch(targetPath);
             }
@@ -203,7 +204,7 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
                 prefetchUrl(targetPath);
             }
         }
-    }, [onTouchStart, prefetchBehavior.intent, targetPath, pathname, rscRouter, internal]);
+    }, [onTouchStart, prefetchBehavior.intent, targetPath, targetPathname, pathname, rscRouter, internal]);
     // Handle navigation
     const handleClick = (0, react_1.useCallback)((e) => {
         if (onClick)
@@ -215,12 +216,19 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
             return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
             return; // modifier = new tab
-        if (target === '_blank')
-            return; // explicit new tab
+        if (target && target !== '_self')
+            return; // non-self target: browser handles frame/window
+        if (props.download != null && props.download !== false)
+            return; // download attribute: browser handles download
         if (!href)
             return;
         if (!internal)
             return; // external / mailto / tel
+        // Same-page hash navigation: allow native anchor scrolling without Flight RSC refetch
+        const [targetBase, targetHash] = targetPath.split('#');
+        if (targetHash !== undefined && (targetBase === '' || targetBase === pathname)) {
+            return;
+        }
         if (!rscRouter && !legacyRouter)
             return; // No router provider -> allow native navigation
         e.preventDefault();
@@ -247,12 +255,14 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
         onClick,
         href,
         targetPath,
+        pathname,
         replace,
         scroll,
         rscRouter,
         legacyRouter,
         onNavigate,
         target,
+        props.download,
         internal,
     ]);
     // Data + Aria attributes for styling active links
@@ -280,7 +290,8 @@ exports.useLinkStatus = useLinkStatus;
  */
 const useIsActive = (path) => {
     const pathname = (0, router_1.usePathname)();
-    return pathname === path;
+    const basePath = path.split(/[?#]/)[0] || '/';
+    return pathname === basePath;
 };
 exports.useIsActive = useIsActive;
 exports.default = exports.Link;
