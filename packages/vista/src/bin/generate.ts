@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
-import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
+import { isSrcAppLayout, resolveAppDir, resolveComponentsDir } from '../server/app-dir';
+
+function getRelativeImportPath(fromDir: string, targetFileWithoutExt: string): string {
+  let rel = path.relative(fromDir, targetFileWithoutExt).replace(/\\/g, '/');
+  if (!rel.startsWith('.')) {
+    rel = './' + rel;
+  }
+  return rel;
+}
 
 type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent' | 'auth';
 type ProcedureMethod = 'get' | 'post';
@@ -294,18 +302,18 @@ function renderAuthConfig(): string {
   ].join('\n');
 }
 
-function renderAuthRoute(): string {
+function renderAuthRoute(authImportPath = '../../../../auth'): string {
   return [
-    "import { handlers } from '../../../../auth';",
+    `import { handlers } from '${authImportPath}';`,
     '',
     'export const { GET, POST } = handlers;',
     '',
   ].join('\n');
 }
 
-function renderAuthMiddleware(): string {
+function renderAuthMiddleware(authImportPath = './auth'): string {
   return [
-    "import { authMiddleware } from './auth';",
+    `import { authMiddleware } from '${authImportPath}';`,
     '',
     "export default authMiddleware(({ auth, request }) => {",
     '  const pathname = new URL(request.url).pathname;',
@@ -384,11 +392,11 @@ function renderSignInPage(): string {
   ].join('\n');
 }
 
-function renderAccountPage(): string {
+function renderAccountPage(authImportPath = '../../auth'): string {
   return [
     "export const dynamic = 'force-dynamic';",
     '',
-    "import { auth } from '../../auth';",
+    `import { auth } from '${authImportPath}';`,
     '',
     'export default async function AccountPage() {',
     '  const session = await auth();',
@@ -418,9 +426,15 @@ function renderEnvExample(): string {
 }
 
 function patchRootWithSessionProvider(cwd: string): { path: string; patched: boolean } {
-  const absolutePath = path.join(resolveAppDir(cwd), 'root.tsx');
+  const resolvedAppDir = resolveAppDir(cwd);
+  let absolutePath = path.join(resolvedAppDir, 'root.tsx');
   if (!fs.existsSync(absolutePath)) {
-    return { path: absolutePath, patched: false };
+    const layoutPath = path.join(resolvedAppDir, 'layout.tsx');
+    if (fs.existsSync(layoutPath)) {
+      absolutePath = layoutPath;
+    } else {
+      return { path: absolutePath, patched: false };
+    }
   }
 
   let source = fs.readFileSync(absolutePath, 'utf8');
@@ -432,10 +446,14 @@ function patchRootWithSessionProvider(cwd: string): { path: string; patched: boo
     return { path: absolutePath, patched: false };
   }
 
-  if (!source.includes("from '../components/auth-session-provider'")) {
+  const resolvedComponentsDir = resolveComponentsDir(cwd);
+  const providerPathNoExt = path.join(resolvedComponentsDir, 'auth-session-provider');
+  const providerImportPath = getRelativeImportPath(path.dirname(absolutePath), providerPathNoExt);
+
+  if (!source.includes(providerImportPath)) {
     source = source.replace(
       /from 'vista\/theme';/,
-      "from 'vista/theme';\nimport { AuthSessionProvider } from '../components/auth-session-provider';"
+      `from 'vista/theme';\nimport { AuthSessionProvider } from '${providerImportPath}';`
     );
   }
 
@@ -596,21 +614,59 @@ export async function runGenerateCommand(
   }
 
   if (command === 'auth') {
+    const resolvedAppDir = resolveAppDir(cwd);
+    const usesSrc = isSrcAppLayout(cwd, resolvedAppDir);
+
+    const rootAuthExists =
+      fs.existsSync(path.join(cwd, 'auth.ts')) || fs.existsSync(path.join(cwd, 'auth.js'));
+    const srcAuthExists =
+      fs.existsSync(path.join(cwd, 'src', 'auth.ts')) ||
+      fs.existsSync(path.join(cwd, 'src', 'auth.js'));
+    const authDirRelative = (usesSrc && !rootAuthExists) || srcAuthExists ? 'src' : '';
+    const authFileRelative = path.join(authDirRelative, 'auth.ts');
+    const authTargetNoExt = path.join(cwd, authDirRelative, 'auth');
+
+    const rootMiddlewareExists =
+      fs.existsSync(path.join(cwd, 'middleware.ts')) ||
+      fs.existsSync(path.join(cwd, 'middleware.js'));
+    const srcMiddlewareExists =
+      fs.existsSync(path.join(cwd, 'src', 'middleware.ts')) ||
+      fs.existsSync(path.join(cwd, 'src', 'middleware.js'));
+    const middlewareDirRelative =
+      (usesSrc && !rootMiddlewareExists) || srcMiddlewareExists ? 'src' : '';
+    const middlewareFileRelative = path.join(middlewareDirRelative, 'middleware.ts');
+    const middlewareDirAbsolute = path.join(cwd, middlewareDirRelative);
+
+    const authRouteDirAbsolute = path.join(cwd, appDirRelative, 'api', 'auth', '[...vista]');
+    const accountPageDirAbsolute = path.join(cwd, appDirRelative, 'account');
+
+    const authImportFromRoute = getRelativeImportPath(authRouteDirAbsolute, authTargetNoExt);
+    const authImportFromAccount = getRelativeImportPath(accountPageDirAbsolute, authTargetNoExt);
+    const authImportFromMiddleware = getRelativeImportPath(middlewareDirAbsolute, authTargetNoExt);
+
     const writes = [
-      writeFileIfMissing(cwd, 'auth.ts', renderAuthConfig()),
+      writeFileIfMissing(cwd, authFileRelative, renderAuthConfig()),
       writeFileIfMissing(
         cwd,
         path.join(appDirRelative, 'api', 'auth', '[...vista]', 'route.ts'),
-        renderAuthRoute()
+        renderAuthRoute(authImportFromRoute)
       ),
-      writeFileIfMissing(cwd, 'middleware.ts', renderAuthMiddleware()),
+      writeFileIfMissing(
+        cwd,
+        middlewareFileRelative,
+        renderAuthMiddleware(authImportFromMiddleware)
+      ),
       writeFileIfMissing(
         cwd,
         path.join(componentsDirRelative, 'auth-session-provider.tsx'),
         renderAuthSessionProvider()
       ),
       writeFileIfMissing(cwd, path.join(appDirRelative, 'signin', 'page.tsx'), renderSignInPage()),
-      writeFileIfMissing(cwd, path.join(appDirRelative, 'account', 'page.tsx'), renderAccountPage()),
+      writeFileIfMissing(
+        cwd,
+        path.join(appDirRelative, 'account', 'page.tsx'),
+        renderAccountPage(authImportFromAccount)
+      ),
       writeFileIfMissing(cwd, '.env.example', renderEnvExample()),
     ];
     writes.forEach((result) => {
