@@ -47,7 +47,7 @@ function runPostCSS(cwd: string, vistaDir: string) {
     try {
       const cssOut = path.join(vistaDir, 'client.css');
       const globalsCssRelative = path.relative(cwd, globalsCss).replace(/\\/g, '/');
-      execSync(`npx postcss "${globalsCssRelative}" -o "${cssOut}"`, {
+      execSync(`npx --yes postcss "${globalsCssRelative}" -o "${cssOut}"`, {
         stdio: _debug ? 'inherit' : 'pipe',
         cwd,
       });
