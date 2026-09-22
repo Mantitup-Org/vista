@@ -182,7 +182,9 @@ async function requestRoute<TOutput>(options: {
     if (!requestHeaders.has('content-type')) {
       requestHeaders.set('content-type', 'application/json');
     }
-    requestInit.body = JSON.stringify(serializeWithMode(options.input, options.serialization));
+    if (options.input !== undefined) {
+      requestInit.body = JSON.stringify(serializeWithMode(options.input, options.serialization));
+    }
   }
 
   const response = await options.fetchImpl(url, requestInit);
