@@ -149,8 +149,9 @@ function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
 
     const routePath = posix.replace(/\.rsc$/, '');
     const flightPath = `/rsc/${posix}`;
-    lines.push(`${flightPath} ${flightPath} 200`);
 
+    // Note: Do not emit identity rewrite (`/rsc/foo.rsc /rsc/foo.rsc 200`) as Cloudflare Pages
+    // treats self-referential rules as routing rewrites that can shadow static binary assets.
     if (routePath === 'index') return;
     lines.push(`/rsc/${routePath} ${flightPath} 200`);
   });
