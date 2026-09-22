@@ -160,16 +160,38 @@ function createIncomingMessage(event) {
 function createServerResponse(req) {
   const chunks = [];
   const res = new http.ServerResponse(req);
-  const sink = new stream.Writable({
-    write(chunk, _enc, cb) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
-  });
-  res.assignSocket(sink);
-  res.flushHeaders = res.flushHeaders || function flushHeaders() {
-    if (!this._header) this._implicitHeader();
+
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+
+  res.write = function write(chunk, encoding, callback) {
+    if (typeof encoding === 'function') {
+      callback = encoding;
+      encoding = undefined;
+    }
+    if (chunk) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding || 'utf8');
+      chunks.push(buf);
+    }
+    return originalWrite(chunk, encoding, callback);
   };
+
+  res.end = function end(chunk, encoding, callback) {
+    if (typeof chunk === 'function') {
+      callback = chunk;
+      chunk = undefined;
+    }
+    if (typeof encoding === 'function') {
+      callback = encoding;
+      encoding = undefined;
+    }
+    if (chunk) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding || 'utf8');
+      chunks.push(buf);
+    }
+    return originalEnd(chunk, encoding, callback);
+  };
+
   return {
     res,
     getBody() {
@@ -320,7 +342,7 @@ export function packVercelFullRuntime(ctx: DeployContext): string[] {
       {
         src: '^/_vista/static/(.*)$',
         headers: { 'cache-control': 'public, max-age=31536000, immutable' },
-        dest: '/_vista/static/$1',
+        dest: '/static/_vista/static/$1',
       },
       { handle: 'filesystem' },
       { src: '/(.*)', dest: '/' },

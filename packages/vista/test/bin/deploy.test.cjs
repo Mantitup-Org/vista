@@ -147,6 +147,92 @@ test('vercel adapter dry-run emits build output when forced', async () => {
   }
 });
 
+test('vercel static-only Build Output routes point to actual file locations', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    // Create a static-only build (no standalone server)
+    const vistaDir = path.join(cwd, '.vista');
+    fs.mkdirSync(path.join(vistaDir, 'server'), { recursive: true });
+    fs.mkdirSync(path.join(vistaDir, 'static', 'pages'), { recursive: true });
+    fs.mkdirSync(path.join(vistaDir, 'static', 'chunks'), { recursive: true });
+
+    const requiredFiles = [
+      'BUILD_ID',
+      'artifact-manifest.json',
+      'build-manifest.json',
+      'routes-manifest.json',
+      'app-path-routes-manifest.json',
+      'prerender-manifest.json',
+      'required-server-files.json',
+      'react-client-manifest.json',
+      'react-server-manifest.json',
+      'server/server-manifest.json',
+      'server/runtime-manifest.json',
+      'server/file-trace.json',
+    ];
+    for (const rel of requiredFiles) {
+      const abs = path.join(vistaDir, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      if (rel.endsWith('.json')) {
+        const payload =
+          rel === 'artifact-manifest.json' || rel === 'server/runtime-manifest.json' || rel === 'server/file-trace.json'
+            ? { schemaVersion: 1, copiedFiles: [] }
+            : rel === 'prerender-manifest.json'
+              ? { routes: { '/': {} } }
+              : rel === 'routes-manifest.json'
+                ? { staticRoutes: [{ page: '/' }] }
+                : {};
+        fs.writeFileSync(abs, `${JSON.stringify(payload)}\n`, 'utf8');
+      } else {
+        fs.writeFileSync(abs, 'ok', 'utf8');
+      }
+    }
+
+    // Static pages + RSC payloads
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'index.html'), '<html>home</html>', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'index.rsc'), 'flight-home', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'about.html'), '<html>about</html>', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'about.rsc'), 'flight-about', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'chunks', 'main.js'), 'console.log(1)', 'utf8');
+
+    fs.mkdirSync(path.join(cwd, 'public'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'public', 'favicon.ico'), 'icon', 'utf8');
+
+    const { writeVercelBuildOutput } = require('../../dist/deploy/adapters/vercel');
+    const wrote = writeVercelBuildOutput({ cwd, vistaDir, force: true });
+    assert.equal(wrote, true);
+
+    const configPath = path.join(cwd, '.vercel', 'output', 'config.json');
+    assert.equal(fs.existsSync(configPath), true);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // copyStaticHostAssets nests files under static/static/ — routes must match.
+    assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'static', 'static', 'pages', 'index.html')), true);
+    assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'static', 'static', 'pages', 'about.rsc')), true);
+
+    // Verify every non-filesystem route dest resolves to a real file
+    // (using a concrete substitution that matches an actual file path).
+    const substitutions = {
+      '^/_vista/static/(.*)$': 'chunks/main.js',
+      '^/(?:rsc|_rsc)/(.+)$': 'about',
+      '^/(.+)$': 'about',
+    };
+    for (const route of config.routes) {
+      if (route.handle || !route.dest) continue;
+      const sub = substitutions[route.src] || 'index';
+      const testDest = route.dest.replace('$1', sub);
+      const resolved = path.join(cwd, '.vercel', 'output', testDest.replace(/^\//, ''));
+      assert.equal(
+        fs.existsSync(resolved),
+        true,
+        `Route dest ${route.dest} (resolved ${testDest}) does not match any file at ${resolved}`
+      );
+    }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('runDeployCommand returns non-zero when target cannot be detected', async () => {
   const cwd = makeTempWorkspace();
   try {
@@ -361,4 +447,149 @@ test('netlify adapter emit packs Flight function with .vista standalone', async 
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test('vercel full runtime Build Output route dest points to static/_vista/static/', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.mkdirSync(path.join(cwd, '.vista', 'static', 'chunks'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'chunks', 'main.js'), 'console.log(1)', 'utf8');
+    fs.mkdirSync(path.join(cwd, 'node_modules', 'react'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'node_modules', 'react', 'package.json'), '{}', 'utf8');
+    fs.writeFileSync(path.join(cwd, 'package.json'), '{"name":"test"}', 'utf8');
+
+    const { packVercelFullRuntime } = require('../../dist/deploy/runtime-pack');
+    packVercelFullRuntime({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: { target: 'vercel', output: 'standalone', prod: true, preferBuildOutputApi: true },
+      target: 'vercel',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+      debug: false,
+    });
+
+    const config = JSON.parse(
+      fs.readFileSync(path.join(cwd, '.vercel', 'output', 'config.json'), 'utf8')
+    );
+
+    // The /_vista/static/* route must resolve to files under static/_vista/static/
+    // because copyStaticHostAssets nests files under static/_vista/static/.
+    const staticRoute = config.routes.find(r => r.src === '^/_vista/static/(.*)$');
+    assert.ok(staticRoute, 'Expected /_vista/static/* route in config');
+    assert.equal(
+      staticRoute.dest,
+      '/static/_vista/static/$1',
+      `Route dest should be /static/_vista/static/$1, got ${staticRoute.dest}`
+    );
+
+    // Verify the file actually exists at the resolved path
+    const testFile = 'chunks/main.js';
+    const resolvedDest = staticRoute.dest.replace('$1', testFile);
+    const resolvedPath = path.join(cwd, '.vercel', 'output', resolvedDest.replace(/^\//, ''));
+    assert.equal(
+      fs.existsSync(resolvedPath),
+      true,
+      `Route dest ${resolvedDest} should resolve to existing file at ${resolvedPath}`
+    );
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('netlify SSR handler captures response body without HTTP headers', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    const adapter = getDeployAdapter('netlify');
+    await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'netlify',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+
+    const handlerPath = path.join(cwd, 'netlify', 'functions', 'ssr.js');
+    const handlerSrc = fs.readFileSync(handlerPath, 'utf8');
+
+    // The handler must NOT use assignSocket to capture the response,
+    // because that captures the full HTTP response (status line + headers + body).
+    assert.doesNotMatch(
+      handlerSrc,
+      /assignSocket/,
+      'SSR handler must not use assignSocket — it captures HTTP headers in the body'
+    );
+
+    // The handler must override res.write/res.end to capture only the body.
+    assert.match(
+      handlerSrc,
+      /res\.write\s*=/,
+      'SSR handler must override res.write to capture body only'
+    );
+    assert.match(
+      handlerSrc,
+      /res\.end\s*=/,
+      'SSR handler must override res.end to capture body only'
+    );
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('docker Dockerfile detects package manager from lock files', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.writeFileSync(path.join(cwd, 'pnpm-lock.yaml'), 'lockfileVersion: 6.0\n', 'utf8');
+    fs.writeFileSync(
+      path.join(cwd, 'package.json'),
+      JSON.stringify({ name: 'test', scripts: { build: 'echo build' } }),
+      'utf8'
+    );
+
+    const result = await runDeploy({
+      cwd,
+      target: 'docker',
+      dryRun: true,
+      skipBuild: true,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    const dockerfile = fs.readFileSync(path.join(cwd, 'Dockerfile'), 'utf8');
+
+    // Must detect pnpm-lock.yaml and use pnpm install
+    assert.match(dockerfile, /pnpm-lock\.yaml/, 'Dockerfile must check for pnpm-lock.yaml');
+    assert.match(dockerfile, /pnpm install/, 'Dockerfile must use pnpm install when pnpm-lock.yaml exists');
+    assert.match(dockerfile, /yarn install/, 'Dockerfile must use yarn install when yarn.lock exists');
+
+    // The Dockerfile must have conditional logic, not a single unconditional npm install
+    assert.match(dockerfile, /if \[ -f pnpm-lock\.yaml \]/, 'Dockerfile must branch on lock file type');
+    assert.match(dockerfile, /elif \[ -f yarn\.lock \]/, 'Dockerfile must branch on lock file type');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('extractDeploymentUrl strips trailing punctuation', () => {
+  const { extractDeploymentUrl } = require('../../dist/deploy/cli-runner');
+
+  assert.equal(extractDeploymentUrl('Deployed to https://example.com.'), 'https://example.com');
+  assert.equal(extractDeploymentUrl('Visit https://example.com, then check.'), 'https://example.com');
+  assert.equal(extractDeploymentUrl('URL: https://example.com; done'), 'https://example.com');
+  assert.equal(extractDeploymentUrl('See https://example.com!'), 'https://example.com');
+  assert.equal(extractDeploymentUrl('Link (https://example.com)'), 'https://example.com');
+  // Normal case still works
+  assert.equal(extractDeploymentUrl('Deployed to https://my-app.vercel.app'), 'https://my-app.vercel.app');
 });

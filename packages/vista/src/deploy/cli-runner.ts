@@ -60,5 +60,5 @@ export function runCliCommand(
 export function extractDeploymentUrl(output: string): string | undefined {
   const match = output.match(/https?:\/\/[^\s]+/g);
   if (!match || match.length === 0) return undefined;
-  return match[match.length - 1].replace(/[)\]'"]+$/, '');
+  return match[match.length - 1].replace(/[)\]'".,;:!?]+$/, '');
 }

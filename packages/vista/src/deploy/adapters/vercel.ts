@@ -20,6 +20,30 @@ export function hasUserVercelConfig(cwd: string): boolean {
   return fs.existsSync(path.join(cwd, 'vercel.json'));
 }
 
+/**
+ * Build Output v3 route rules for static-only deploys.
+ *
+ * `copyStaticHostAssets` nests the vista `static/` directory under
+ * `.vercel/output/static/static/` (and a mirror at `_vista/static/`).
+ * The generic `STATIC_HOST_ROUTE_RULES` use `/static/pages/…` destinations
+ * which are correct for `vercel.json` (where `outputDirectory` is `.vista`)
+ * but WRONG for Build Output v3, where dest paths are relative to
+ * `.vercel/output/` and the files actually live under `/static/static/`.
+ * Using the generic rules produces 404s for every HTML page and RSC payload.
+ */
+const BUILD_OUTPUT_STATIC_ROUTES = [
+  { handle: 'filesystem' as const },
+  {
+    src: '^/_vista/static/(.*)$',
+    headers: { 'cache-control': 'public, max-age=31536000, immutable' },
+    dest: '/static/_vista/static/$1',
+  },
+  { src: '^/(?:rsc|_rsc)/?$', dest: '/static/static/pages/index.rsc' },
+  { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/static/pages/$1.rsc' },
+  { src: '^/$', dest: '/static/static/pages/index.html' },
+  { src: '^/(.+)$', dest: '/static/static/pages/$1.html' },
+];
+
 export function writeVercelBuildOutput(options: BuildHookOptions & { force?: boolean }): boolean {
   const { cwd, vistaDir, debug, force = false } = options;
 
@@ -45,7 +69,7 @@ export function writeVercelBuildOutput(options: BuildHookOptions & { force?: boo
     copyStaticHostAssets(cwd, vistaDir, vercelStaticDir);
     fs.writeFileSync(
       path.join(vercelOutputDir, 'config.json'),
-      JSON.stringify({ version: 3, routes: STATIC_HOST_ROUTE_RULES }, null, 2)
+      JSON.stringify({ version: 3, routes: BUILD_OUTPUT_STATIC_ROUTES }, null, 2)
     );
     return true;
   }
