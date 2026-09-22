@@ -19,27 +19,41 @@ function formatMessagesForAnthropic(messages: Message[]): any[] {
     }
 
     if (msg.role === 'tool') {
-      result.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: msg.toolCallId || 'call_default',
-            content: msg.content,
-          },
-        ],
-      });
+      const toolBlock: any = {
+        type: 'tool_result',
+        tool_use_id: msg.toolCallId || 'call_default',
+        content: msg.content,
+      };
+      const last = result[result.length - 1];
+      if (last && last.role === 'user' && Array.isArray(last.content)) {
+        last.content.push(toolBlock);
+      } else {
+        result.push({
+          role: 'user',
+          content: [toolBlock],
+        });
+      }
     } else if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
       const contentBlocks: any[] = [];
       if (msg.content) {
         contentBlocks.push({ type: 'text', text: msg.content });
       }
       for (const tc of msg.toolCalls) {
+        let inputObj = {};
+        if (typeof tc.arguments === 'object' && tc.arguments !== null) {
+          inputObj = tc.arguments;
+        } else if (typeof tc.arguments === 'string') {
+          try {
+            inputObj = JSON.parse(tc.arguments || '{}');
+          } catch {
+            inputObj = { raw: tc.arguments };
+          }
+        }
         contentBlocks.push({
           type: 'tool_use',
           id: tc.id,
           name: tc.name,
-          input: typeof tc.arguments === 'object' ? tc.arguments : JSON.parse(tc.arguments || '{}'),
+          input: inputObj,
         });
       }
       result.push({ role: 'assistant', content: contentBlocks });

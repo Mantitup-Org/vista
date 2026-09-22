@@ -16,28 +16,41 @@ function formatMessagesForGemini(messages: Message[]): any[] {
     if (msg.role === 'system') continue;
 
     if (msg.role === 'tool') {
-      contents.push({
-        role: 'user',
-        parts: [
-          {
-            functionResponse: {
-              name: msg.name || 'tool_response',
-              response: { content: msg.content },
-            },
-          },
-        ],
-      });
+      const part = {
+        functionResponse: {
+          name: msg.name || 'tool_response',
+          response: { content: msg.content },
+        },
+      };
+      const last = contents[contents.length - 1];
+      if (last && last.role === 'user' && Array.isArray(last.parts)) {
+        last.parts.push(part);
+      } else {
+        contents.push({
+          role: 'user',
+          parts: [part],
+        });
+      }
     } else if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
       const parts: any[] = [];
       if (msg.content) {
         parts.push({ text: msg.content });
       }
       for (const tc of msg.toolCalls) {
+        let inputObj = {};
+        if (typeof tc.arguments === 'object' && tc.arguments !== null) {
+          inputObj = tc.arguments;
+        } else if (typeof tc.arguments === 'string') {
+          try {
+            inputObj = JSON.parse(tc.arguments || '{}');
+          } catch {
+            inputObj = { raw: tc.arguments };
+          }
+        }
         parts.push({
           functionCall: {
             name: tc.name,
-            args:
-              typeof tc.arguments === 'object' ? tc.arguments : JSON.parse(tc.arguments || '{}'),
+            args: inputObj,
           },
         });
       }
