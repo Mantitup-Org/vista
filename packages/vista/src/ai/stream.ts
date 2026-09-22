@@ -101,6 +101,8 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
         toolCalls.push(chunk.toolCall);
       } else if (chunk.type === 'done' && chunk.usage) {
         usage = chunk.usage;
+      } else if (chunk.type === 'error' && chunk.error) {
+        throw new Error(chunk.error);
       }
     }
 
