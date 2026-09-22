@@ -65,18 +65,61 @@ function detectSharp() {
 // ---------------------------------------------------------------------------
 // Fetch image source
 // ---------------------------------------------------------------------------
+function sanitizeLocalImagePath(rawUrl) {
+    let decoded = rawUrl;
+    try {
+        decoded = decodeURIComponent(rawUrl);
+    }
+    catch {
+        // Keep decoded as-is if malformed
+    }
+    // Strip query parameters and fragment identifier
+    decoded = decoded.split('?')[0].split('#')[0];
+    // Normalize path separators and remove leading slashes
+    decoded = decoded.replace(/\\/g, '/');
+    while (decoded.startsWith('/')) {
+        decoded = decoded.slice(1);
+    }
+    return decoded;
+}
 function fetchLocalFile(filePath, cwd) {
-    // Resolve against public/ directory
-    const publicPath = path_1.default.join(cwd, 'public', filePath);
-    if (fs_1.default.existsSync(publicPath)) {
-        return fs_1.default.promises.readFile(publicPath);
+    const safeRelative = sanitizeLocalImagePath(filePath);
+    // Reject paths containing null bytes or upward traversal tokens
+    if (safeRelative.includes('\0') || safeRelative.split('/').includes('..')) {
+        const err = new Error(`Access denied: path traversal detected: ${filePath}`);
+        err.statusCode = 403;
+        throw err;
     }
-    // Also try app/ directory
-    const appPath = path_1.default.join((0, app_dir_1.resolveAppDir)(cwd), filePath);
-    if (fs_1.default.existsSync(appPath)) {
-        return fs_1.default.promises.readFile(appPath);
+    // 1. Resolve against public/ directory
+    const publicDir = path_1.default.resolve(cwd, 'public');
+    const resolvedPublic = path_1.default.resolve(publicDir, safeRelative);
+    if (resolvedPublic.startsWith(publicDir + path_1.default.sep) || resolvedPublic === publicDir) {
+        if (fs_1.default.existsSync(resolvedPublic)) {
+            const stat = fs_1.default.statSync(resolvedPublic);
+            if (stat.isFile()) {
+                return fs_1.default.promises.readFile(resolvedPublic);
+            }
+        }
     }
-    throw new Error(`Image not found: ${filePath}`);
+    else {
+        const err = new Error(`Access denied: path traversal outside public directory: ${filePath}`);
+        err.statusCode = 403;
+        throw err;
+    }
+    // 2. Resolve against app/ directory
+    const appDir = path_1.default.resolve((0, app_dir_1.resolveAppDir)(cwd));
+    const resolvedApp = path_1.default.resolve(appDir, safeRelative);
+    if (resolvedApp.startsWith(appDir + path_1.default.sep) || resolvedApp === appDir) {
+        if (fs_1.default.existsSync(resolvedApp)) {
+            const stat = fs_1.default.statSync(resolvedApp);
+            if (stat.isFile()) {
+                return fs_1.default.promises.readFile(resolvedApp);
+            }
+        }
+    }
+    const notFoundErr = new Error(`Image not found: ${filePath}`);
+    notFoundErr.statusCode = 404;
+    throw notFoundErr;
 }
 function fetchRemoteImage(url) {
     return new Promise((resolve, reject) => {
@@ -302,7 +345,7 @@ function createImageHandler(cwd, isDev) {
                     return;
                 }
                 // SVG safety check
-                if (!config.dangerouslyAllowSVG && url.endsWith('.svg')) {
+                if (!config.dangerouslyAllowSVG && url.toLowerCase().endsWith('.svg')) {
                     res
                         .status(400)
                         .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
@@ -312,7 +355,14 @@ function createImageHandler(cwd, isDev) {
             }
             else {
                 // Local file
-                const cleanedUrl = url.startsWith('/') ? url.slice(1) : url;
+                const cleanedUrl = sanitizeLocalImagePath(url);
+                // SVG safety check for local files
+                if (!config.dangerouslyAllowSVG && cleanedUrl.toLowerCase().endsWith('.svg')) {
+                    res
+                        .status(400)
+                        .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
+                    return;
+                }
                 sourceBuffer = await fetchLocalFile(cleanedUrl, cwd);
             }
             // Process the image
@@ -350,12 +400,18 @@ function createImageHandler(cwd, isDev) {
         }
         catch (err) {
             const message = err?.message || String(err);
-            console.error(`[vista:image] Error processing image: ${message}`);
-            if (message.includes('not found')) {
-                res.status(404).send(`Image not found`);
+            const statusCode = err?.statusCode || (message.includes('not found') ? 404 : (message.includes('Access denied') || message.includes('path traversal')) ? 403 : 500);
+            if (process.env.VISTA_DEBUG) {
+                console.error(`[vista:image] Error processing image: ${message}`);
+            }
+            if (statusCode === 403) {
+                res.status(403).send('Forbidden: invalid image path');
+            }
+            else if (statusCode === 404) {
+                res.status(404).send('Image not found');
             }
             else {
-                res.status(500).send(`Image optimization error`);
+                res.status(500).send('Image optimization error');
             }
         }
     };
