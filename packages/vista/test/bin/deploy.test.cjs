@@ -142,6 +142,11 @@ test('vercel adapter dry-run emits build output when forced', async () => {
       fs.existsSync(path.join(cwd, '.vercel', 'output', 'functions', 'index.func', '.vista', 'standalone', 'server.js')),
       true
     );
+    const vercelConfig = JSON.parse(
+      fs.readFileSync(path.join(cwd, '.vercel', 'output', 'config.json'), 'utf8')
+    );
+    const catchAllRoute = vercelConfig.routes.find((r) => r.src === '/(.*)');
+    assert.equal(catchAllRoute?.dest, '/index');
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
