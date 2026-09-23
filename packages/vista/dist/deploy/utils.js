@@ -136,7 +136,7 @@ function flattenPrerenderedFlight(pagesDir, targetDir) {
 }
 function writeStaticRscRedirects(pagesDir, targetDir) {
     const redirectsPath = path_1.default.join(targetDir, '_redirects');
-    const lines = [];
+    let lines = [];
     if (fs_1.default.existsSync(redirectsPath)) {
         lines.push(fs_1.default.readFileSync(redirectsPath, 'utf8').trim());
         lines.push('');
