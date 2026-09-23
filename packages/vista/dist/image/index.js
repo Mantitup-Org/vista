@@ -1,7 +1,7 @@
 'use client';
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Image = void 0;
+exports.Image = exports.getImageProps = exports.getImgProps = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const get_img_props_1 = require("./get-img-props");
@@ -24,6 +24,11 @@ const wrapperStyle = {
     position: 'relative',
     overflow: 'hidden',
 };
+// Re-export the props helpers so consumers can build <picture> art direction
+// and CSS background images (Next.js-compatible getImageProps).
+var get_img_props_2 = require("./get-img-props");
+Object.defineProperty(exports, "getImgProps", { enumerable: true, get: function () { return get_img_props_2.getImgProps; } });
+Object.defineProperty(exports, "getImageProps", { enumerable: true, get: function () { return get_img_props_2.getImageProps; } });
 exports.Image = (0, react_1.forwardRef)((props, ref) => {
     const { placeholder, blurDataURL, onLoadingComplete, onError, priority, ...restProps } = props;
     const [isLoaded, setIsLoaded] = (0, react_1.useState)(false);
