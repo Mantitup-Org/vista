@@ -56,6 +56,8 @@ const formatUrl = (url) => {
     }
     return '';
 };
+// Strip query and hash so route comparisons look at the pathname only.
+const toPathname = (url) => url.split('#')[0].split('?')[0];
 // Set of URLs that have been prefetched
 const prefetchedUrls = new Set();
 // Prefetch a URL by creating a hidden link element
@@ -115,7 +117,7 @@ function resolvePrefetchBehavior(prefetch) {
         intent: isProduction,
     };
 }
-exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, shallow, passHref, prefetch = 'auto', legacyBehavior, children, onClick, onMouseEnter, onTouchStart, onNavigate, target, ...props }, ref) => {
+exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, shallow, passHref, prefetch = 'auto', legacyBehavior, children, onClick, onMouseEnter, onTouchStart, onNavigate, target, download, ...props }, ref) => {
     // Try the RSC router first — if we're inside an RSCRouter, use
     // Flight-based navigation. Otherwise fall back to the legacy router.
     const rscRouter = (0, rsc_router_1.useRSCRouter)();
@@ -140,9 +142,10 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
     // Check if link is active (current route)
     (0, react_1.useEffect)(() => {
         if (typeof window !== 'undefined') {
-            // Exact match or starts-with for nested routes
-            const exact = pathname === targetPath;
-            const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+            // Compare pathnames only, so query strings and hashes still match.
+            const targetPathname = toPathname(targetPath);
+            const exact = pathname === targetPathname;
+            const partial = targetPathname !== '/' && pathname.startsWith(targetPathname + '/');
             setIsActive(exact || partial);
         }
     }, [targetPath, pathname]);
@@ -215,12 +218,17 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
             return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
             return; // modifier = new tab
-        if (target === '_blank')
-            return; // explicit new tab
+        if (target && target !== '_self')
+            return; // _blank/_top/_parent/named frame -> native
+        if (download != null)
+            return; // download attribute -> let the browser save the file
         if (!href)
             return;
         if (!internal)
             return; // external / mailto / tel
+        // Same-page hash link (e.g. /docs#faq while on /docs) -> native smooth scroll.
+        if (targetPath.includes('#') && toPathname(targetPath) === pathname)
+            return;
         if (!rscRouter && !legacyRouter)
             return; // No router provider -> allow native navigation
         e.preventDefault();
@@ -254,13 +262,15 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
         onNavigate,
         target,
         internal,
+        download,
+        pathname,
     ]);
     // Data + Aria attributes for styling active links
     const dataProps = {
         'data-active': isActive ? 'true' : undefined,
         'aria-current': isActive ? 'page' : undefined,
     };
-    return ((0, jsx_runtime_1.jsx)("a", { href: targetPath, onClick: handleClick, onMouseEnter: handleMouseEnter, onTouchStart: handleTouchStart, ref: setRefs, target: target, ...dataProps, ...props, children: children }));
+    return ((0, jsx_runtime_1.jsx)("a", { href: targetPath, onClick: handleClick, onMouseEnter: handleMouseEnter, onTouchStart: handleTouchStart, ref: setRefs, target: target, download: download, ...dataProps, ...props, children: children }));
 });
 exports.Link.displayName = 'Link';
 /**
@@ -280,7 +290,7 @@ exports.useLinkStatus = useLinkStatus;
  */
 const useIsActive = (path) => {
     const pathname = (0, router_1.usePathname)();
-    return pathname === path;
+    return pathname === toPathname(path);
 };
 exports.useIsActive = useIsActive;
 exports.default = exports.Link;
