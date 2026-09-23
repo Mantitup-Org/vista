@@ -259,9 +259,19 @@ function renderAuthConfig() {
         '',
     ].join('\n');
 }
-function renderAuthRoute() {
+// Compute a POSIX ES-module import specifier (no extension) from one generated
+// file to a target module, so generated imports resolve regardless of whether
+// the project uses the flat `app/` or the `src/app/` layout.
+function toImportSpecifier(fromFileAbs, toModuleAbs) {
+    let rel = path_1.default.relative(path_1.default.dirname(fromFileAbs), toModuleAbs).replace(/\\/g, '/');
+    if (!rel.startsWith('.')) {
+        rel = `./${rel}`;
+    }
+    return rel;
+}
+function renderAuthRoute(authImport) {
     return [
-        "import { handlers } from '../../../../auth';",
+        `import { handlers } from '${authImport}';`,
         '',
         'export const { GET, POST } = handlers;',
         '',
@@ -345,11 +355,11 @@ function renderSignInPage() {
         '',
     ].join('\n');
 }
-function renderAccountPage() {
+function renderAccountPage(authImport) {
     return [
         "export const dynamic = 'force-dynamic';",
         '',
-        "import { auth } from '../../auth';",
+        `import { auth } from '${authImport}';`,
         '',
         'export default async function AccountPage() {',
         '  const session = await auth();',
@@ -502,13 +512,23 @@ async function runGenerateCommand(args, options = {}) {
         return 0;
     }
     if (command === 'auth') {
+        // In the src/app layout, auth.ts and middleware.ts belong in src/ (next to
+        // src/app), matching discoverGlobalMiddleware(). Otherwise they sit at the
+        // project root. All generated imports are then resolved to that location.
+        const srcLayout = appDirRelative.split(/[\\/]/)[0] === 'src';
+        const authBaseDir = srcLayout ? path_1.default.join(cwd, 'src') : cwd;
+        const authConfigRel = path_1.default.relative(cwd, path_1.default.join(authBaseDir, 'auth.ts'));
+        const middlewareRel = path_1.default.relative(cwd, path_1.default.join(authBaseDir, 'middleware.ts'));
+        const authModuleAbs = path_1.default.join(authBaseDir, 'auth');
+        const routeFileAbs = path_1.default.join(cwd, appDirRelative, 'api', 'auth', '[...vista]', 'route.ts');
+        const accountFileAbs = path_1.default.join(cwd, appDirRelative, 'account', 'page.tsx');
         const writes = [
-            writeFileIfMissing(cwd, 'auth.ts', renderAuthConfig()),
-            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'auth', '[...vista]', 'route.ts'), renderAuthRoute()),
-            writeFileIfMissing(cwd, 'middleware.ts', renderAuthMiddleware()),
+            writeFileIfMissing(cwd, authConfigRel, renderAuthConfig()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'api', 'auth', '[...vista]', 'route.ts'), renderAuthRoute(toImportSpecifier(routeFileAbs, authModuleAbs))),
+            writeFileIfMissing(cwd, middlewareRel, renderAuthMiddleware()),
             writeFileIfMissing(cwd, path_1.default.join(componentsDirRelative, 'auth-session-provider.tsx'), renderAuthSessionProvider()),
             writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'signin', 'page.tsx'), renderSignInPage()),
-            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'account', 'page.tsx'), renderAccountPage()),
+            writeFileIfMissing(cwd, path_1.default.join(appDirRelative, 'account', 'page.tsx'), renderAccountPage(toImportSpecifier(accountFileAbs, authModuleAbs))),
             writeFileIfMissing(cwd, '.env.example', renderEnvExample()),
         ];
         writes.forEach((result) => {
