@@ -8,4 +8,5 @@ export type EnhancedImageProps = ImageProps;
  * react-server condition uses a plain SSR-friendly <img> wrapper.
  */
 export declare function Image(props: EnhancedImageProps): React.ReactElement;
+export { getImgProps, getImageProps } from './get-img-props';
 export default Image;
