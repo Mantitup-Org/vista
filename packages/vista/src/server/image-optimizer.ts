@@ -307,7 +307,7 @@ export function createImageHandler(cwd: string, isDev: boolean) {
   return async function handleImageRequest(req: Request, res: Response): Promise<void> {
     try {
       const url = req.query.url as string;
-      const width = parseInt(req.query.w as string, 10) || 0;
+      let width = parseInt(req.query.w as string, 10) || 0;
       const quality = parseInt(req.query.q as string, 10) || 75;
 
       if (!url) {
@@ -329,7 +329,9 @@ export function createImageHandler(cwd: string, isDev: boolean) {
         );
         // Allow if within 10% tolerance, otherwise use nearest
         if (Math.abs(width - nearest) / nearest > 0.1) {
-          // Not a valid size — use nearest
+          // Not a valid size — snap to nearest so the cache key and sharp
+          // resize both use the standard size instead of the arbitrary one.
+          width = nearest;
           req.query.w = String(nearest);
         }
       }
