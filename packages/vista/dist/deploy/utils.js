@@ -136,10 +136,12 @@ function flattenPrerenderedFlight(pagesDir, targetDir) {
 }
 function writeStaticRscRedirects(pagesDir, targetDir) {
     const redirectsPath = path_1.default.join(targetDir, '_redirects');
-    const lines = [
-        '/rsc /rsc/index.rsc 200',
-        '/rsc/ /rsc/index.rsc 200',
-    ];
+    let lines = [];
+    if (fs_1.default.existsSync(redirectsPath)) {
+        lines.push(fs_1.default.readFileSync(redirectsPath, 'utf8').trim());
+        lines.push('');
+    }
+    lines.push('/rsc /rsc/index.rsc 200', '/rsc/ /rsc/index.rsc 200');
     walkFiles(pagesDir, (_absolutePath, relativePath) => {
         const posix = relativePath.replace(/\\/g, '/');
         if (!posix.endsWith('.rsc'))
@@ -161,6 +163,7 @@ function prepareStaticCdnOutput(targetDir) {
     flattenPrerenderedPages(pagesDir, targetDir);
     flattenPrerenderedFlight(pagesDir, targetDir);
     writeStaticRscRedirects(pagesDir, targetDir);
+    fs_1.default.rmSync(staticDir, { recursive: true, force: true });
 }
 function copyStaticHostAssets(cwd, vistaDir, targetDir) {
     copyDirectoryRecursive(path_1.default.join(cwd, 'public'), targetDir);
