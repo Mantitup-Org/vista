@@ -102,6 +102,8 @@ export async function runFlashpackEngineCommand(
   }
 
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
+
     const child = spawn(
       cargoCommand,
       [
@@ -140,6 +142,9 @@ export async function runFlashpackEngineCommand(
     );
 
     child.once('error', async (error) => {
+      if (settled) return;
+      settled = true;
+
       const message = isPermissionDeniedSpawnError(error)
         ? formatRustFailure(`spawn blocked by environment permissions (${getErrorMessage(error)})`)
         : formatRustFailure(getErrorMessage(error));
@@ -158,6 +163,9 @@ export async function runFlashpackEngineCommand(
     });
 
     child.once('exit', (code, signal) => {
+      if (settled) return;
+      settled = true;
+
       if (code === 0) {
         resolve();
         return;
