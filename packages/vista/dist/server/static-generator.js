@@ -218,10 +218,12 @@ function expandPattern(pattern, params) {
     let url = pattern;
     for (const [key, value] of Object.entries(params)) {
         const param = Array.isArray(value) ? value.join('/') : value;
+        const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         // Handle catch-all :param* and optional catch-all :param*?
-        url = url.replace(new RegExp(`:${key}\\*\\??`), param);
-        // Handle regular :param
-        url = url.replace(`:${key}`, param);
+        url = url.replace(new RegExp(`:${escapedKey}\\*\\??`), param);
+        // Handle regular :param — require a full token boundary so a param whose
+        // name is a prefix of another (e.g. :id vs :idType) isn't replaced inside it.
+        url = url.replace(new RegExp(`:${escapedKey}(?![A-Za-z0-9_])`), param);
     }
     return url;
 }
