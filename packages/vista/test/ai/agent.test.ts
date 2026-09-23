@@ -104,3 +104,38 @@ test('agent stream yields real-time chunks and produces valid SSE response', asy
   assert.match(text, /data: {"type":"text-delta"/);
   assert.match(text, /data: \[DONE\]/);
 });
+
+test('agent invokes observability.onError and records error telemetry when model.generateText throws', async () => {
+  let capturedError: Error | null = null;
+
+  const failingAgent = agent({
+    name: 'failing-agent',
+    model: {
+      provider: 'mock',
+      modelName: 'test-fail',
+      async generateText() {
+        throw new Error('LLM Provider Rate Limit (429)');
+      },
+      async *streamText() {},
+    } as any,
+    observability: {
+      onError: (err) => {
+        capturedError = err;
+      },
+    },
+  });
+
+  await assert.rejects(
+    async () => {
+      await failingAgent.run('Hello');
+    },
+    {
+      name: 'Error',
+      message: 'LLM Provider Rate Limit (429)',
+    }
+  );
+
+  assert.ok(capturedError !== null, 'observability.onError was not called');
+  assert.equal(capturedError.message, 'LLM Provider Rate Limit (429)');
+});
+
