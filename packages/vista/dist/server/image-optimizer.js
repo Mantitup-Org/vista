@@ -110,6 +110,16 @@ function fetchRemoteImage(url) {
 // ---------------------------------------------------------------------------
 // Domain / remote pattern validation
 // ---------------------------------------------------------------------------
+// Build an anchored RegExp from a remote-pattern hostname, treating `*` as the
+// only wildcard. Every other character (notably `.`) is escaped, so a pattern
+// like `cdn.example.com` does not also match `cdn-example.com`.
+function hostnamePatternToRegExp(hostname) {
+    const source = hostname
+        .split('*')
+        .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+    return new RegExp(`^${source}$`);
+}
 function isAllowedRemoteUrl(url, config) {
     try {
         const parsed = new url_1.URL(url);
@@ -123,7 +133,7 @@ function isAllowedRemoteUrl(url, config) {
         if (config.remotePatterns.length > 0) {
             for (const pattern of config.remotePatterns) {
                 const hostMatch = pattern.hostname
-                    ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+                    ? hostnamePatternToRegExp(pattern.hostname).test(parsed.hostname)
                     : true;
                 const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
                 const portMatch = pattern.port ? parsed.port === pattern.port : true;
