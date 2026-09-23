@@ -264,7 +264,11 @@ export function patternToRegExp(pattern: string): RegExp {
   //   /foo/:path*  → /foo(?:/(.*))?
   //   /foo/:bar    → /foo/[^/]+
   //   /foo/*       → /foo(?:/(.*))?
+  // Escape regex metacharacters that may appear literally in a path (e.g. '.')
+  // so a matcher like /blog/post.html doesn't also match /blog/postXhtml.
+  // '*' (wildcard) and ':' (param) are pattern tokens and are left intact.
   let re = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
     .replace(/:[^/]+\*/g, '(.*)') // bare :path*
     .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
