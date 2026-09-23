@@ -84,15 +84,48 @@ function buildGoogleUrl(family: string, opts: GoogleFontOptions): string {
     }
     // Handle custom axes
     if (opts.axes) {
-      const axisEntries = Object.entries(opts.axes);
-      for (const [axis, range] of axisEntries) {
-        if (axis === 'wght' || axis === 'ital') continue; // already handled
-        const rangeStr = Array.isArray(range) ? `${range[0]}..${range[1]}` : String(range);
-        // Append axis — Google Fonts sorts axes alphabetically
-        familyParam = familyParam.replace(/(@.+)$/, (_, tuples) => `,${axis}${tuples}`);
-        // This is a simplified approach; a production implementation would
-        // fully sort axis names and expand the tuples.  Good enough for now.
-        familyParam += `;${rangeStr}`;
+      const axisEntries = Object.entries(opts.axes).filter(
+        ([axis]) => axis !== 'wght' && axis !== 'ital'
+      );
+      if (axisEntries.length > 0) {
+        // Build sorted axis list: ital (if present) + custom axes (alphabetical) + wght
+        const customAxes = axisEntries.map(([axis]) => axis).sort();
+        const allAxes = hasItalic ? ['ital', ...customAxes, 'wght'] : [...customAxes, 'wght'];
+        const axisStr = allAxes.join(',');
+
+        // Rebuild tuples with axis values in the correct order
+        const newTuples: string[] = [];
+        const weightRange = '100..900';
+        const axisRanges = axisEntries.map(([axis, range]) => {
+          const rangeStr = Array.isArray(range) ? `${range[0]}..${range[1]}` : String(range);
+          return [axis, rangeStr] as const;
+        });
+
+        const buildTuple = (italicVal: string | null): string => {
+          const parts: string[] = [];
+          for (const axis of allAxes) {
+            if (axis === 'ital') {
+              parts.push(italicVal ?? '0');
+            } else if (axis === 'wght') {
+              parts.push(weightRange);
+            } else {
+              const found = axisRanges.find(([a]) => a === axis);
+              parts.push(found ? found[1] : weightRange);
+            }
+          }
+          return parts.join(',');
+        };
+
+        if (hasItalic && hasNormal) {
+          newTuples.push(buildTuple('0'));
+          newTuples.push(buildTuple('1'));
+        } else if (hasItalic) {
+          newTuples.push(buildTuple('1'));
+        } else {
+          newTuples.push(buildTuple(null));
+        }
+
+        familyParam = `${family}:${axisStr}@${newTuples.join(';')}`;
       }
     }
   } else {
@@ -100,11 +133,11 @@ function buildGoogleUrl(family: string, opts: GoogleFontOptions): string {
     const tuples: string[] = [];
     for (const w of weights) {
       if (hasNormal) tuples.push(hasItalic ? `0,${w}` : w);
-      if (hasItalic) tuples.push(hasItalic && hasNormal ? `1,${w}` : w);
+      if (hasItalic) tuples.push(`1,${w}`);
     }
     // Deduplicate and sort
     const uniqueTuples = [...new Set(tuples)].sort();
-    if (hasItalic && hasNormal) {
+    if (hasItalic) {
       familyParam = `${family}:ital,wght@${uniqueTuples.join(';')}`;
     } else {
       familyParam = `${family}:wght@${uniqueTuples.join(';')}`;
