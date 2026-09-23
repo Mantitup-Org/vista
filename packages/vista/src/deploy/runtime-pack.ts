@@ -173,25 +173,39 @@ function createServerResponse(req) {
   const origEnd = res.end.bind(res);
 
   res.write = function write(chunk, encoding, cb) {
-    if (chunk) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : undefined));
+    let actualCb = cb;
+    let actualChunk = chunk;
+    let actualEncoding = encoding;
+    if (typeof chunk === 'function') {
+      actualCb = chunk;
+      actualChunk = undefined;
+      actualEncoding = undefined;
+    } else if (typeof encoding === 'function') {
+      actualCb = encoding;
+      actualEncoding = undefined;
     }
-    if (typeof encoding === 'function') {
-      cb = encoding;
-      encoding = undefined;
+    if (actualChunk) {
+      chunks.push(Buffer.isBuffer(actualChunk) ? actualChunk : Buffer.from(actualChunk, typeof actualEncoding === 'string' ? actualEncoding : undefined));
     }
-    return origWrite(chunk, encoding, cb);
+    return origWrite(actualChunk, actualEncoding, actualCb);
   };
 
   res.end = function end(chunk, encoding, cb) {
-    if (chunk) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof encoding === 'string' ? encoding : undefined));
+    let actualCb = cb;
+    let actualChunk = chunk;
+    let actualEncoding = encoding;
+    if (typeof chunk === 'function') {
+      actualCb = chunk;
+      actualChunk = undefined;
+      actualEncoding = undefined;
+    } else if (typeof encoding === 'function') {
+      actualCb = encoding;
+      actualEncoding = undefined;
     }
-    if (typeof encoding === 'function') {
-      cb = encoding;
-      encoding = undefined;
+    if (actualChunk) {
+      chunks.push(Buffer.isBuffer(actualChunk) ? actualChunk : Buffer.from(actualChunk, typeof actualEncoding === 'string' ? actualEncoding : undefined));
     }
-    return origEnd(chunk, encoding, cb);
+    return origEnd(actualChunk, actualEncoding, actualCb);
   };
 
   res.flushHeaders = res.flushHeaders || function flushHeaders() {
@@ -200,6 +214,10 @@ function createServerResponse(req) {
   return {
     res,
     getBody() {
+      const statusCode = res.statusCode || 200;
+      if (req.method === 'HEAD' || statusCode === 204 || statusCode === 304) {
+        return Buffer.alloc(0);
+      }
       return Buffer.concat(chunks);
     },
   };

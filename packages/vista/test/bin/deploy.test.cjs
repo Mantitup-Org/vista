@@ -424,6 +424,67 @@ test('netlify emitted ssr handler serializes body without wire headers or chunk 
 
     await probe(false);
     await probe(true);
+
+    // Test: res.end(callback) overload and HEAD/204/304 body suppression
+    async function probeEdgeCases() {
+      const output = {};
+      let callbackInvoked = false;
+      let targetStatus = 200;
+      let targetPayload = 'OK';
+
+      vm.runInNewContext(handlerSource, {
+        exports: output,
+        __dirname: path.join(cwd, 'netlify', 'functions'),
+        Buffer,
+        URLSearchParams,
+        process: { env: {}, chdir() {} },
+        require(name) {
+          if (name === path.join(cwd, 'netlify', 'functions', '.vista', 'standalone', 'server.js')) {
+            return {
+              createRequestListener: () => (_req, res) => {
+                res.statusCode = targetStatus;
+                res.setHeader('Content-Type', 'text/plain');
+                if (typeof targetPayload === 'function') {
+                  res.write('OK');
+                  res.end(targetPayload);
+                } else {
+                  res.end(targetPayload);
+                }
+              },
+            };
+          }
+          if (['path', 'http', 'stream'].includes(name)) return require(name);
+          throw new Error(`Unexpected handler import: ${name}`);
+        },
+      });
+
+      // 1. res.end(callback)
+      targetStatus = 200;
+      targetPayload = () => { callbackInvoked = true; };
+      const resCallback = await output.handler({ path: '/docs', httpMethod: 'GET', headers: {} });
+      assert.equal(callbackInvoked, true, 'res.end(callback) must invoke the callback');
+      assert.equal(Buffer.from(resCallback.body, 'base64').toString(), 'OK');
+
+      // 2. HEAD method
+      targetStatus = 200;
+      targetPayload = 'SHOULD_NOT_SEND';
+      const resHead = await output.handler({ path: '/docs', httpMethod: 'HEAD', headers: {} });
+      assert.equal(Buffer.from(resHead.body, 'base64').toString(), '', 'HEAD responses must not contain body');
+
+      // 3. 204 No Content
+      targetStatus = 204;
+      targetPayload = 'SHOULD_NOT_SEND';
+      const res204 = await output.handler({ path: '/docs', httpMethod: 'GET', headers: {} });
+      assert.equal(Buffer.from(res204.body, 'base64').toString(), '', '204 responses must not contain body');
+
+      // 4. 304 Not Modified
+      targetStatus = 304;
+      targetPayload = 'SHOULD_NOT_SEND';
+      const res304 = await output.handler({ path: '/docs', httpMethod: 'GET', headers: {} });
+      assert.equal(Buffer.from(res304.body, 'base64').toString(), '', '304 responses must not contain body');
+    }
+
+    await probeEdgeCases();
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
