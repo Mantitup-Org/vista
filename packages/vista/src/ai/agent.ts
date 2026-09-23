@@ -118,14 +118,24 @@ export class Agent {
 
       telemetry.recordStepStart(currentStep);
 
-      const stepResult = await this.model.generateText({
-        messages: conversationHistory,
-        systemPrompt,
-        tools: toolsList.length > 0 ? toolsList : undefined,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        abortSignal,
-      });
+      let stepResult;
+      try {
+        stepResult = await this.model.generateText({
+          messages: conversationHistory,
+          systemPrompt,
+          tools: toolsList.length > 0 ? toolsList : undefined,
+          temperature: this.config.temperature,
+          maxTokens: this.config.maxTokens,
+          abortSignal,
+        });
+      } catch (err: any) {
+        telemetry.recordError(err);
+        const observability = this.config.observability;
+        if (typeof observability === 'object' && observability !== null && observability.onError) {
+          observability.onError(err);
+        }
+        throw err;
+      }
 
       const stepRecord: AgentStep = {
         stepNumber: currentStep,
