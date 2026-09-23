@@ -1,7 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getImageProps = void 0;
 exports.getImgProps = getImgProps;
 const image_config_1 = require("./image-config");
+const image_loader_1 = require("./image-loader");
 // Helper: Generate srcSet
 function generateSrcSet(src, _width, loader, config, unoptimized, quality) {
     if (unoptimized)
@@ -15,7 +17,7 @@ function generateSrcSet(src, _width, loader, config, unoptimized, quality) {
     })
         .join(', ');
 }
-function getImgProps(props, config = image_config_1.imageConfigDefault, defaultLoader) {
+function getImgProps(props, config = image_config_1.imageConfigDefault, defaultLoader = image_loader_1.defaultLoader) {
     const { src, alt, width, height, fill, loader = defaultLoader, quality, priority, unoptimized, style, sizes, className, loading, placeholder: _placeholder, blurDataURL: _blurDataURL, onLoadingComplete: _onLoadingComplete, ...rest } = props;
     const imgStyle = { ...style };
     // Handle Fill Mode
@@ -48,9 +50,20 @@ function getImgProps(props, config = image_config_1.imageConfigDefault, defaultL
     const disableOptimization = !!unoptimized || !!config.unoptimized || passthroughSrc || staticHost || vercelStaticBuild;
     // Generate SrcSet
     const srcSet = generateSrcSet(src, widthInt, loader, config, disableOptimization, quality ? Number(quality) : undefined);
+    const defaultWidth = widthInt ||
+        (config.deviceSizes && config.deviceSizes.length > 0
+            ? config.deviceSizes[config.deviceSizes.length - 1]
+            : 1920);
+    const finalSrc = disableOptimization
+        ? src
+        : loader({
+            src,
+            width: defaultWidth,
+            quality: quality ? Number(quality) : undefined,
+        });
     return {
         ...rest,
-        src,
+        src: finalSrc,
         alt,
         width: widthInt,
         height: heightInt,
@@ -62,3 +75,4 @@ function getImgProps(props, config = image_config_1.imageConfigDefault, defaultL
         className,
     };
 }
+exports.getImageProps = getImgProps;
