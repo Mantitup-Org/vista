@@ -112,26 +112,31 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentResult {
             const payload = trimmed.slice(6);
             if (payload === '[DONE]') break;
 
+            let chunk: StreamChunk;
             try {
-              const chunk: StreamChunk = JSON.parse(payload);
-              if (chunk.type === 'text-delta' && chunk.textDelta) {
-                assistantText += chunk.textDelta;
-                setMessages((prev) => {
-                  const updated = [...prev];
-                  const lastIdx = updated.length - 1;
-                  if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-                    updated[lastIdx] = {
-                      ...updated[lastIdx],
-                      content: assistantText,
-                    };
-                  }
-                  return updated;
-                });
-              } else if (chunk.type === 'error' && chunk.error) {
-                throw new Error(chunk.error);
-              }
+              chunk = JSON.parse(payload);
             } catch {
-              // Ignore partial JSON chunks
+              // Ignore partial/invalid JSON chunks only — do not let this
+              // guard swallow a valid error chunk thrown below.
+              continue;
+            }
+            if (chunk.type === 'text-delta' && chunk.textDelta) {
+              assistantText += chunk.textDelta;
+              setMessages((prev) => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                  updated[lastIdx] = {
+                    ...updated[lastIdx],
+                    content: assistantText,
+                  };
+                }
+                return updated;
+              });
+            } else if (chunk.type === 'error' && chunk.error) {
+              // A valid error chunk must reach the outer catch (onError),
+              // instead of being finished as a successful empty response.
+              throw new Error(chunk.error);
             }
           }
         }
