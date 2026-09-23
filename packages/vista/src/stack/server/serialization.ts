@@ -130,6 +130,13 @@ export function serializeWithMode(value: unknown, mode: StackSerializationMode =
     return encodeSuperJson(value);
   }
 
+  // A void procedure resolves to `undefined`; cloneJson would then run
+  // JSON.parse(JSON.stringify(undefined)) = JSON.parse("undefined") and throw.
+  // Undefined has no JSON representation, so pass it through untouched.
+  if (value === undefined) {
+    return undefined;
+  }
+
   return cloneJson(value);
 }
 
