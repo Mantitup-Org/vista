@@ -1,6 +1,6 @@
 
 import { ImageConfigComplete, imageConfigDefault } from './image-config';
-import { ImageLoader } from './image-loader';
+import { ImageLoader, defaultLoader as builtinDefaultLoader } from './image-loader';
 import React from 'react';
 
 export type PlaceholderValue = 'blur' | 'empty';
@@ -51,7 +51,7 @@ function generateSrcSet(
 export function getImgProps(
   props: ImageProps,
   config: ImageConfigComplete = imageConfigDefault,
-  defaultLoader: ImageLoader
+  defaultLoader: ImageLoader = builtinDefaultLoader
 ): ImgProps {
   const {
     src,
@@ -123,9 +123,18 @@ export function getImgProps(
     quality ? Number(quality) : undefined
   );
 
+  // Route the fallback `src` through the loader too. Clients without srcSet
+  // support, crawlers, RSS readers and anything reading img.src would
+  // otherwise fetch the raw, unoptimized original instead of a resized one.
+  const largestDeviceSize = config.deviceSizes.length ? Math.max(...config.deviceSizes) : 3840;
+  const defaultWidth = widthInt || largestDeviceSize;
+  const finalSrc = disableOptimization
+    ? src
+    : loader({ src, width: defaultWidth, quality: quality ? Number(quality) : undefined });
+
   return {
     ...rest,
-    src,
+    src: finalSrc,
     alt,
     width: widthInt,
     height: heightInt,
@@ -137,3 +146,5 @@ export function getImgProps(
     className,
   };
 }
+
+export const getImageProps = getImgProps;
