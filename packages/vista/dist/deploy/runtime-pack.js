@@ -158,19 +158,64 @@ function createIncomingMessage(event) {
 function createServerResponse(req) {
   const chunks = [];
   const res = new http.ServerResponse(req);
-  const sink = new stream.Writable({
-    write(chunk, _enc, cb) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
+  const dummySocket = new stream.Duplex({
+    read() {},
+    write(_chunk, _enc, cb) { cb(); },
   });
-  res.assignSocket(sink);
+  dummySocket.cork = function() {};
+  dummySocket.uncork = function() {};
+  dummySocket.destroy = function() {};
+  res.assignSocket(dummySocket);
+
+  const origWrite = res.write.bind(res);
+  const origEnd = res.end.bind(res);
+
+  res.write = function write(chunk, encoding, cb) {
+    let actualCb = cb;
+    let actualChunk = chunk;
+    let actualEncoding = encoding;
+    if (typeof chunk === 'function') {
+      actualCb = chunk;
+      actualChunk = undefined;
+      actualEncoding = undefined;
+    } else if (typeof encoding === 'function') {
+      actualCb = encoding;
+      actualEncoding = undefined;
+    }
+    if (actualChunk) {
+      chunks.push(Buffer.isBuffer(actualChunk) ? actualChunk : Buffer.from(actualChunk, typeof actualEncoding === 'string' ? actualEncoding : undefined));
+    }
+    return origWrite(actualChunk, actualEncoding, actualCb);
+  };
+
+  res.end = function end(chunk, encoding, cb) {
+    let actualCb = cb;
+    let actualChunk = chunk;
+    let actualEncoding = encoding;
+    if (typeof chunk === 'function') {
+      actualCb = chunk;
+      actualChunk = undefined;
+      actualEncoding = undefined;
+    } else if (typeof encoding === 'function') {
+      actualCb = encoding;
+      actualEncoding = undefined;
+    }
+    if (actualChunk) {
+      chunks.push(Buffer.isBuffer(actualChunk) ? actualChunk : Buffer.from(actualChunk, typeof actualEncoding === 'string' ? actualEncoding : undefined));
+    }
+    return origEnd(actualChunk, actualEncoding, actualCb);
+  };
+
   res.flushHeaders = res.flushHeaders || function flushHeaders() {
     if (!this._header) this._implicitHeader();
   };
   return {
     res,
     getBody() {
+      const statusCode = res.statusCode || 200;
+      if (req.method === 'HEAD' || statusCode === 204 || statusCode === 304) {
+        return Buffer.alloc(0);
+      }
       return Buffer.concat(chunks);
     },
   };
