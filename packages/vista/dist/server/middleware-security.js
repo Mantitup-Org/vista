@@ -107,7 +107,16 @@ function cors(options = {}) {
         const headers = new Headers();
         const requestOrigin = request.headers.get('origin');
         if (origin === '*') {
-            headers.set('Access-Control-Allow-Origin', '*');
+            if (options.credentials && requestOrigin) {
+                // `Access-Control-Allow-Origin: *` is invalid together with
+                // `Allow-Credentials: true` (browsers reject the response), so reflect
+                // the caller's origin instead when credentials are enabled.
+                headers.set('Access-Control-Allow-Origin', requestOrigin);
+                headers.set('Vary', 'Origin');
+            }
+            else {
+                headers.set('Access-Control-Allow-Origin', '*');
+            }
         }
         else if (Array.isArray(origin)) {
             if (requestOrigin && origin.includes(requestOrigin)) {
