@@ -19,7 +19,7 @@ import type {
   AlternateURLs,
   Verification,
   AppleWebApp,
-  isTemplateString,
+  FormatDetection,
 } from './types';
 
 // ============================================================================
@@ -47,6 +47,11 @@ function resolveTitle(
   const baseTitle = title.default;
   if (title.template) {
     return title.template.replace('%s', baseTitle);
+  }
+
+  // No explicit template on this title — apply parent's template if available
+  if (template && baseTitle) {
+    return template.replace('%s', baseTitle);
   }
 
   return baseTitle;
@@ -274,10 +279,79 @@ function generateOpenGraphMeta(
     });
   }
 
+  // Videos
+  if (og.videos) {
+    const videos = Array.isArray(og.videos) ? og.videos : [og.videos];
+    videos.forEach((video, index) => {
+      if (typeof video === 'string' || video instanceof URL) {
+        elements.push(
+          <meta
+            key={`og:video:${index}`}
+            property="og:video"
+            content={resolveUrl(video, base) || ''}
+          />
+        );
+      } else {
+        elements.push(
+          <meta
+            key={`og:video:${index}`}
+            property="og:video"
+            content={resolveUrl(video.url, base) || ''}
+          />
+        );
+        if (video.width) {
+          elements.push(
+            <meta
+              key={`og:video:width:${index}`}
+              property="og:video:width"
+              content={String(video.width)}
+            />
+          );
+        }
+        if (video.height) {
+          elements.push(
+            <meta
+              key={`og:video:height:${index}`}
+              property="og:video:height"
+              content={String(video.height)}
+            />
+          );
+        }
+      }
+    });
+  }
+
+  // Audio
+  if (og.audio) {
+    const audioList = Array.isArray(og.audio) ? og.audio : [og.audio];
+    audioList.forEach((audio, index) => {
+      if (typeof audio === 'string' || audio instanceof URL) {
+        elements.push(
+          <meta
+            key={`og:audio:${index}`}
+            property="og:audio"
+            content={resolveUrl(audio, base) || ''}
+          />
+        );
+      } else {
+        elements.push(
+          <meta
+            key={`og:audio:${index}`}
+            property="og:audio"
+            content={resolveUrl(audio.url, base) || ''}
+          />
+        );
+      }
+    });
+  }
+
   return elements;
 }
 
-function generateTwitterMeta(twitter: Twitter | null | undefined): React.ReactElement[] {
+function generateTwitterMeta(
+  twitter: Twitter | null | undefined,
+  base?: string | URL | null
+): React.ReactElement[] {
   if (!twitter) return [];
 
   const elements: React.ReactElement[] = [];
@@ -314,7 +388,11 @@ function generateTwitterMeta(twitter: Twitter | null | undefined): React.ReactEl
     const images = Array.isArray(twitter.images) ? twitter.images : [twitter.images];
     images.forEach((image, index) => {
       elements.push(
-        <meta key={`twitter:image:${index}`} name="twitter:image" content={image.toString()} />
+        <meta
+          key={`twitter:image:${index}`}
+          name="twitter:image"
+          content={resolveUrl(image, base) || image.toString()}
+        />
       );
     });
   }
@@ -369,6 +447,12 @@ function generateIconLinks(
       const appleList = Array.isArray(iconsObj.apple) ? iconsObj.apple : [iconsObj.apple];
       appleList.forEach((icon, index) => addIcon(icon, 'apple-touch-icon', index));
     }
+    if (iconsObj.other) {
+      const otherList = Array.isArray(iconsObj.other) ? iconsObj.other : [iconsObj.other];
+      otherList.forEach((icon, index) =>
+        addIcon(icon, icon.rel || 'icon', index)
+      );
+    }
   }
 
   return elements;
@@ -410,6 +494,29 @@ function generateVerificationMeta(
     });
   }
 
+  if (verification.yahoo) {
+    const values = Array.isArray(verification.yahoo) ? verification.yahoo : [verification.yahoo];
+    values.forEach((value, index) => {
+      elements.push(<meta key={`yahoo-verification-${index}`} name="y_key" content={value} />);
+    });
+  }
+
+  if (verification.me) {
+    const values = Array.isArray(verification.me) ? verification.me : [verification.me];
+    values.forEach((value, index) => {
+      elements.push(<meta key={`me-verification-${index}`} name="me" content={value} />);
+    });
+  }
+
+  if (verification.other) {
+    Object.entries(verification.other).forEach(([name, value]) => {
+      const values = Array.isArray(value) ? value : [value];
+      values.forEach((v, index) => {
+        elements.push(<meta key={`${name}-${index}`} name={name} content={v} />);
+      });
+    });
+  }
+
   return elements;
 }
 
@@ -445,7 +552,141 @@ function generateAlternateLinks(
     });
   }
 
+  // Media alternates
+  if (alternates.media) {
+    Object.entries(alternates.media).forEach(([media, url]) => {
+      const urls = Array.isArray(url) ? url : [url];
+      urls.forEach((u, index) => {
+        elements.push(
+          <link
+            key={`alternate-media-${media}-${index}`}
+            rel="alternate"
+            media={media}
+            href={resolveUrl(u, base) || ''}
+          />
+        );
+      });
+    });
+  }
+
+  // Type alternates
+  if (alternates.types) {
+    Object.entries(alternates.types).forEach(([type, url]) => {
+      const urls = Array.isArray(url) ? url : [url];
+      urls.forEach((u, index) => {
+        elements.push(
+          <link
+            key={`alternate-type-${type}-${index}`}
+            rel="alternate"
+            type={type}
+            href={resolveUrl(u, base) || ''}
+          />
+        );
+      });
+    });
+  }
+
   return elements;
+}
+
+// ─── Apple Web App ─────────────────────────────────────────────────────────
+
+function generateAppleWebAppMeta(
+  appleWebApp: boolean | AppleWebApp | null | undefined
+): React.ReactElement[] {
+  if (appleWebApp === null || appleWebApp === undefined) return [];
+
+  const elements: React.ReactElement[] = [];
+
+  if (appleWebApp === true) {
+    elements.push(
+      <meta key="apple-mobile-web-app-capable" name="apple-mobile-web-app-capable" content="yes" />
+    );
+    return elements;
+  }
+
+  if (appleWebApp === false) {
+    return elements;
+  }
+
+  // AppleWebApp object
+  if (appleWebApp.capable) {
+    elements.push(
+      <meta
+        key="apple-mobile-web-app-capable"
+        name="apple-mobile-web-app-capable"
+        content="yes"
+      />
+    );
+  }
+
+  if (appleWebApp.title) {
+    elements.push(
+      <meta
+        key="apple-mobile-web-app-title"
+        name="apple-mobile-web-app-title"
+        content={appleWebApp.title}
+      />
+    );
+  }
+
+  if (appleWebApp.statusBarStyle) {
+    elements.push(
+      <meta
+        key="apple-mobile-web-app-status-bar-style"
+        name="apple-mobile-web-app-status-bar-style"
+        content={appleWebApp.statusBarStyle}
+      />
+    );
+  }
+
+  if (appleWebApp.startupImage) {
+    const images = Array.isArray(appleWebApp.startupImage)
+      ? appleWebApp.startupImage
+      : [appleWebApp.startupImage];
+    images.forEach((img, index) => {
+      if (typeof img === 'string') {
+        elements.push(
+          <link
+            key={`apple-touch-startup-image-${index}`}
+            rel="apple-touch-startup-image"
+            href={img}
+          />
+        );
+      } else {
+        elements.push(
+          <link
+            key={`apple-touch-startup-image-${index}`}
+            rel="apple-touch-startup-image"
+            href={img.url}
+            media={img.media}
+          />
+        );
+      }
+    });
+  }
+
+  return elements;
+}
+
+// ─── Format Detection ──────────────────────────────────────────────────────
+
+function generateFormatDetectionMeta(
+  formatDetection: FormatDetection | null | undefined
+): React.ReactElement[] {
+  if (!formatDetection) return [];
+
+  const directives: string[] = [];
+
+  if (formatDetection.telephone === false) directives.push('telephone=no');
+  if (formatDetection.date === false) directives.push('date=no');
+  if (formatDetection.address === false) directives.push('address=no');
+  if (formatDetection.email === false) directives.push('email=no');
+  if (formatDetection.url === false) directives.push('url=no');
+
+  if (directives.length === 0) return [];
+
+  return [<meta key="format-detection" name="format-detection" content={directives.join(', ')} />];
 }
 
 // ============================================================================
@@ -487,7 +728,7 @@ export function MetadataRenderer({
       {generateOpenGraphMeta(metadata.openGraph, base)}
 
       {/* Twitter */}
-      {generateTwitterMeta(metadata.twitter)}
+      {generateTwitterMeta(metadata.twitter, base)}
 
       {/* Icons */}
       {generateIconLinks(metadata.icons)}
@@ -497,6 +738,12 @@ export function MetadataRenderer({
 
       {/* Alternates */}
       {generateAlternateLinks(metadata.alternates, base)}
+
+      {/* Apple Web App */}
+      {generateAppleWebAppMeta(metadata.appleWebApp)}
+
+      {/* Format Detection */}
+      {generateFormatDetectionMeta(metadata.formatDetection)}
 
       {/* Manifest */}
       {metadata.manifest && (
