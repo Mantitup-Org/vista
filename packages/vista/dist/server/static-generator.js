@@ -215,15 +215,13 @@ async function resolveStaticParams(route, cwd) {
  * e.g., '/blog/:slug' + { slug: 'hello' } → '/blog/hello'
  */
 function expandPattern(pattern, params) {
-    let url = pattern;
-    for (const [key, value] of Object.entries(params)) {
-        const param = Array.isArray(value) ? value.join('/') : value;
-        // Handle catch-all :param* and optional catch-all :param*?
-        url = url.replace(new RegExp(`:${key}\\*\\??`), param);
-        // Handle regular :param
-        url = url.replace(`:${key}`, param);
-    }
-    return url;
+    return pattern.replace(/:([a-zA-Z0-9_]+)(\*|\*\?)?/g, (_match, key) => {
+        if (Object.prototype.hasOwnProperty.call(params, key)) {
+            const value = params[key];
+            return Array.isArray(value) ? value.join('/') : String(value);
+        }
+        return _match;
+    });
 }
 // ---------------------------------------------------------------------------
 // Page pre-rendering
