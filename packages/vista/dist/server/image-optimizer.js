@@ -18,6 +18,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createImageHandler = createImageHandler;
+exports.fetchRemoteImage = fetchRemoteImage;
+exports.isAllowedRemoteUrl = isAllowedRemoteUrl;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
@@ -78,17 +80,43 @@ function fetchLocalFile(filePath, cwd) {
     }
     throw new Error(`Image not found: ${filePath}`);
 }
-function fetchRemoteImage(url) {
+function fetchRemoteImage(url, config, maxRedirects = 5) {
     return new Promise((resolve, reject) => {
-        const parsedUrl = new url_1.URL(url);
+        let parsedUrl;
+        try {
+            parsedUrl = new url_1.URL(url);
+        }
+        catch {
+            reject(new Error(`Invalid remote image URL: ${url}`));
+            return;
+        }
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            reject(new Error(`Unsupported remote image protocol: ${parsedUrl.protocol}`));
+            return;
+        }
         const client = parsedUrl.protocol === 'https:' ? https_1.default : http_1.default;
         const request = client.get(url, { timeout: 10000 }, (response) => {
             if (response.statusCode &&
                 response.statusCode >= 300 &&
                 response.statusCode < 400 &&
                 response.headers.location) {
-                // Follow redirect
-                fetchRemoteImage(response.headers.location).then(resolve).catch(reject);
+                if (maxRedirects <= 0) {
+                    reject(new Error(`Too many redirects fetching remote image: ${url}`));
+                    return;
+                }
+                let redirectUrl;
+                try {
+                    redirectUrl = new url_1.URL(response.headers.location, url).toString();
+                }
+                catch {
+                    reject(new Error(`Invalid redirect location header: ${response.headers.location}`));
+                    return;
+                }
+                if (config && !isAllowedRemoteUrl(redirectUrl, config)) {
+                    reject(new Error(`Redirect target not allowed by image configuration: ${redirectUrl}`));
+                    return;
+                }
+                fetchRemoteImage(redirectUrl, config, maxRedirects - 1).then(resolve).catch(reject);
                 return;
             }
             if (response.statusCode && response.statusCode !== 200) {
@@ -113,6 +141,10 @@ function fetchRemoteImage(url) {
 function isAllowedRemoteUrl(url, config) {
     try {
         const parsed = new url_1.URL(url);
+        // Block non-http/https protocols
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return false;
+        }
         // Check domains
         if (config.domains.length > 0) {
             if (config.domains.includes(parsed.hostname)) {
@@ -123,10 +155,10 @@ function isAllowedRemoteUrl(url, config) {
         if (config.remotePatterns.length > 0) {
             for (const pattern of config.remotePatterns) {
                 const hostMatch = pattern.hostname
-                    ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+                    ? new RegExp(`^${pattern.hostname.replace(/[\\^$.+?()[\]{}|]/g, '\\$&').replace(/\*/g, '.*')}$`).test(parsed.hostname)
                     : true;
                 const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
-                const portMatch = pattern.port ? parsed.port === pattern.port : true;
+                const portMatch = pattern.port ? parsed.port === String(pattern.port) : true;
                 const pathMatch = pattern.pathname
                     ? parsed.pathname.startsWith(pattern.pathname.replace(/\*\*$/, ''))
                     : true;
@@ -235,13 +267,13 @@ async function processPassthrough(sourceBuffer) {
 // ---------------------------------------------------------------------------
 // Express handler
 // ---------------------------------------------------------------------------
-function createImageHandler(cwd, isDev) {
+function createImageHandler(cwd, isDev, customConfig) {
     const sharpAvailable = detectSharp();
     if (!sharpAvailable && isDev && process.env.VISTA_DEBUG) {
         console.log('[vista:image] sharp not found — images served without optimization. ' +
             'Install sharp for resizing and format conversion: pnpm add sharp');
     }
-    const config = { ...image_config_1.imageConfigDefault };
+    const config = { ...image_config_1.imageConfigDefault, ...customConfig };
     return async function handleImageRequest(req, res) {
         try {
             const url = req.query.url;
@@ -308,7 +340,7 @@ function createImageHandler(cwd, isDev) {
                         .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
                     return;
                 }
-                sourceBuffer = await fetchRemoteImage(url);
+                sourceBuffer = await fetchRemoteImage(url, config);
             }
             else {
                 // Local file
