@@ -1,7 +1,6 @@
-'use client';
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Image = void 0;
+exports.getImageProps = exports.getImgProps = exports.Image = void 0;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const react_1 = require("react");
 const get_img_props_1 = require("./get-img-props");
@@ -92,4 +91,6 @@ exports.Image = (0, react_1.forwardRef)((props, ref) => {
     return imageElement;
 });
 exports.Image.displayName = 'Image';
+exports.getImgProps = get_img_props_1.getImgProps;
+exports.getImageProps = get_img_props_1.getImageProps;
 exports.default = exports.Image;

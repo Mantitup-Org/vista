@@ -245,7 +245,11 @@ function useParams() {
 }
 function usePathname() {
     const context = React.useContext(exports.RouterContext);
-    if (!context)
+    if (!context) {
+        if (typeof window !== 'undefined' && window.location) {
+            return window.location.pathname;
+        }
         return '';
+    }
     return context.pathname;
 }

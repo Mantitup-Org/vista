@@ -140,4 +140,5 @@ export const Image = forwardRef<HTMLImageElement, EnhancedImageProps>((props, re
 
 Image.displayName = 'Image';
 
+export { getImgProps, getImageProps } from './get-img-props';
 export default Image;

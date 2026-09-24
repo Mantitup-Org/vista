@@ -179,9 +179,10 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
     // Check if link is active (current route)
     useEffect(() => {
       if (typeof window !== 'undefined') {
+        const targetPathname = targetPath.split(/[?#]/)[0] || '/';
         // Exact match or starts-with for nested routes
-        const exact = pathname === targetPath;
-        const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+        const exact = pathname === targetPathname;
+        const partial = targetPathname !== '/' && pathname.startsWith(targetPathname + '/');
         setIsActive(exact || partial);
       }
     }, [targetPath, pathname]);
@@ -259,9 +260,17 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
         if (e.defaultPrevented) return;
         if (e.button !== 0) return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // modifier = new tab
-        if (target === '_blank') return; // explicit new tab
+        if (target && target !== '_self') return; // explicit new tab or frame target
+        if (props.download !== undefined && props.download !== false) return; // native file download
         if (!href) return;
         if (!internal) return; // external / mailto / tel
+
+        const targetPathname = targetPath.split(/[?#]/)[0] || '/';
+        if (targetPath.includes('#') && targetPathname === pathname) {
+          // Same-page hash link: allow native document scroll
+          return;
+        }
+
         if (!rscRouter && !legacyRouter) return; // No router provider -> allow native navigation
 
         e.preventDefault();
@@ -287,12 +296,14 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
         onClick,
         href,
         targetPath,
+        pathname,
         replace,
         scroll,
         rscRouter,
         legacyRouter,
         onNavigate,
         target,
+        props.download,
         internal,
       ]
     );
@@ -338,8 +349,11 @@ export const useLinkStatus = () => {
  * Hook to check if a path is active
  */
 export const useIsActive = (path: string): boolean => {
-  const pathname = usePathname();
-  return pathname === path;
+  const routerPathname = usePathname();
+  const currentPathname =
+    routerPathname || (typeof window !== 'undefined' ? window.location.pathname : '');
+  const targetPathname = path.split(/[?#]/)[0] || '/';
+  return currentPathname === targetPathname;
 };
 
 export default Link;
