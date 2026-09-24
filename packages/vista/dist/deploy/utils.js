@@ -146,10 +146,14 @@ function writeStaticRscRedirects(pagesDir, targetDir) {
             return;
         const routePath = posix.replace(/\.rsc$/, '');
         const flightPath = `/rsc/${posix}`;
-        lines.push(`${flightPath} ${flightPath} 200`);
         if (routePath === 'index')
             return;
         lines.push(`/rsc/${routePath} ${flightPath} 200`);
+        if (routePath.endsWith('/index')) {
+            const cleanPath = routePath.slice(0, -6);
+            lines.push(`/rsc/${cleanPath} ${flightPath} 200`);
+            lines.push(`/rsc/${cleanPath}/ ${flightPath} 200`);
+        }
     });
     fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
 }

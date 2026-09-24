@@ -313,7 +313,7 @@ function packVercelFullRuntime(ctx) {
                 dest: '/_vista/static/$1',
             },
             { handle: 'filesystem' },
-            { src: '/(.*)', dest: '/' },
+            { src: '/(.*)', dest: `/${exports.VERCEL_SSR_FUNCTION_NAME}` },
         ],
     };
     fs_1.default.writeFileSync(path_1.default.join(outputDir, 'config.json'), JSON.stringify(config, null, 2));
