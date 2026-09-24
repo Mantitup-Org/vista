@@ -182,9 +182,24 @@ async function parseRequestBody(req, bodySizeLimitBytes) {
     return raw;
 }
 async function sendFetchResponse(res, response) {
+    const setCookies = typeof response.headers.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : typeof response.headers.raw === 'function'
+            ? response.headers.raw()['set-cookie']
+            : undefined;
     response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie')
+            return;
         res.setHeader(key, value);
     });
+    if (Array.isArray(setCookies) && setCookies.length > 0) {
+        res.setHeader('Set-Cookie', setCookies);
+    }
+    else if (response.headers.has('set-cookie')) {
+        const raw = response.headers.get('set-cookie');
+        if (raw)
+            res.setHeader('Set-Cookie', raw);
+    }
     const method = String(res.req?.method || '').toUpperCase();
     res.status(response.status);
     if (method === 'HEAD' || !response.body) {
@@ -514,8 +529,11 @@ async function runLegacyApiRoute(options) {
             return;
         }
         catch (error) {
-            if (error instanceof BodyLimitError) {
-                res.status(error.status).json({ error: error.message });
+            if (error instanceof BodyLimitError ||
+                error instanceof BodyParseError ||
+                error?.name === 'BodyLimitError' ||
+                error?.name === 'BodyParseError') {
+                res.status(error.status || 400).json({ error: error.message });
                 return;
             }
             throw error;

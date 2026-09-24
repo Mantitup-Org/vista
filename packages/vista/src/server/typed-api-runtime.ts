@@ -234,9 +234,24 @@ async function parseRequestBody(req: express.Request, bodySizeLimitBytes: number
 }
 
 async function sendFetchResponse(res: express.Response, response: Response): Promise<void> {
+  const setCookies =
+    typeof (response.headers as any).getSetCookie === 'function'
+      ? (response.headers as any).getSetCookie()
+      : typeof (response.headers as any).raw === 'function'
+        ? (response.headers as any).raw()['set-cookie']
+        : undefined;
+
   response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') return;
     res.setHeader(key, value);
   });
+
+  if (Array.isArray(setCookies) && setCookies.length > 0) {
+    res.setHeader('Set-Cookie', setCookies);
+  } else if (response.headers.has('set-cookie')) {
+    const raw = response.headers.get('set-cookie');
+    if (raw) res.setHeader('Set-Cookie', raw);
+  }
 
   const method = String((res as any).req?.method || '').toUpperCase();
   res.status(response.status);
@@ -693,9 +708,14 @@ export async function runLegacyApiRoute(options: {
 
       res.status(204).end();
       return;
-    } catch (error) {
-      if (error instanceof BodyLimitError) {
-        res.status(error.status).json({ error: error.message });
+    } catch (error: any) {
+      if (
+        error instanceof BodyLimitError ||
+        error instanceof BodyParseError ||
+        error?.name === 'BodyLimitError' ||
+        error?.name === 'BodyParseError'
+      ) {
+        res.status(error.status || 400).json({ error: error.message });
         return;
       }
       throw error;
