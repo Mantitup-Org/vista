@@ -588,6 +588,10 @@ async function runTypedApiRoute(options) {
             await sendFetchResponse(res, routeResult.payload);
             return true;
         }
+        if (routeResult.payload === undefined) {
+            res.status(routeResult.status).end();
+            return true;
+        }
         res.status(routeResult.status).json(routeResult.payload);
         return true;
     }

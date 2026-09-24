@@ -99,9 +99,14 @@ async function parseSuccessResponse(response, serialization) {
     }
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('application/json')) {
-        return response.text();
+        const text = await response.text();
+        return text ? text : undefined;
     }
-    const json = await response.json();
+    const text = await response.text();
+    if (!text || !text.trim()) {
+        return undefined;
+    }
+    const json = JSON.parse(text);
     return (0, serialization_1.deserializeWithMode)(json, serialization);
 }
 function buildRequestUrl(baseUrl, path, query) {
@@ -126,10 +131,13 @@ async function requestRoute(options) {
         url = buildRequestUrl(options.baseUrl, normalizedPath, query);
     }
     else {
-        if (!requestHeaders.has('content-type')) {
-            requestHeaders.set('content-type', 'application/json');
+        const serialized = (0, serialization_1.serializeWithMode)(options.input, options.serialization);
+        if (serialized !== undefined) {
+            if (!requestHeaders.has('content-type')) {
+                requestHeaders.set('content-type', 'application/json');
+            }
+            requestInit.body = JSON.stringify(serialized);
         }
-        requestInit.body = JSON.stringify((0, serialization_1.serializeWithMode)(options.input, options.serialization));
     }
     const response = await options.fetchImpl(url, requestInit);
     if (!response.ok) {
