@@ -38,10 +38,12 @@ function applyTheme(theme) {
 }
 function ThemeProvider({ children, defaultTheme = 'system', }) {
     const [theme, setThemeState] = (0, react_1.useState)(defaultTheme);
+    const [systemTheme, setSystemTheme] = (0, react_1.useState)(getSystemTheme);
     const [mounted, setMounted] = (0, react_1.useState)(false);
     (0, react_1.useEffect)(() => {
         const nextTheme = sanitizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY), defaultTheme);
         setThemeState(nextTheme);
+        setSystemTheme(getSystemTheme());
         applyTheme(nextTheme);
         setMounted(true);
     }, [defaultTheme]);
@@ -55,7 +57,9 @@ function ThemeProvider({ children, defaultTheme = 'system', }) {
         if (!mounted)
             return;
         const media = window.matchMedia(MEDIA_QUERY);
-        const handleMediaChange = () => {
+        const handleMediaChange = (event) => {
+            const nextResolved = event ? (event.matches ? 'dark' : 'light') : getSystemTheme();
+            setSystemTheme(nextResolved);
             const currentTheme = sanitizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY), defaultTheme);
             if (currentTheme === 'system') {
                 applyTheme('system');
@@ -94,13 +98,14 @@ function ThemeProvider({ children, defaultTheme = 'system', }) {
             return THEME_ORDER[(index + 1) % THEME_ORDER.length];
         });
     }, []);
+    const resolvedTheme = theme === 'system' ? systemTheme : theme;
     const value = (0, react_1.useMemo)(() => ({
         theme,
-        resolvedTheme: resolveTheme(theme),
+        resolvedTheme,
         setTheme,
         cycleTheme,
         mounted,
-    }), [cycleTheme, mounted, setTheme, theme]);
+    }), [cycleTheme, mounted, resolvedTheme, setTheme, theme]);
     return (0, jsx_runtime_1.jsx)(ThemeContext.Provider, { value: value, children: children });
 }
 function useTheme() {
