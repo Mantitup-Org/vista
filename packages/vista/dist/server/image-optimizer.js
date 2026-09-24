@@ -18,6 +18,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createImageHandler = createImageHandler;
+exports.isAllowedRemoteUrl = isAllowedRemoteUrl;
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
@@ -123,10 +124,10 @@ function isAllowedRemoteUrl(url, config) {
         if (config.remotePatterns.length > 0) {
             for (const pattern of config.remotePatterns) {
                 const hostMatch = pattern.hostname
-                    ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+                    ? new RegExp(`^${pattern.hostname.replace(/[\\^$.+?()[\]{}|]/g, '\\$&').replace(/\*/g, '.*')}$`).test(parsed.hostname)
                     : true;
                 const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
-                const portMatch = pattern.port ? parsed.port === pattern.port : true;
+                const portMatch = pattern.port ? parsed.port === String(pattern.port) : true;
                 const pathMatch = pattern.pathname
                     ? parsed.pathname.startsWith(pattern.pathname.replace(/\*\*$/, ''))
                     : true;
