@@ -190,7 +190,21 @@ function createServerResponse(req) {
     } else if (typeof statusMessage === 'string') {
       res.statusMessage = statusMessage;
     }
-    if (headerObj) {
+    if (Array.isArray(headerObj)) {
+      // Node also accepts a flat [name, value, name, value, ...] array. Group
+      // repeated names (e.g. Set-Cookie) so every value is kept.
+      const grouped = new Map();
+      for (let i = 0; i + 1 < headerObj.length; i += 2) {
+        const name = String(headerObj[i]);
+        const key = name.toLowerCase();
+        const entry = grouped.get(key) || { name, values: [] };
+        entry.values.push(headerObj[i + 1]);
+        grouped.set(key, entry);
+      }
+      for (const { name, values } of grouped.values()) {
+        res.setHeader(name, values.length > 1 ? values.map(String) : values[0]);
+      }
+    } else if (headerObj) {
       for (const key of Object.keys(headerObj)) {
         if (headerObj[key] != null) res.setHeader(key, headerObj[key]);
       }
