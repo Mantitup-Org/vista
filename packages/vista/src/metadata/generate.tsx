@@ -26,6 +26,14 @@ import type {
 // Helper Functions
 // ============================================================================
 
+// String.prototype.replace interprets `$&`, `$'`, `` $` `` and `$$` in the
+// replacement as substitution patterns, so a page title such as `Deals $&
+// Steals` would be corrupted when spliced into the template. Replacing with a
+// function suppresses that interpretation.
+function applyTitleTemplate(template: string, title: string): string {
+  return template.replace('%s', () => title);
+}
+
 function resolveTitle(
   title: string | TemplateString | null | undefined,
   template?: string
@@ -34,7 +42,7 @@ function resolveTitle(
 
   if (typeof title === 'string') {
     if (template) {
-      return template.replace('%s', title);
+      return applyTitleTemplate(template, title);
     }
     return title;
   }
@@ -46,7 +54,7 @@ function resolveTitle(
 
   const baseTitle = title.default;
   if (title.template) {
-    return title.template.replace('%s', baseTitle);
+    return applyTitleTemplate(title.template, baseTitle);
   }
 
   return baseTitle;
@@ -64,7 +72,12 @@ function resolveUrl(
   }
 
   if (base) {
-    return new URL(urlStr, base.toString()).toString();
+    try {
+      return new URL(urlStr, base.toString()).toString();
+    } catch {
+      // An invalid metadataBase or an unresolvable value must not fail the
+      // whole render; keep the original value instead.
+    }
   }
 
   return urlStr;
