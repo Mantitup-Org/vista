@@ -35,9 +35,9 @@ function vistaVersion(): string {
   try {
     const require = createRequire(__filename);
     const pkg = require('../../package.json') as { version?: string };
-    return pkg.version || '0.3.8';
+    return pkg.version || '0.3.9';
   } catch {
-    return '0.3.8';
+    return '0.3.9';
   }
 }
 
