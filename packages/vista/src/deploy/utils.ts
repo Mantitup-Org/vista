@@ -153,6 +153,11 @@ function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
 
     if (routePath === 'index') return;
     lines.push(`/rsc/${routePath} ${flightPath} 200`);
+    if (routePath.endsWith('/index')) {
+      const cleanPath = routePath.slice(0, -6);
+      lines.push(`/rsc/${cleanPath} ${flightPath} 200`);
+      lines.push(`/rsc/${cleanPath}/ ${flightPath} 200`);
+    }
   });
 
   fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
