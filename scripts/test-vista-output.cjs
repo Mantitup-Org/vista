@@ -335,7 +335,16 @@ async function verifyVariant(variant, port) {
     assert.equal(buildManifest.pipeline_owner, 'rust-cli', 'flashpack build must be owned by rust-cli');
     assert.equal(buildManifest.phase, 'build', 'flashpack build manifest must record build phase');
     assert.equal(latestState.pipeline_owner, 'rust-cli', 'flashpack latest state must be rust-owned');
-    assert.equal(latestState.command, 'run', 'flashpack latest state must reflect a rust-run command');
+    assert.equal(
+      latestState.command,
+      'prepare',
+      'flashpack latest state must reflect a rust-prepare command after build'
+    );
+    assert.equal(
+      buildManifest.command,
+      'prepare',
+      'flashpack build manifest must record prepare action'
+    );
     assert.equal(cacheManifest.activeCacheRoot, '.flash/cache', 'flashpack cache manifest must point at .flash/cache');
   } else {
     assert.equal(
