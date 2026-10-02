@@ -37,6 +37,85 @@ function copyFixture(sourceDir, targetDir) {
   }
 }
 
+function linkOrCopy(target, source) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.rmSync(target, { recursive: true, force: true });
+  try {
+    fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+  } catch {
+    // Fall back to a file symlink / copy when junctions are unavailable.
+    try {
+      fs.symlinkSync(source, target, 'dir');
+    } catch {
+      fs.cpSync(source, target, { recursive: true });
+    }
+  }
+}
+
+function resolveInstalledPackage(name, searchRoots) {
+  for (const root of searchRoots) {
+    try {
+      const resolved = require.resolve(`${name}/package.json`, { paths: [root] });
+      return path.dirname(resolved);
+    } catch {
+      // Some packages expose only the main entry via exports.
+    }
+    try {
+      const entry = require.resolve(name, { paths: [root] });
+      let current = path.dirname(entry);
+      while (true) {
+        if (fs.existsSync(path.join(current, 'package.json'))) {
+          return current;
+        }
+        const parent = path.dirname(current);
+        if (parent === current) break;
+        current = parent;
+      }
+    } catch {
+      // try next root
+    }
+  }
+  return null;
+}
+
+function ensureFixtureDeps(appDir) {
+  const vistaPkg = path.join(repoRoot, 'packages', 'vista');
+  const searchRoots = [
+    path.join(repoRoot, 'apps', 'web'),
+    vistaPkg,
+    repoRoot,
+    path.join(repoRoot, 'packages', 'create-vista-app'),
+  ];
+  const nm = path.join(appDir, 'node_modules');
+  fs.mkdirSync(nm, { recursive: true });
+
+  linkOrCopy(path.join(nm, 'vista'), vistaPkg);
+
+  for (const name of ['react', 'react-dom', 'postcss', 'tailwindcss', '@tailwindcss/postcss']) {
+    const source = resolveInstalledPackage(name, searchRoots);
+    if (!source) {
+      throw new Error(`[test:flashpack-dev] missing dependency ${name} in workspace`);
+    }
+    const target = name.startsWith('@')
+      ? path.join(nm, ...name.split('/'))
+      : path.join(nm, name);
+    linkOrCopy(target, source);
+  }
+
+  const pkgPath = path.join(appDir, 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+  pkg.dependencies = {
+    ...(pkg.dependencies || {}),
+    vista: `file:${vistaPkg}`,
+    react: '*',
+    'react-dom': '*',
+    postcss: '*',
+    tailwindcss: '*',
+    '@tailwindcss/postcss': '*',
+  };
+  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
 function readJson(absolutePath) {
   return JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
 }
@@ -113,6 +192,8 @@ async function startDevServer(port) {
       NODE_ENV: 'development',
       PORT: String(port),
       VISTA_DEBUG: '1',
+      // Always compile flashpack-cli from this workspace so CI picks up crate fixes.
+      VISTA_FLASHPACK_FROM_SOURCE: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -176,6 +257,7 @@ async function main() {
   fs.rmSync(tempRoot, { recursive: true, force: true });
   fs.mkdirSync(tempRoot, { recursive: true });
   copyFixture(fixtureRoot, appDir);
+  ensureFixtureDeps(appDir);
 
   let firstRun = null;
   let secondRun = null;

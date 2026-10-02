@@ -75,20 +75,22 @@ function collect() {
   const pages = [];
   const layouts = [];
   let root = null;
+  let rootLayout = null;
   for (const appRel of ['app', 'src/app']) {
     const dir = path.join(modulesDir, appRel);
     if (!fs.existsSync(dir)) continue;
     for (const file of walk(dir)) {
       const relative = path.relative(dir, file).replaceAll('\\', '/');
       const name = path.basename(relative);
-      const segments = relative.split('/').slice(0, -1);
-      const url = moduleUrl(appRel, relative);
-      if (!root && name.startsWith('root.') && segments.length === 0) root = url.split('?')[0];
-      if (name.startsWith('page.') || name.startsWith('index.')) pages.push({ module: url.split('?')[0], segments });
-      else if (name.startsWith('layout.')) layouts.push({ module: url.split('?')[0], segments });
+      const segments = relative.split('/').slice(0, -1).filter(Boolean);
+      const url = moduleUrl(appRel, relative).split('?')[0];
+      if (!root && name.startsWith('root.') && segments.length === 0) root = url;
+      if (!rootLayout && name.startsWith('layout.') && segments.length === 0) rootLayout = url;
+      if (name.startsWith('page.') || name.startsWith('index.')) pages.push({ module: url, segments });
+      else if (name.startsWith('layout.') && segments.length > 0) layouts.push({ module: url, segments });
     }
   }
-  return { root: root || '/_flashpack/modules/app/root.tsx.js', pages, layouts };
+  return { root: root || rootLayout || '/_flashpack/modules/app/root.tsx.js', pages, layouts };
 }
 
 function layoutApplies(segments, parts) {

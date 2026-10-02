@@ -656,6 +656,7 @@ fn routes_json(cwd: &Path, generation: u64) -> String {
     let mut pages = Vec::new();
     let mut layouts = Vec::new();
     let mut root = None;
+    let mut root_layout = None;
     for app_rel in ["app", "src/app"] {
         let dir = modules.join(app_rel);
         if !dir.is_dir() {
@@ -666,7 +667,18 @@ fn routes_json(cwd: &Path, generation: u64) -> String {
                 root = Some(module_url(app_rel, &found, generation));
             }
         }
+        if root_layout.is_none() {
+            if let Some(found) = find_compiled(&dir, "layout.") {
+                root_layout = Some(module_url(app_rel, &found, generation));
+            }
+        }
         collect_route_files(&dir, &dir, app_rel, generation, &mut pages, &mut layouts);
+    }
+    // App Router apps usually only ship app/layout — treat that as the document root
+    // and drop it from nested layouts so it is not applied twice.
+    let root = root.or(root_layout);
+    if let Some(ref root_url) = root {
+        layouts.retain(|item| item.get("module").and_then(|v| v.as_str()) != Some(root_url.as_str()));
     }
     serde_json::json!({
         "root": root.unwrap_or_else(|| format!("/_flashpack/modules/app/root.tsx.js?v={generation}")),
@@ -1068,12 +1080,32 @@ fn compile_css(cwd: &Path) -> Result<()> {
     let script_path = script_dir.join("compile-css.mjs");
     fs::write(
         &script_path,
-        r#"import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+        r#"import { createRequire } from 'node:module';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import postcss from 'postcss';
-import tailwindcss from '@tailwindcss/postcss';
 const cwd = process.argv[2];
-const from = path.join(cwd, 'app', 'globals.css');
+const fromCandidates = [
+  path.join(cwd, 'app', 'globals.css'),
+  path.join(cwd, 'src', 'app', 'globals.css'),
+];
+const from = fromCandidates.find((candidate) => existsSync(candidate));
+if (!from) {
+  const out = path.join(cwd, '.flash', 'dev', 'app.css');
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, '/* no globals.css */\n');
+  process.exit(0);
+}
+function resolvePkg(name) {
+  const roots = [cwd, path.resolve(cwd, '../..'), path.resolve(cwd, '../../..'), path.resolve(cwd, '../../../..')];
+  for (const root of roots) {
+    try {
+      return createRequire(path.join(root, 'package.json'))(name);
+    } catch {}
+  }
+  throw new Error(`Cannot find package '${name}' for flashpack CSS compile`);
+}
+const postcss = resolvePkg('postcss');
+const tailwindcss = resolvePkg('@tailwindcss/postcss');
 const processor = postcss.default || postcss;
 const plugin = tailwindcss.default || tailwindcss;
 const result = await processor([plugin()]).process(readFileSync(from, 'utf8'), { from });
@@ -1082,10 +1114,30 @@ mkdirSync(path.dirname(out), { recursive: true });
 writeFileSync(out, result.css);
 "#,
     )?;
-    let output = Command::new("node")
-        .arg(&script_path)
-        .arg(cwd)
-        .current_dir(cwd)
+    let mut node_path_entries = Vec::new();
+    let mut cursor = Some(cwd.to_path_buf());
+    while let Some(dir) = cursor {
+        let candidate = dir.join("node_modules");
+        if candidate.is_dir() {
+            node_path_entries.push(candidate.to_string_lossy().into_owned());
+        }
+        cursor = dir.parent().map(|parent| parent.to_path_buf());
+    }
+    let mut command = Command::new("node");
+    command.arg(&script_path).arg(cwd).current_dir(cwd);
+    if !node_path_entries.is_empty() {
+        let joined = node_path_entries.join(if cfg!(windows) { ";" } else { ":" });
+        let existing = std::env::var_os("NODE_PATH").unwrap_or_default();
+        if existing.is_empty() {
+            command.env("NODE_PATH", joined);
+        } else {
+            command.env(
+                "NODE_PATH",
+                format!("{joined}{}{}", if cfg!(windows) { ";" } else { ":" }, existing.to_string_lossy()),
+            );
+        }
+    }
+    let output = command
         .output()
         .context("node is required to compile Tailwind CSS")?;
     if !output.status.success() {
