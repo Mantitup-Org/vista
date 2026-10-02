@@ -17,6 +17,11 @@ export interface VistaEngineConfig {
    * Compatibility alias accepted: webpack.
    */
   variant?: VistaEngineVariant | VistaEngineAlias;
+  /**
+   * Flashpack crate pipeline launched by the vista package.
+   * Set by create-vista-app when the selected engine is flashpack.
+   */
+  pipeline?: 'flashpack-cli';
 }
 
 export interface StructureValidationConfig {
@@ -166,11 +171,29 @@ function readEngineVariantFromEnv(env: NodeJS.ProcessEnv): VistaEngineVariant | 
   return undefined;
 }
 
+function readEngineVariantFromPackage(cwd: string): VistaEngineVariant | undefined {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')) as {
+      vista?: { engine?: string } | string;
+    };
+    const vista = pkg.vista;
+    const raw = typeof vista === 'string' ? vista : vista?.engine;
+    return normalizeEngineVariant(raw);
+  } catch {
+    return undefined;
+  }
+}
+
 export function resolveEngineVariant(
   config: VistaConfig,
   env: NodeJS.ProcessEnv = process.env
 ): VistaEngineVariant {
-  return readEngineVariantFromEnv(env) || readEngineVariantFromConfig(config) || 'default';
+  return (
+    readEngineVariantFromEnv(env) ||
+    readEngineVariantFromPackage(env.VISTA_ARTIFACT_ROOT || process.cwd()) ||
+    readEngineVariantFromConfig(config) ||
+    'default'
+  );
 }
 
 export function applyEngineVariantToEnv(

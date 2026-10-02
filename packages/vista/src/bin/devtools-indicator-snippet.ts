@@ -44,21 +44,22 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       style.id = '__vista-devtools-style';
       style.textContent = [
       '#__vista-devtools-root{position:fixed;left:28px;bottom:22px;z-index:2147482000;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#fff;}',
-      '#__vista-devtools-root [data-vista-trigger]{width:40px;height:40px;border-radius:9999px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.82);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,0.4);position:relative;transition:transform 180ms ease,border-color 180ms ease,background 180ms ease,width 180ms ease,padding 180ms ease,gap 180ms ease;}',
-      '#__vista-devtools-root [data-vista-trigger]:hover{transform:translateY(-1px);border-color:rgba(255,255,255,0.42);background:rgba(0,0,0,0.92);}',
-      '#__vista-devtools-root [data-vista-trigger]:focus-visible{outline:2px solid rgba(255,255,255,0.65);outline-offset:2px;}',
-      '#__vista-devtools-root [data-vista-trigger][data-busy="true"]{border-color:rgba(255,255,255,0.5);}',
-      '#__vista-devtools-root [data-vista-trigger][data-error="true"]{width:86px;padding:0 8px;justify-content:flex-start;gap:6px;border-color:rgba(248,113,113,0.9);background:rgba(53,11,16,0.94);box-shadow:0 10px 24px rgba(248,113,113,0.24);}',
-      '#__vista-devtools-root .vista-devtools-logo{display:block;width:16px;height:16px;}',
+      '#__vista-devtools-root [data-vista-trigger]{width:42px;height:42px;border-radius:9999px;border:1px solid rgba(255,255,255,0.16);background:rgba(12,12,12,0.88);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 28px rgba(0,0,0,0.38),inset 0 1px 0 rgba(255,255,255,0.08);position:relative;gap:0;padding:0;transition:transform 200ms cubic-bezier(0.22,1,0.36,1),border-color 200ms ease,background 200ms ease,width 220ms cubic-bezier(0.22,1,0.36,1),padding 220ms cubic-bezier(0.22,1,0.36,1),gap 220ms cubic-bezier(0.22,1,0.36,1),box-shadow 220ms ease;}',
+      '#__vista-devtools-root [data-vista-trigger]:hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.34);background:rgba(18,18,18,0.94);box-shadow:0 12px 32px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.1);}',
+      '#__vista-devtools-root [data-vista-trigger]:focus-visible{outline:2px solid rgba(255,255,255,0.55);outline-offset:3px;}',
+      '#__vista-devtools-root [data-vista-trigger][data-busy="true"]{border-color:rgba(255,255,255,0.42);}',
+      '#__vista-devtools-root [data-vista-trigger][data-error="true"]{width:auto;min-width:42px;height:42px;padding:0 12px 0 11px;justify-content:flex-start;gap:9px;border-color:rgba(255,255,255,0.14);background:linear-gradient(180deg,rgba(28,16,18,0.96),rgba(14,10,11,0.96));box-shadow:0 10px 30px rgba(0,0,0,0.42),0 0 0 1px rgba(255,90,90,0.18),inset 0 1px 0 rgba(255,255,255,0.06);}',
+      '#__vista-devtools-root [data-vista-trigger][data-error="true"]:hover{border-color:rgba(255,255,255,0.22);box-shadow:0 14px 34px rgba(0,0,0,0.48),0 0 0 1px rgba(255,90,90,0.28),inset 0 1px 0 rgba(255,255,255,0.08);}',
+      '#__vista-devtools-root .vista-devtools-logo{display:block;width:15px;height:15px;flex:0 0 auto;}',
       '#__vista-devtools-root .vista-devtools-logo svg{width:100%;height:100%;display:block;}',
-      '#__vista-devtools-root [data-vista-trigger][data-error="true"] .vista-devtools-logo{width:14px;height:14px;}',
       '#__vista-devtools-root .vista-devtools-logo-fill{fill:#fff;opacity:1;transition:opacity 180ms ease;}',
       '#__vista-devtools-root .vista-devtools-logo-draw{fill:none;stroke:#fff;stroke-width:12;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;opacity:0;}',
       '#__vista-devtools-root [data-vista-trigger][data-busy="true"] .vista-devtools-logo-fill{opacity:0.18;}',
       '#__vista-devtools-root [data-vista-trigger][data-busy="true"] .vista-devtools-logo-draw{opacity:1;animation:vista-devtools-v-draw 900ms ease-in-out infinite;}',
-      '#__vista-devtools-root .vista-devtools-error-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;border:1px solid rgba(248,113,113,0.65);background:rgba(248,113,113,0.16);color:#fecaca;font-size:11px;font-weight:670;font-variant-numeric:tabular-nums;line-height:1;}',
-      '#__vista-devtools-root .vista-devtools-error-close{font-size:11px;line-height:1;color:#fca5a5;}',
-      '#__vista-devtools-root [data-vista-panel]{position:absolute;left:0;bottom:50px;width:244px;padding:10px;border-radius:12px;border:1px solid rgba(255,255,255,0.18);background:rgba(8,8,8,0.94);backdrop-filter:blur(8px);box-shadow:0 16px 36px rgba(0,0,0,0.45);}',
+      '#__vista-devtools-root .vista-devtools-error-pill{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;border:1px solid rgba(255,120,120,0.28);background:rgba(255,255,255,0.06);color:rgba(255,228,228,0.96);font-size:11px;font-weight:600;letter-spacing:0.01em;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;}',
+      '#__vista-devtools-root .vista-devtools-error-dot{width:6px;height:6px;border-radius:999px;background:#ff6b6b;box-shadow:0 0 0 0 rgba(255,107,107,0.45);animation:vista-devtools-error-pulse 1.8s ease-out infinite;flex:0 0 auto;}',
+      '#__vista-devtools-root .vista-devtools-error-label{opacity:0.72;font-weight:550;}',
+      '#__vista-devtools-root [data-vista-panel]{position:absolute;left:0;bottom:54px;width:244px;padding:10px;border-radius:14px;border:1px solid rgba(255,255,255,0.14);background:rgba(10,10,10,0.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 18px 40px rgba(0,0,0,0.5);}',
       '#__vista-devtools-root [data-vista-panel][hidden]{display:none;}',
       '#__vista-devtools-root .vista-devtools-title{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,0.72);margin:0 0 8px;}',
       '#__vista-devtools-root .vista-devtools-row{font-size:12px;display:flex;justify-content:space-between;gap:10px;margin:4px 0;color:rgba(255,255,255,0.92);}',
@@ -69,6 +70,7 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       '#__vista-devtools-root [data-vista-hide]:hover{background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.5);color:#fff;}',
       '#__vista-devtools-root .vista-hide-icon{width:12px;height:12px;display:block;}',
       '@keyframes vista-devtools-v-draw{0%{stroke-dashoffset:100;opacity:0.35;}45%{stroke-dashoffset:0;opacity:1;}72%{stroke-dashoffset:0;opacity:1;}100%{stroke-dashoffset:-100;opacity:0.35;}}',
+      '@keyframes vista-devtools-error-pulse{0%{box-shadow:0 0 0 0 rgba(255,107,107,0.45);}70%{box-shadow:0 0 0 7px rgba(255,107,107,0);}100%{box-shadow:0 0 0 0 rgba(255,107,107,0);}}',
       '@media (max-width:640px){#__vista-devtools-root{left:16px;bottom:14px;}#__vista-devtools-root [data-vista-panel]{width:220px;}}',
       ].join('');
     }
@@ -89,8 +91,9 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       '</svg>' +
       '</span>' +
       '<span class="vista-devtools-error-pill" data-vista-error-pill hidden>' +
-      '<span class="vista-devtools-error-close">×</span>' +
+      '<span class="vista-devtools-error-dot" aria-hidden="true"></span>' +
       '<span data-vista-error-count>1</span>' +
+      '<span class="vista-devtools-error-label" data-vista-error-label>issue</span>' +
       '</span>' +
       '</button>' +
       '<div data-vista-panel hidden>' +
@@ -120,6 +123,7 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
     var hideButton = null;
     var errorPill = null;
     var errorCountNode = null;
+    var errorLabelNode = null;
     var open = false;
     var pendingCount = 0;
     var busyStartedAt = 0;
@@ -140,6 +144,7 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       hideButton = root.querySelector('[data-vista-hide]');
       errorPill = root.querySelector('[data-vista-error-pill]');
       errorCountNode = root.querySelector('[data-vista-error-count]');
+      errorLabelNode = root.querySelector('[data-vista-error-label]');
     }
 
     function ensureAttached() {
@@ -208,9 +213,16 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
       } else {
         errorCount = 1;
       }
-      if (button) button.setAttribute('data-error', 'true');
+      if (button) {
+        button.setAttribute('data-error', 'true');
+        button.setAttribute(
+          'aria-label',
+          'Vista Dev Tools — ' + errorCount + (errorCount === 1 ? ' issue' : ' issues')
+        );
+      }
       if (errorPill) errorPill.hidden = false;
       if (errorCountNode) errorCountNode.textContent = String(errorCount);
+      if (errorLabelNode) errorLabelNode.textContent = errorCount === 1 ? 'issue' : 'issues';
       if (statusValue) statusValue.textContent = 'error';
       if (reasonValue)
         reasonValue.textContent =
@@ -220,8 +232,12 @@ export function getDevToolsIndicatorBootstrapSource(bootSessionId: string): stri
     function clearError() {
       ensureAttached();
       hasError = false;
-      if (button) button.setAttribute('data-error', 'false');
+      if (button) {
+        button.setAttribute('data-error', 'false');
+        button.setAttribute('aria-label', 'Vista Dev Tools');
+      }
       if (errorPill) errorPill.hidden = true;
+      if (errorLabelNode) errorLabelNode.textContent = 'issue';
       errorCount = 1;
       setState(currentBusy, currentReason);
     }

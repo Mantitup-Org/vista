@@ -6,3 +6,6 @@ description = "WASM bindings for Vista runtime"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+vista-core = { path = "../vista-core" }

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
 
-type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent' | 'auth';
+type GenerateCommand = 'api-init' | 'router' | 'procedure' | 'agent' | 'auth' | 'seo';
 type ProcedureMethod = 'get' | 'post';
 
 interface RunGenerateOptions {
@@ -451,6 +451,72 @@ function patchRootWithSessionProvider(cwd: string): { path: string; patched: boo
   return { path: absolutePath, patched: true };
 }
 
+function renderSeoRobots(): string {
+  return [
+    "import { robots } from 'vista/metadata';",
+    '',
+    'const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VISTA_SITE_URL || \'http://localhost:3003\';',
+    '',
+    'export default function robotsTxt() {',
+    '  return robots({',
+    "    rules: {",
+    "      userAgent: '*',",
+    "      allow: '/',",
+    '    },',
+    '    sitemap: `${siteUrl}/sitemap.xml`,',
+    '    host: new URL(siteUrl).host,',
+    '  });',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function renderSeoSitemap(): string {
+  return [
+    "import { sitemap } from 'vista/metadata';",
+    '',
+    'const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VISTA_SITE_URL || \'http://localhost:3003\';',
+    '',
+    'export default function sitemapXml() {',
+    '  return sitemap([',
+    '    {',
+    '      url: siteUrl,',
+    '      lastModified: new Date(),',
+    "      changeFrequency: 'weekly',",
+    '      priority: 1,',
+    '    },',
+    '  ]);',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function renderSeoManifest(): string {
+  return [
+    "import { manifest } from 'vista/metadata';",
+    '',
+    'export default function webManifest() {',
+    '  return manifest({',
+    "    name: 'My Vista App',",
+    "    short_name: 'Vista App',",
+    "    description: 'Built with Vista Framework',",
+    "    start_url: '/',",
+    "    display: 'standalone',",
+    "    background_color: '#ffffff',",
+    "    theme_color: '#111111',",
+    '    icons: [',
+    '      {',
+    "        src: '/favicon.ico',",
+    "        sizes: 'any',",
+    "        type: 'image/x-icon',",
+    '      },',
+    '    ],',
+    '  });',
+    '}',
+    '',
+  ].join('\n');
+}
+
 function printGenerateUsage(log: (message: string) => void): void {
   log('Vista generator usage:');
   log('  vista g api-init');
@@ -458,6 +524,7 @@ function printGenerateUsage(log: (message: string) => void): void {
   log('  vista g procedure <name> [get|post]');
   log('  vista g agent <name>');
   log('  vista g auth');
+  log('  vista g seo');
 }
 
 export async function runGenerateCommand(
@@ -469,7 +536,7 @@ export async function runGenerateCommand(
   const error = options.error ?? console.error;
 
   const command = (args[0] || '').toLowerCase() as GenerateCommand;
-  if (!command || !['api-init', 'router', 'procedure', 'agent', 'auth'].includes(command)) {
+  if (!command || !['api-init', 'router', 'procedure', 'agent', 'auth', 'seo'].includes(command)) {
     printGenerateUsage(log);
     return 1;
   }
@@ -622,6 +689,21 @@ export async function runGenerateCommand(
     log(rootPatch.patched ? `updated ${rootRelative}` : `skipped ${rootRelative}`);
     log('Set AUTH_SECRET, AUTH_GITHUB_ID/SECRET, AUTH_GOOGLE_ID/SECRET in your environment.');
     log('Credentials sign-in POSTs from /signin. OAuth honors callbackUrl. /account is auth-gated.');
+    return 0;
+  }
+
+  if (command === 'seo') {
+    const writes = [
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'robots.ts'), renderSeoRobots()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'sitemap.ts'), renderSeoSitemap()),
+      writeFileIfMissing(cwd, path.join(appDirRelative, 'manifest.ts'), renderSeoManifest()),
+    ];
+    writes.forEach((result) => {
+      const relativePath = path.relative(cwd, result.path).replace(/\\/g, '/');
+      log(`${result.created ? 'created' : 'skipped'} ${relativePath}`);
+    });
+    log('SEO routes: /robots.txt, /sitemap.xml, /manifest.webmanifest');
+    log('Set VISTA_SITE_URL (or NEXT_PUBLIC_SITE_URL) for absolute sitemap/robots URLs.');
     return 0;
   }
 

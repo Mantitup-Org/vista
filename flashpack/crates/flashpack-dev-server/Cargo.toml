@@ -2,8 +2,24 @@
 name = "flashpack-dev-server"
 version = "0.1.0"
 edition = "2021"
-description = "Development server hooks for Flashpack"
+description = "Flashpack Rust dev server. Compiles with SWC and serves the app. Webpack is not on this path."
 
 [dependencies]
 flashpack-core = { path = "../flashpack-core" }
 flashpack-node = { path = "../flashpack-node" }
+flashpack-static = { path = "../flashpack-static" }
+flashpack-swc-utils = { path = "../flashpack-swc-utils" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+swc_core = { version = "80.0.1", features = [
+    "common",
+    "ecma_ast",
+    "ecma_codegen",
+    "ecma_parser",
+    "ecma_transforms",
+    "ecma_transforms_react",
+    "ecma_transforms_typescript",
+    "ecma_utils",
+    "ecma_visit",
+] }

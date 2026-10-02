@@ -1,5 +1,5 @@
 import Image from 'vista/image';
-import { siteConfig } from '../data/site';
+import { siteConfig } from '@/data/site';
 
 export default function Footer() {
   return (

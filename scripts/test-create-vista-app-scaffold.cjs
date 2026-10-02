@@ -16,6 +16,8 @@ async function runCreate(tempRoot, name, extraArgs = []) {
   process.chdir(tempRoot);
   process.argv = [process.execPath, cliPath, name, '--skip-install', '--no-git', '--yes', ...extraArgs];
   delete require.cache[require.resolve(cliPath)];
+  const previousSkipIcons = process.env.VISTA_SKIP_EDITOR_ICONS;
+  process.env.VISTA_SKIP_EDITOR_ICONS = '1';
 
   try {
     const cliModule = require(cliPath);
@@ -23,6 +25,8 @@ async function runCreate(tempRoot, name, extraArgs = []) {
   } finally {
     process.argv = previousArgv;
     process.chdir(previousCwd);
+    if (previousSkipIcons === undefined) delete process.env.VISTA_SKIP_EDITOR_ICONS;
+    else process.env.VISTA_SKIP_EDITOR_ICONS = previousSkipIcons;
   }
 
   return path.join(tempRoot, name);
@@ -35,6 +39,8 @@ async function runCreateWithRawArgs(tempRoot, expectedName, argv) {
   process.chdir(tempRoot);
   process.argv = [process.execPath, cliPath, ...argv];
   delete require.cache[require.resolve(cliPath)];
+  const previousSkipIcons = process.env.VISTA_SKIP_EDITOR_ICONS;
+  process.env.VISTA_SKIP_EDITOR_ICONS = '1';
 
   try {
     const cliModule = require(cliPath);
@@ -42,6 +48,8 @@ async function runCreateWithRawArgs(tempRoot, expectedName, argv) {
   } finally {
     process.argv = previousArgv;
     process.chdir(previousCwd);
+    if (previousSkipIcons === undefined) delete process.env.VISTA_SKIP_EDITOR_ICONS;
+    else process.env.VISTA_SKIP_EDITOR_ICONS = previousSkipIcons;
   }
 
   return path.join(tempRoot, expectedName);
@@ -73,7 +81,13 @@ function assertEngineOwnedScaffold(projectDir, useSrcDir = false) {
     false,
     'CLI should not scaffold src/components/'
   );
-  assert.equal(fs.existsSync(path.join(projectDir, 'deploy')), false, 'CLI should not scaffold deploy/');
+    assert.equal(fs.existsSync(path.join(projectDir, 'deploy')), false, 'CLI should not scaffold deploy/');
+    const agentsMd = fs.readFileSync(path.join(projectDir, 'AGENTS.md'), 'utf8');
+    assert(agentsMd.includes('BEGIN:vista-agent-rules'), 'AGENTS.md should include the Vista agent rules');
+    assert(agentsMd.includes('node_modules/vista/docs/'), 'AGENTS.md should point at packaged docs');
+    assert(agentsMd.includes('vista-agent'), 'AGENTS.md should point at the agent skill');
+    const claudeMd = fs.readFileSync(path.join(projectDir, 'CLAUDE.md'), 'utf8');
+    assert(claudeMd.includes('@AGENTS.md'), 'CLAUDE.md should reference AGENTS.md');
   for (const fileName of [
     'render.yaml',
     'Dockerfile',
@@ -154,6 +168,7 @@ async function main() {
     assertEngineOwnedScaffold(defaultProject, false);
     const defaultGitignore = fs.readFileSync(path.join(defaultProject, '.gitignore'), 'utf8');
     assert(!defaultGitignore.includes('.next/'), 'generated .gitignore should not contain .next/');
+    assert(defaultGitignore.includes('.flash/'), 'generated .gitignore should ignore .flash/');
     const defaultRoot = fs.readFileSync(path.join(defaultProject, 'app', 'root.tsx'), 'utf8');
     const defaultIndex = fs.readFileSync(path.join(defaultProject, 'app', 'index.tsx'), 'utf8');
     assert(defaultRoot.includes("from 'vista/theme'"));
@@ -183,6 +198,12 @@ async function main() {
     const flashpackPackage = readJson(path.join(flashpackProject, 'package.json'));
     assertCommonScripts(flashpackPackage);
     assertEngineConfig(flashpackProject, 'flashpack');
+    const flashpackConfig = fs.readFileSync(path.join(flashpackProject, 'vista.config.ts'), 'utf8');
+    assert(
+      flashpackConfig.includes("pipeline: 'flashpack-cli'"),
+      'flashpack scaffold should bind vista.config.ts to flashpack-cli'
+    );
+    assert.strictEqual(flashpackPackage.vista.pipeline, 'flashpack-cli');
     assertReadme(flashpackProject, 'flashpack', 'enabled');
     assertNoTemplateTokens(flashpackProject, false);
     assertEngineOwnedScaffold(flashpackProject, false);
@@ -235,6 +256,28 @@ async function main() {
     assert.deepEqual(getPositionalArgs(['--skip-install', '--engine', 'flashpack', 'my-app', '--no-git']), ['my-app']);
     assert.deepEqual(getPositionalArgs(['--engine=flashpack', 'my-app']), ['my-app']);
     assert.deepEqual(getPositionalArgs(['--engine', 'flashpack', '--yes']), []);
+    assert.deepEqual(getPositionalArgs(['--no-icons', 'my-app']), ['my-app']);
+    assert.deepEqual(getPositionalArgs(['--no-agents-md', 'my-app']), ['my-app']);
+
+    const { applyEditorIconSettings } = require(path.join(
+      repoRoot,
+      'packages',
+      'create-vista-app',
+      'bin',
+      'editor-icons.js'
+    ));
+    const fresh = applyEditorIconSettings('{\n    "editor.wordWrap": "on"\n}\n');
+    const freshJson = JSON.parse(fresh);
+    assert.equal(freshJson['editor.wordWrap'], 'on');
+    assert.equal(freshJson['material-icon-theme.files.associations']['vista.config.ts'], '../../icons/vista');
+    assert.equal(freshJson['material-icon-theme.folders.associations']['.vista'], '../../../../icons/vista-folder');
+    assert.equal(freshJson['material-icon-theme.folders.associations']['.flash'], '../../../../icons/folder-flash');
+    const commented = applyEditorIconSettings('{\n    // keep me\n    "editor.tabSize": 2,\n}\n');
+    assert(commented.includes('// keep me'), 'settings comments must stay');
+    assert(commented.includes('"vista.config.ts"'), 'file association must be added');
+    const updated = applyEditorIconSettings(fresh);
+    const updatedJson = JSON.parse(updated);
+    assert.equal(updatedJson['material-icon-theme.files.associations']['vista.config.js'], '../../icons/vista');
 
     // End-to-end scaffold with option values preceding the project name
     const flagsFirstProject = await runCreateWithRawArgs(tempRoot, 'flags-first-app', [
@@ -252,6 +295,10 @@ async function main() {
     assert(!fs.existsSync(path.join(tempRoot, 'pnpm')), 'Flag argument must not be treated as project name');
     const flagsFirstPackage = readJson(path.join(flagsFirstProject, 'package.json'));
     assert.equal(flagsFirstPackage.name, 'flags-first-app');
+
+    const noAgentsProject = await runCreate(tempRoot, 'no-agents-app', ['--no-agents-md']);
+    assert.equal(fs.existsSync(path.join(noAgentsProject, 'AGENTS.md')), false);
+    assert.equal(fs.existsSync(path.join(noAgentsProject, 'CLAUDE.md')), false);
 
     console.log('[test:create-vista-app-scaffold] OK');
   } finally {

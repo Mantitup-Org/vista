@@ -61,6 +61,7 @@ const docsSource: DocsDocSource[] = [
   loadMarkdownDoc('./deployment/cloudflare-deployment.md'),
   loadMarkdownDoc('./deployment/netlify-deployment.md'),
   loadMarkdownDoc('./auth/overview.md'),
+  loadMarkdownDoc('./seo/metadata.md'),
   loadMarkdownDoc('./ai/overview.md'),
   loadMarkdownDoc('./ai/agents.md'),
   loadMarkdownDoc('./ai/providers.md'),

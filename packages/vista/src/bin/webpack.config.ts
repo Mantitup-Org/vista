@@ -7,6 +7,7 @@ import { VistaFlightPlugin } from '../build/webpack/plugins/vista-flight-plugin'
 import { BUILD_DIR, FLASH_DIR } from '../constants';
 import type { DeployOutput, VistaEngineVariant } from '../config';
 import { resolveAppDir, resolveComponentsDir } from '../server/app-dir';
+import { loadProjectWebpackAliases } from '../server/project-alias-resolver';
 
 export interface WebpackConfigOptions {
   cwd: string;
@@ -92,6 +93,7 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
     resolve: {
       extensions: ['.tsx', '.ts', '.jsx', '.js'],
       alias: {
+        ...loadProjectWebpackAliases(cwd),
         react: reactPath,
         'react-dom': reactDomPath,
         'react/jsx-runtime': path.join(reactPath, 'jsx-runtime'),
@@ -193,7 +195,7 @@ export function createWebpackConfig(options: WebpackConfigOptions): webpack.Conf
     devtool: isDev ? 'eval-cheap-module-source-map' : 'source-map',
     stats: 'minimal',
     infrastructureLogging: {
-      level: 'warn',
+      level: isDev ? 'none' : 'error',
     },
   };
 }

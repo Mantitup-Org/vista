@@ -50,6 +50,12 @@ const rawArgs = process.argv.slice(2);
 const useTypedApiStarter = rawArgs.includes('--typed-api') || rawArgs.includes('--typed');
 const skipInstall = rawArgs.includes('--skip-install');
 const skipGit = rawArgs.includes('--no-git');
+const skipEditorIcons =
+  rawArgs.includes('--no-icons') ||
+  process.env.VISTA_SKIP_EDITOR_ICONS === '1' ||
+  process.env.CI === 'true' ||
+  process.env.CI === '1';
+const skipAgentsMd = rawArgs.includes('--no-agents-md');
 const assumeYes = rawArgs.includes('--yes') || rawArgs.includes('-y');
 const canPrompt = !!(process.stdin.isTTY && process.stdout.isTTY);
 const detectedPackageManager = detectPackageManager();
@@ -79,7 +85,7 @@ const explicitSrcDir =
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log(`
 Usage:
-  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--yes] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--src-dir|--no-src-dir] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
+  ${usageCommand} [--typed-api] [--skip-install] [--no-git] [--no-icons] [--no-agents-md] [--yes] [--engine <default|flashpack>] [--flashpack] [--default-engine] [--src-dir|--no-src-dir] [--package-manager <npm|pnpm|yarn|bun>] [--npm|--pnpm|--yarn|--bun]
 
 Example:
   npx create-vista-app@latest my-vista-app
@@ -265,6 +271,24 @@ async function resolvePackageManagerChoice() {
   return value;
 }
 
+function writeAgentFiles(projectDir) {
+  const agentsMd = `<!-- BEGIN:vista-agent-rules -->
+# This is NOT the Vista you know
+
+This version has its own APIs, file layout, and CLI. Read the relevant guide in \`node_modules/vista/docs/\` before writing any code. Heed deprecation notices. In a monorepo, resolve the installed \`vista\` or \`@vistagenic/vista\` package and read \`docs/\` next to its package.json.
+
+Workflow skills ship in that same package under \`skills/\`. Read the matching \`SKILL.md\` before a multi-step task:
+
+- \`vista-dev-loop\` — verify an edit against \`vista dev\`
+- \`vista-agent\` — add an AI agent with \`vista g agent\`
+- \`vista-rag\` — ground answers with the built-in retriever
+<!-- END:vista-agent-rules -->
+`;
+
+  fs.writeFileSync(path.join(projectDir, 'AGENTS.md'), agentsMd);
+  fs.writeFileSync(path.join(projectDir, 'CLAUDE.md'), '@AGENTS.md\n');
+}
+
 function getInstallCommand(packageManager) {
   if (packageManager === 'yarn') return 'yarn';
   if (packageManager === 'bun') return 'bun install';
@@ -301,10 +325,18 @@ function copyRecursiveSync(src, dest, options = {}) {
 function injectEngineBlock(source, selectedEngine) {
   // Prefer preserving existing formatting when an engine block already exists.
   if (/\bengine\s*:\s*\{[\s\S]*?\bvariant\s*:\s*['"][^'"]+['"]/m.test(source)) {
-    return source.replace(
+    let next = source.replace(
       /(\bengine\s*:\s*\{[\s\S]*?\bvariant\s*:\s*['"])([^'"]+)(['"])/m,
       `$1${selectedEngine}$3`
     );
+    next = next.replace(/\n\s*pipeline\s*:\s*['"]flashpack-cli['"],?/m, '');
+    if (selectedEngine === 'flashpack') {
+      next = next.replace(
+        /(\bvariant\s*:\s*['"]flashpack['"])/m,
+        `$1,\n    pipeline: 'flashpack-cli'`
+      );
+    }
+    return next;
   }
 
   // Replace existing scalar engine config
@@ -313,7 +345,8 @@ function injectEngineBlock(source, selectedEngine) {
   }
 
   // Insert right after "const config = {"
-  const engineBlock = `  engine: {\n    variant: '${selectedEngine}',\n  },`;
+  const pipelineLine = selectedEngine === 'flashpack' ? `\n    pipeline: 'flashpack-cli',` : '';
+  const engineBlock = `  engine: {\n    variant: '${selectedEngine}',${pipelineLine}\n  },`;
   const marker = 'const config = {';
   const markerIndex = source.indexOf(marker);
   if (markerIndex !== -1) {
@@ -465,12 +498,20 @@ async function main() {
     console.log('Using src/ directory layout (src/app).');
   }
 
+  if (!skipAgentsMd) {
+    writeAgentFiles(projectDir);
+  }
+
   console.log('Scaffolding complete.');
 
   // 3. Setup Dependencies (production-ready)
   const packageJson = {
     name: projectName,
     version: '0.1.0',
+    vista: {
+      engine: selectedEngine,
+      ...(selectedEngine === 'flashpack' ? { pipeline: 'flashpack-cli' } : {}),
+    },
     scripts: {
       dev: 'vista dev',
       build: 'vista build',
@@ -482,7 +523,7 @@ async function main() {
       react: '^19.0.0',
       'react-dom': '^19.0.0',
       'react-server-dom-webpack': '^19.0.0',
-      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@0.3.6',
+      vista: useLocal ? 'file:../packages/vista' : 'npm:@vistagenic/vista@0.3.8',
       // CSS build (needed in production for vista build)
       postcss: '^8.0.0',
       tailwindcss: '^4.0.0',
@@ -600,6 +641,19 @@ coverage/
   const runCmd = getRunCommand(selectedPackageManager);
   const createCmd = getCreateCommand(selectedPackageManager);
 
+  let editorIcons = [];
+  if (!skipEditorIcons) {
+    try {
+      editorIcons = require('./editor-icons').installEditorIcons();
+    } catch (error) {
+      console.log('Note: could not install explorer icons into the editor.');
+    }
+  }
+
+  const iconLine = editorIcons.length
+    ? `\nExplorer icons installed for ${editorIcons.join(' and ')}. Reload the window to see them.\n`
+    : '';
+
   console.log(`
 ✨ Success! Created ${projectName} at ${projectDir}
 Engine: ${selectedEngine}
@@ -610,7 +664,7 @@ Get started by running:
 
   cd ${projectName}
   ${runCmd} dev
-
+${iconLine}
 Create another app anytime with:
   ${createCmd} <project-name>
 
@@ -631,6 +685,7 @@ module.exports = {
   applyFlashpackStarterTheme,
   applySrcDirectoryLayout,
   getPositionalArgs,
+  writeAgentFiles,
 };
 
 if (require.main === module) {

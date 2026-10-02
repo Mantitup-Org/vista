@@ -6,6 +6,30 @@ description = "CLI glue for Flashpack workflows"
 
 [dependencies]
 flashpack = { path = "../flashpack" }
+flash-tasks = { path = "../flash-tasks" }
+flash-tasks-env = { path = "../flash-tasks-env" }
+flash-tasks-fs = { path = "../flash-tasks-fs" }
+flashpack-analyze = { path = "../flashpack-analyze" }
+flashpack-browser = { path = "../flashpack-browser" }
+flashpack-cli-utils = { path = "../flashpack-cli-utils" }
+flashpack-css = { path = "../flashpack-css" }
+flashpack-ecmascript = { path = "../flashpack-ecmascript" }
+flashpack-ecmascript-hmr-protocol = { path = "../flashpack-ecmascript-hmr-protocol" }
+flashpack-ecmascript-plugins = { path = "../flashpack-ecmascript-plugins" }
+flashpack-ecmascript-runtime = { path = "../flashpack-ecmascript-runtime" }
+flashpack-env = { path = "../flashpack-env" }
+flashpack-image = { path = "../flashpack-image" }
+flashpack-json = { path = "../flashpack-json" }
+flashpack-mdx = { path = "../flashpack-mdx" }
+flashpack-nft = { path = "../flashpack-nft" }
+flashpack-nodejs = { path = "../flashpack-nodejs" }
+flashpack-resolve = { path = "../flashpack-resolve" }
+flashpack-static = { path = "../flashpack-static" }
+flashpack-swc-utils = { path = "../flashpack-swc-utils" }
+flashpack-trace-server = { path = "../flashpack-trace-server" }
+flashpack-trace-utils = { path = "../flashpack-trace-utils" }
+flashpack-tracing = { path = "../flashpack-tracing" }
+flashpack-wasm = { path = "../flashpack-wasm" }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -258,3 +258,84 @@ export function createProjectAliasResolver(
   projectAliasCache.set(cwd, resolver);
   return resolver;
 }
+
+/**
+ * Webpack resolve.alias entries for the project's tsconfig/jsconfig `paths`.
+ * Wildcard `@/*` becomes the prefix alias `@` so client bundles resolve `@/data/site`.
+ */
+export function loadProjectWebpackAliases(cwd: string): Record<string, string> {
+  const configPath = ['tsconfig.json', 'jsconfig.json']
+    .map((filename) => path.join(cwd, filename))
+    .find((filename) => fs.existsSync(filename));
+  if (!configPath) return {};
+
+  let compilerOptions: Record<string, any> | null = null;
+  try {
+    const rawConfig = fs.readFileSync(configPath, 'utf-8');
+    const parsedConfig = JSON.parse(stripJsonComments(rawConfig)) as {
+      compilerOptions?: Record<string, any>;
+    };
+    compilerOptions = parsedConfig.compilerOptions ?? null;
+  } catch {
+    return {};
+  }
+
+  const rawPaths = compilerOptions?.paths;
+  if (!rawPaths || typeof rawPaths !== 'object') return {};
+
+  const configDir = path.dirname(configPath);
+  const baseDir = path.resolve(
+    configDir,
+    typeof compilerOptions?.baseUrl === 'string' && compilerOptions.baseUrl.trim()
+      ? compilerOptions.baseUrl
+      : '.'
+  );
+
+  const aliases: Record<string, string> = {};
+
+  for (const [pattern, targetsValue] of Object.entries(rawPaths)) {
+    const targets = Array.isArray(targetsValue)
+      ? targetsValue.filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+      : [];
+    const target = targets[0];
+    if (!target) continue;
+
+    if (pattern.includes('*')) {
+      const starIndex = pattern.indexOf('*');
+      const requestPrefix = pattern.slice(0, starIndex);
+      const targetStar = target.indexOf('*');
+      const targetPrefix = targetStar === -1 ? target : target.slice(0, targetStar);
+      if (!requestPrefix) continue;
+      // enhanced-resolve matches `name` or `${name}/`. A tsconfig prefix of
+      // `@/` must be registered as `@`, or the resolver looks for `@//`.
+      const aliasName = requestPrefix.endsWith('/')
+        ? requestPrefix.slice(0, -1)
+        : requestPrefix;
+      if (!aliasName) continue;
+      // The matched remainder already begins with `/`. path.resolve drops a
+      // trailing separator, so do not add one back.
+      aliases[aliasName] = path.resolve(baseDir, targetPrefix);
+      continue;
+    }
+
+    const resolved = resolveAliasTargetPath(path.resolve(baseDir, target));
+    if (resolved) {
+      aliases[pattern] = resolved;
+    }
+  }
+
+  return aliases;
+}
+
+/** True when a module request is covered by a webpack path alias. */
+export function requestUsesProjectAlias(
+  request: string,
+  aliases: Record<string, string>
+): boolean {
+  for (const key of Object.keys(aliases)) {
+    if (request === key || request.startsWith(`${key}/`)) return true;
+  }
+  return false;
+}

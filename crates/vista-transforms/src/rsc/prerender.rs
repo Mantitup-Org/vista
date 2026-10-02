@@ -69,9 +69,9 @@ pub struct PrerenderedComponent {
 /// Parse a TSX file and extract the component's static structure
 pub fn prerender_client_component(file_path: &str) -> Option<PrerenderedComponent> {
     let content = fs::read_to_string(file_path).ok()?;
-    
-    // Check if it's a client component
-    if !content.starts_with("'use client'") && !content.starts_with("\"use client\"") {
+
+    // The directive may follow a blank line or indentation. Byte-prefix checks miss those files.
+    if !crate::has_client_directive(&content) {
         return None;
     }
     
@@ -154,7 +154,7 @@ fn parse_style_object(content: &str) -> ExtractedStyles {
         let pair = pair.trim();
         if let Some(colon_pos) = pair.find(':') {
             let key = pair[..colon_pos].trim().trim_matches('\'').trim_matches('"');
-            let value = pair[colon_pos + 1..].trim().trim_matches('\'').trim_matches('"');
+            let value = css_safe(pair[colon_pos + 1..].trim().trim_matches('\'').trim_matches('"'));
             
             match key {
                 "padding" => styles.padding = Some(value.to_string()),
@@ -180,6 +180,14 @@ fn parse_style_object(content: &str) -> ExtractedStyles {
     }
     
     styles
+}
+
+/// Drop characters that would break out of the placeholder `style` attribute.
+fn css_safe(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !matches!(ch, '<' | '>' | '"' | '\'' | ';' | '{' | '}' | '\\'))
+        .collect()
 }
 
 /// Generate placeholder HTML that matches the component structure
@@ -337,6 +345,15 @@ mod tests {
         let parsed = parse_style_object(style);
         assert_eq!(parsed.padding, Some("20px".to_string()));
         assert_eq!(parsed.background_color, Some("#1a1a2e".to_string()));
+    }
+
+    #[test]
+    fn style_values_cannot_break_out_of_the_attribute() {
+        let parsed = parse_style_object("backgroundColor: 'red;</div><script>'");
+        let value = parsed.background_color.unwrap();
+        assert!(!value.contains('<'));
+        assert!(!value.contains(';'));
+        assert!(!value.contains('"'));
     }
 
     #[test]

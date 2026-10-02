@@ -23,6 +23,7 @@ const server_manifest_1 = require("../build/rsc/server-manifest");
 const file_scanner_1 = require("./file-scanner");
 const config_1 = require("../config");
 const constants_1 = require("../constants");
+const runtime_1 = require("../flashpack/runtime");
 const structure_validator_1 = require("../server/structure-validator");
 const static_generator_1 = require("../server/static-generator");
 const structure_log_1 = require("../server/structure-log");
@@ -383,6 +384,21 @@ async function buildRSC(watch = false) {
     }
     if (_debug)
         console.log(`[vista:build] Engine variant: ${engineVariant}`);
+    if (engineVariant === 'flashpack') {
+        const prepared = (0, runtime_1.prepareFlashpackRuntime)({
+            cwd,
+            phase: watch ? 'dev' : 'build',
+            mode: watch ? 'development' : 'production',
+            allowFallback: process.env.VISTA_FLASHPACK_STRICT !== 'true',
+        });
+        if (!prepared.rustPipelineUsed) {
+            const message = '[vista] Flashpack crates were not bound. Run `vista bind --flashpack` after the Rust CLI is available.';
+            if (process.env.VISTA_FLASHPACK_STRICT === 'true') {
+                throw new Error(message);
+            }
+            console.warn(message);
+        }
+    }
     if (structureConfig.enabled) {
         const result = (0, structure_validator_1.validateAppStructure)({ cwd });
         (0, structure_log_1.logValidationResult)(result, structureConfig.logLevel);

@@ -8,7 +8,7 @@
  * Template string for title with inheritance support
  */
 export type TemplateString = {
-    default: string;
+    default?: string;
     template?: string;
     absolute?: string;
 };

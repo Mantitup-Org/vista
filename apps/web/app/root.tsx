@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { AppProviders } from '@/components/app-providers';
 import { ThemeScript } from '@/components/theme-script';
+import { JsonLd } from 'vista/metadata';
 import {
   absoluteUrl,
   siteDescription,
@@ -54,9 +55,6 @@ export const metadata: Metadata = {
       'max-video-preview': -1,
     },
   },
-  alternates: {
-    canonical: '/',
-  },
   icons: {
     icon: [{ url: '/favicon.ico' }],
     shortcut: [{ url: '/favicon.ico' }],
@@ -65,7 +63,6 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
   openGraph: {
     type: 'website',
-    url: '/',
     siteName,
     locale: siteLocale,
     title: siteTitle,
@@ -117,10 +114,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <ThemeScript defaultTheme="system" />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-        />
+        <JsonLd data={structuredData} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-background text-foreground antialiased`}
@@ -129,7 +123,7 @@ export default function RootLayout({
         <AppProviders>
           <div className="flex min-h-screen flex-col">
             <Navbar />
-            {children}
+            <div className="flex min-h-0 flex-1 flex-col pt-16">{children}</div>
             <Footer />
           </div>
         </AppProviders>

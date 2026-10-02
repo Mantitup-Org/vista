@@ -322,11 +322,12 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
             }
             let metadata = {};
             const searchParams = {};
+            const { deepMergeMetadata } = require('../metadata/merge');
             for (const layoutPath of route.layoutPaths) {
                 try {
                     const layoutModule = require(layoutPath);
                     if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
-                        metadata = { ...metadata, ...layoutModule.metadata };
+                        metadata = deepMergeMetadata(metadata, layoutModule.metadata);
                     }
                 }
                 catch {
@@ -334,13 +335,13 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
                 }
             }
             if (pageModule.metadata && typeof pageModule.metadata === 'object') {
-                metadata = { ...metadata, ...pageModule.metadata };
+                metadata = deepMergeMetadata(metadata, pageModule.metadata);
             }
             if (typeof pageModule.generateMetadata === 'function') {
                 try {
                     const dynamicMeta = await pageModule.generateMetadata({ params: params || {}, searchParams }, metadata);
                     if (dynamicMeta && typeof dynamicMeta === 'object') {
-                        metadata = { ...metadata, ...dynamicMeta };
+                        metadata = deepMergeMetadata(metadata, dynamicMeta);
                     }
                 }
                 catch (metadataError) {

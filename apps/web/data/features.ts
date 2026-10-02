@@ -1,4 +1,6 @@
-export const features = [
+import type { Feature } from '@/types/feature';
+
+export const features: Feature[] = [
     {
         title: "File-System Routing",
         description: "Pages and layouts under app/ become URLs. Nested layouts, dynamic segments, and catch-all routes are built in."

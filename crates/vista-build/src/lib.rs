@@ -9,3 +9,4 @@ pub use graph::*;
 pub use output::*;
 pub use pipeline::*;
 pub use standalone::*;
+pub use vista_core::VistaRuntimeConfig;

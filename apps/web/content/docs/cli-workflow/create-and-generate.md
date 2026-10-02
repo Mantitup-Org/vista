@@ -43,6 +43,8 @@ Shortcut flags also work:
 - `--yarn`
 - `--bun`
 
+A new app gets `AGENTS.md` and `CLAUDE.md` at the project root. `AGENTS.md` tells coding agents to read the version-matched guides in `node_modules/vista/docs/` and the workflow skills in `node_modules/vista/skills/` (`vista-dev-loop`, `vista-agent`, `vista-rag`). Pass `--no-agents-md` to skip those two files.
+
 Generated apps always keep the same scripts:
 
 - `npm run dev`
@@ -59,9 +61,12 @@ vista g router <name>
 vista g procedure <name> [get|post]
 vista g agent <name>
 vista g auth
+vista g seo
 ```
 
 `vista g auth` writes `auth.ts`, the catch-all auth route, `/signin`, `/account`, fail-closed `middleware.ts`, a `SessionProvider` wrapper, and `.env.example`. Set `AUTH_SECRET` before signing in. Credentials sign-in POSTs; OAuth keeps `callbackUrl`.
+
+`vista g seo` writes `app/robots.ts`, `app/sitemap.ts`, and `app/manifest.ts` using `vista/metadata` helpers (`/robots.txt`, `/sitemap.xml`, `/manifest.webmanifest`). New apps from `create-vista-app` already include robots/sitemap and OG defaults — see [Metadata and SEO](/docs/seo/metadata).
 
 ## Typed Starter
 

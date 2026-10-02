@@ -2,8 +2,11 @@ import { ActiveSectionObserver } from '../../../components/active-section-observ
 import { Code } from '../../../components/mdx/code';
 import { allDocs } from 'content-collections';
 import Link from 'vista/link';
+import type { Metadata } from 'vista';
+import { JsonLd } from 'vista/metadata';
 import type { DocsDocSection } from '../../../content/docs';
 import { getCategoryById, getDocNeighbors, getDocPath, normalizeDocRouteSlug } from '../../../lib/docs';
+import { absoluteUrl, siteName, siteOgImage, siteUrl } from '../../../lib/site';
 import { slugify } from '../../../lib/utils';
 import SignatureBlock from '../signature-block';
 
@@ -17,22 +20,23 @@ function isExternalHref(href: string): boolean {
   return /^(https?:\/\/|mailto:|tel:|#)/i.test(href);
 }
 
-async function resolveRouteParams(input: DocsArticlePageProps['params']): Promise<RouteParams> {
-  if (!input) return {};
-  return Promise.resolve(input);
+function resolveRouteParams(input: DocsArticlePageProps['params']): RouteParams {
+  if (!input || typeof (input as Promise<RouteParams>).then === 'function') {
+    return {};
+  }
+  return input;
 }
 
 function renderNotFound() {
   return (
-    <article className="mx-auto max-w-3xl pb-16 pt-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">Documentation</p>
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight text-foreground">Doc not found</h1>
-      <p className="mt-4 text-base leading-7 text-foreground/64">
+    <article className="mx-auto max-w-3xl pb-16">
+      <h1 className="text-[2.5rem] font-semibold tracking-[-0.03em] text-foreground">Doc not found</h1>
+      <p className="mt-3 text-[15px] leading-7 text-foreground/60">
         The page you are trying to open does not exist yet, or the slug is invalid.
       </p>
       <Link
         href="/docs"
-        className="mt-8 inline-flex rounded-full border border-primary/40 bg-primary/10 px-5 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15"
+        className="mt-8 inline-flex text-[15px] font-medium text-foreground underline-offset-4 hover:underline"
       >
         Back to docs home
       </Link>
@@ -49,7 +53,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
           id={headingId}
           data-doc-heading={section.text}
           data-level="2"
-          className="scroll-mt-40 text-2xl font-semibold tracking-tight text-foreground"
+          className="scroll-mt-28 border-t border-foreground/10 pt-8 text-[1.35rem] font-semibold tracking-tight text-foreground first:border-t-0 first:pt-0"
         >
           {section.text}
         </h2>
@@ -62,7 +66,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
         id={headingId}
         data-doc-heading={section.text}
         data-level="3"
-        className="scroll-mt-40 text-xl font-semibold tracking-tight text-foreground"
+        className="scroll-mt-28 pt-2 text-lg font-semibold tracking-tight text-foreground"
       >
         {section.text}
       </h3>
@@ -71,7 +75,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
 
   if (section.type === 'paragraph') {
     return (
-      <p key={`paragraph-${index}`} className="text-base leading-8 text-foreground/74">
+      <p key={`paragraph-${index}`} className="text-[15px] leading-7 text-foreground/70">
         {section.text}
       </p>
     );
@@ -79,7 +83,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
 
   if (section.type === 'list') {
     return (
-      <ul key={`list-${index}`} className="list-disc space-y-2 pl-5 text-base leading-8 text-foreground/74">
+      <ul key={`list-${index}`} className="list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-foreground/70">
         {section.items.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -95,7 +99,7 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
     return (
       <blockquote
         key={`quote-${index}`}
-        className="rounded-xl border-l-4 border-primary/70 bg-foreground/[0.04] px-5 py-4 text-lg leading-8 text-foreground/86 dark:bg-white/[0.03]"
+        className="border-l-2 border-foreground/25 pl-4 text-[15px] leading-7 text-foreground/65"
       >
         {section.text}
       </blockquote>
@@ -103,9 +107,9 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
   }
 
   return (
-    <div key={`links-${index}`} className="rounded-xl border border-foreground/12 bg-foreground/[0.03] p-4 dark:bg-white/[0.02]">
-      {section.title ? <p className="mb-3 text-sm font-medium text-foreground/80">{section.title}</p> : null}
-      <ul className="space-y-2">
+    <div key={`links-${index}`} className="space-y-2">
+      {section.title ? <p className="text-[13px] font-medium text-foreground/80">{section.title}</p> : null}
+      <ul className="space-y-1 border-l border-foreground/10">
         {section.links.map((link) => (
           <li key={`${link.href}-${link.label}`}>
             {link.external || isExternalHref(link.href) ? (
@@ -113,12 +117,15 @@ function renderSection(section: DocsDocSection, index: number, headingId: string
                 href={link.href}
                 target={link.external ? '_blank' : undefined}
                 rel={link.external ? 'noopener noreferrer' : undefined}
-                className="text-sm text-primary transition-colors hover:text-primary/80"
+                className="-ml-px block border-l border-transparent py-1 pl-4 text-[14px] text-foreground/65 transition-colors hover:border-foreground/30 hover:text-foreground"
               >
                 {link.label}
               </a>
             ) : (
-              <Link href={link.href} className="text-sm text-primary transition-colors hover:text-primary/80">
+              <Link
+                href={link.href}
+                className="-ml-px block border-l border-transparent py-1 pl-4 text-[14px] text-foreground/65 transition-colors hover:border-foreground/30 hover:text-foreground"
+              >
                 {link.label}
               </Link>
             )}
@@ -135,8 +142,50 @@ export function generateStaticParams() {
   }));
 }
 
-export default async function DocsArticlePage({ params }: DocsArticlePageProps) {
-  const resolvedParams = await resolveRouteParams(params);
+export function generateMetadata({ params }: DocsArticlePageProps): Metadata {
+  const resolvedParams = resolveRouteParams(params);
+  const slugParts = normalizeDocRouteSlug(resolvedParams);
+  const slugPath = slugParts.join('/');
+  const doc = allDocs.find((entry) => entry._meta.path === slugPath);
+
+  if (!doc) {
+    return {
+      title: 'Doc not found',
+      robots: { index: false, follow: false },
+    };
+  }
+
+  const pathname = getDocPath(doc);
+  const title = doc.title;
+  const description = doc.summary;
+
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: pathname,
+    },
+    openGraph: {
+      type: 'article',
+      url: pathname,
+      title,
+      description,
+      siteName,
+      images: [{ url: siteOgImage, width: 1200, height: 630, alt: `${title} | ${siteName}` }],
+      publishedTime: doc.updatedAt,
+      modifiedTime: doc.updatedAt,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: [absoluteUrl(siteOgImage)],
+    },
+  };
+}
+
+export default function DocsArticlePage({ params }: DocsArticlePageProps) {
+  const resolvedParams = resolveRouteParams(params);
   const slugParts = normalizeDocRouteSlug(resolvedParams);
   const slugPath = slugParts.join('/');
   const doc = allDocs.find((entry) => entry._meta.path === slugPath);
@@ -150,24 +199,44 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
   const { prev, next } = getDocNeighbors(doc);
   const showFounderNote = doc._meta.path === 'introduction/the-beginning-of-vista';
   let headingIndex = 0;
+  const pathname = getDocPath(doc);
+  const articleJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: doc.title,
+    description: doc.summary,
+    dateModified: doc.updatedAt,
+    datePublished: doc.updatedAt,
+    author: {
+      '@type': 'Organization',
+      name: siteName,
+      url: siteUrl,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: siteName,
+      url: siteUrl,
+    },
+    mainEntityOfPage: absoluteUrl(pathname),
+    image: [absoluteUrl(siteOgImage)],
+  };
 
   return (
-    <ActiveSectionObserver headings={headings}>
-      <article className="mx-auto max-w-3xl pb-12 pt-2">
+    <>
+      <ActiveSectionObserver headings={headings} />
+      <JsonLd data={articleJsonLd} />
+      <article className="mx-auto max-w-3xl pb-16">
         <header className="mb-10 border-b border-foreground/10 pb-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">
+          <p className="text-[13px] font-medium text-foreground/45">
             {category?.title ?? doc.category}
           </p>
           <h1
-            id={headings[0]?.id || slugify(doc.title)}
-            data-doc-heading={doc.title}
-            data-level="1"
-            className="mt-3 scroll-mt-40 text-4xl font-semibold tracking-tight text-foreground"
+            id={slugify(doc.title)}
+            className="mt-2 scroll-mt-28 text-[2.35rem] font-semibold leading-[1.15] tracking-[-0.03em] text-foreground sm:text-[2.6rem]"
           >
             {doc.title}
           </h1>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-foreground/74">{doc.summary}</p>
-          <p className="mt-4 text-xs uppercase tracking-[0.12em] text-foreground/45">Updated: {doc.updatedAt}</p>
+          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-foreground/60">{doc.summary}</p>
         </header>
 
         {showFounderNote ? (
@@ -176,7 +245,7 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
           </div>
         ) : null}
 
-        <div className="space-y-6">
+        <div className="space-y-5">
           {doc.sections.map((section, index) => {
             const headingId =
               section.type === 'heading'
@@ -186,35 +255,27 @@ export default async function DocsArticlePage({ params }: DocsArticlePageProps) 
           })}
         </div>
 
-        {headings.length === 0 ? (
-          <p className="mt-8 rounded-lg border border-dashed border-foreground/12 px-4 py-3 text-sm text-foreground/52">
-            This page currently has no generated heading map for TOC.
-          </p>
-        ) : null}
-
-        <nav className="mt-12 grid gap-3 border-t border-foreground/10 pt-8 sm:grid-cols-2">
+        <nav className="mt-14 grid gap-6 border-t border-foreground/10 pt-8 sm:grid-cols-2">
           {prev ? (
-            <Link
-              href={getDocPath(prev)}
-              className="rounded-xl border border-foreground/12 bg-foreground/[0.03] px-4 py-3 transition-colors hover:border-foreground/20 hover:bg-foreground/[0.05] dark:bg-white/[0.02]"
-            >
-              <p className="text-xs uppercase tracking-[0.12em] text-foreground/45">Previous</p>
-              <p className="mt-1 text-sm font-medium text-foreground/88">{prev.title}</p>
+            <Link href={getDocPath(prev)} className="group block min-w-0">
+              <p className="text-[12px] text-foreground/40">Previous</p>
+              <p className="mt-1 truncate text-[15px] font-medium text-foreground/80 transition-colors group-hover:text-foreground">
+                ← {prev.title}
+              </p>
             </Link>
           ) : (
             <div className="hidden sm:block" />
           )}
           {next ? (
-            <Link
-              href={getDocPath(next)}
-              className="rounded-xl border border-foreground/12 bg-foreground/[0.03] px-4 py-3 text-right transition-colors hover:border-foreground/20 hover:bg-foreground/[0.05] dark:bg-white/[0.02]"
-            >
-              <p className="text-xs uppercase tracking-[0.12em] text-foreground/45">Next</p>
-              <p className="mt-1 text-sm font-medium text-foreground/88">{next.title}</p>
+            <Link href={getDocPath(next)} className="group block min-w-0 text-right sm:justify-self-end">
+              <p className="text-[12px] text-foreground/40">Next</p>
+              <p className="mt-1 truncate text-[15px] font-medium text-foreground/80 transition-colors group-hover:text-foreground">
+                {next.title} →
+              </p>
             </Link>
           ) : null}
         </nav>
       </article>
-    </ActiveSectionObserver>
+    </>
   );
 }

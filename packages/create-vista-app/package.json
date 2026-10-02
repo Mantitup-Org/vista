@@ -1,6 +1,6 @@
 {
   "name": "create-vista-app",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "description": "Create Vista applications with one command",
   "bin": {
     "create-vista-app": "./bin/cli.js"
@@ -21,6 +21,7 @@
   ],
   "files": [
     "bin",
+    "file-icons",
     "template",
     "template-typed"
   ],

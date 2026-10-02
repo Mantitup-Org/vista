@@ -8,6 +8,7 @@ Guidance for coding agents working in this Vista repository. Runtime AI agents t
 2. **Fullstack** — `app/**/route.ts`, `vista g api-init`, `vista g auth`, `middleware.ts`. Docs `/docs/getting-started/fullstack-app`.
 3. **AI** — `vista g agent <name>`, `vista/ai` + `vista/ai/react`. Docs `/docs/ai/overview`.
 4. **RAG** — `InMemoryVectorStore` + `createRetrieverTool` + optional `embedText`. Docs `/docs/ai/rag`. Demo: `apps/vista-rag-demo`.
+5. **SEO** — `metadata` / `generateMetadata`, `vista g seo`, `vista/og` ImageResponse, `JsonLd`. Docs `/docs/seo/metadata`.
 
 ## Repo map
 
@@ -32,6 +33,7 @@ Narrow tests live as `pnpm test:<name>` in the root `package.json`. After changi
 
 - App runtime agents: `vista g agent <name>` → `app/agents/<name>/agent.ts` + `app/api/agents/<name>/route.ts` + `app/AGENTS.md`
 - Auth: `vista g auth` → `auth.ts`, catch-all route, `/signin`, `/account`, fail-closed `middleware.ts`, `SessionProvider` wrapper. Import from `vista/auth` (server) and `vista/auth/react` (client).
+- SEO: `vista g seo` → `app/robots.ts`, `sitemap.ts`, `manifest.ts`. Metadata from `vista` / `vista/metadata`; OG images via `vista/og`.
 - Typed API: `vista g api-init`. Call procedures from RSC with `v.createCaller(router, { ctx, env })`.
 - Package imports in generated apps use `vista/...`. Inside this monorepo, published name is `@vistagenic/vista`.
 

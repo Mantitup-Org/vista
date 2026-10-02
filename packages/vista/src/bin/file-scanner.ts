@@ -19,6 +19,7 @@ import {
   scanAppNative,
   convertScanResult,
 } from '../build/rsc/native-scanner';
+import { classifyAppSegment } from '../rust';
 
 const RESERVED_INTERNAL_SEGMENTS = new Set(['[not-found]']);
 
@@ -93,32 +94,16 @@ export function getRouteTree(appDir: string): RouteNode {
   return buildRouteTreeJS(appDir, appDir);
 }
 
-function classifySegment(segment: string): RouteNode['kind'] {
-  if (segment.startsWith('[[...') && segment.endsWith(']]')) return 'optional-catch-all';
-  if (segment.startsWith('[...')) return 'catch-all';
-  if (
-    segment.startsWith('(.)') ||
-    segment.startsWith('(..)') ||
-    segment.startsWith('(..)(..)') ||
-    segment.startsWith('(...)')
-  ) {
-    return 'interception';
-  }
-  if (segment.startsWith('(') && segment.endsWith(')')) return 'group';
-  if (segment.startsWith('@')) return 'parallel';
-  if (segment.startsWith('[')) return 'dynamic';
-  return 'static';
-}
-
 /**
- * JS Fallback for building route tree when Rust bindings are unavailable
+ * JS Fallback for building route tree when Rust bindings are unavailable.
+ * Classification goes through `vista/rust`, which uses the native addon when it is loaded.
  */
 function buildRouteTreeJS(dir: string, appDir: string): RouteNode {
-  const segment = dir === appDir ? '' : path.basename(dir);
-  const kind = classifySegment(segment);
+  const folder = dir === appDir ? '' : path.basename(dir);
+  const classified = folder === '' ? { kind: 'static' as const, segment: '' } : classifyAppSegment(folder);
   const node: RouteNode = {
-    segment: kind === 'group' ? '' : segment,
-    kind,
+    segment: classified.segment,
+    kind: classified.kind as RouteNode['kind'],
     children: [],
   };
 

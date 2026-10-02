@@ -86,11 +86,23 @@ if (
   process.exit(1);
 }
 
+function readPackageEngine(cwd) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+    const vista = pkg && pkg.vista;
+    const raw = typeof vista === 'string' ? vista : vista && vista.engine;
+    return normalizeEngineVariant(raw);
+  } catch {
+    return null;
+  }
+}
+
 const envEngineVariant = normalizeEngineVariant(
   process.env.VISTA_ENGINE_VARIANT ||
     process.env.VISTA_ENGINE ||
     (process.env.VISTA_FLASHPACK === 'true' ? 'flashpack' : '')
 );
+const packageEngineVariant = readPackageEngine(process.cwd());
 
 let configEngineVariant = null;
 try {
@@ -108,7 +120,7 @@ try {
 }
 
 const forcedByFlag = explicitEngineVariant || (explicitFlashpack ? 'flashpack' : null) || (explicitDefaultEngine ? 'default' : null);
-const engineVariant = forcedByFlag || envEngineVariant || configEngineVariant || 'default';
+const engineVariant = forcedByFlag || envEngineVariant || packageEngineVariant || configEngineVariant || 'default';
 process.env.VISTA_ENGINE = engineVariant;
 process.env.VISTA_ENGINE_VARIANT = engineVariant;
 process.env.VISTA_FLASHPACK = engineVariant === 'flashpack' ? 'true' : 'false';
@@ -117,21 +129,7 @@ process.env.VISTA_FLASHPACK = engineVariant === 'flashpack' ? 'true' : 'false';
 const { markStartTime } = require('../dist/server/logger');
 markStartTime();
 
-if (command === 'dev') {
-  forceRuntimeEnv('development');
-  console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-  const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
-  if (useFlashpack) {
-    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-    runFlashpackEngineCommand('dev', {
-      cwd: process.cwd(),
-      port: process.env.PORT || 3003,
-    }).catch((err) => {
-      console.error('Flashpack dev failed:', err);
-      process.exit(1);
-    });
-    return;
-  }
+function startFlightDev() {
   const { buildRSC } = require('../dist/bin/build-rsc');
   const { startRSCServer } = require('../dist/server/rsc-engine');
 
@@ -146,25 +144,26 @@ if (command === 'dev') {
       console.error('RSC Build failed:', err);
       process.exit(1);
     });
+}
+
+if (command === 'dev') {
+  forceRuntimeEnv('development');
+  if (process.env.VISTA_ENGINE === 'flashpack') {
+    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
+    runFlashpackEngineCommand('dev', {
+      cwd: process.cwd(),
+      action: 'run',
+      port: process.env.PORT || 3003,
+    }).catch((err) => {
+      console.error('Flashpack dev failed:', err);
+      process.exit(1);
+    });
+    return;
+  }
+  startFlightDev();
 } else if (command === 'build') {
   forceRuntimeEnv('production');
   console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-  const useFlashpack = process.env.VISTA_ENGINE === 'flashpack';
-  if (useFlashpack) {
-    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-    runFlashpackEngineCommand('build', {
-      cwd: process.cwd(),
-    })
-      .then(() => {
-        console.log('');
-        console.log('Production build complete!');
-      })
-      .catch((err) => {
-        console.error('Flashpack build failed:', err);
-        process.exit(1);
-      });
-    return;
-  }
   const { buildRSC } = require('../dist/bin/build-rsc');
 
   buildRSC(false)
@@ -176,20 +175,32 @@ if (command === 'dev') {
       console.error('RSC Build failed:', err);
       process.exit(1);
     });
+} else if (command === 'bind') {
+  const rust = require('../dist/rust');
+  const route = getFlagValue('--route') || '(shop)/products/[id]';
+  const folders = route.split('/').filter((part) => part.length > 0);
+  console.log(`[vista] rust native=${rust.nativeBindingsLoaded()}`);
+  for (const folder of folders) {
+    const classified = rust.classifyAppSegment(folder);
+    console.log(`[vista] ${folder} -> ${classified.kind} (${classified.segment})`);
+  }
+  console.log(`[vista] pattern ${rust.routePattern(folders)}`);
+  console.log(`[vista] error ${rust.encodeVistaErrorCode('ROUTE_MISSING')}`);
+  console.log(`[vista] taskless ${rust.tasklessSteps(true).join(' -> ')}`);
+  if (engineVariant === 'flashpack') {
+    const { prepareFlashpackRuntime } = require('../dist/flashpack/runtime');
+    const prepared = prepareFlashpackRuntime({
+      cwd: process.cwd(),
+      phase: 'build',
+      mode: 'production',
+      allowFallback: true,
+    });
+    console.log(`[vista] flashpack crates bound=${prepared.rustPipelineUsed}`);
+    if (!prepared.rustPipelineUsed) process.exit(1);
+  }
 } else if (command === 'start') {
   forceRuntimeEnv('production');
   console.log(`[vista] Engine: ${process.env.VISTA_ENGINE}`);
-  if (process.env.VISTA_ENGINE === 'flashpack') {
-    const { runFlashpackEngineCommand } = require('../dist/flashpack/command');
-    runFlashpackEngineCommand('start', {
-      cwd: process.cwd(),
-      port: process.env.PORT || 3003,
-    }).catch((err) => {
-      console.error('Flashpack start failed:', err);
-      process.exit(1);
-    });
-    return;
-  }
   const standaloneServerPath = path.join(process.cwd(), '.vista', 'standalone', 'server.js');
   if (fs.existsSync(standaloneServerPath)) {
     const standalone = require(standaloneServerPath);
@@ -216,6 +227,7 @@ if (command === 'dev') {
   console.log('  start   Start production server');
   console.log('  deploy  Build and deploy to a hosting platform');
   console.log('  g       Generate typed API scaffolds (api-init, router, procedure)');
+  console.log('  bind    Classify a route and, with --flashpack, bind the Rust crates');
   console.log('');
   console.log('Options:');
   console.log('  --engine <default|flashpack>   Select engine variant');
@@ -230,5 +242,7 @@ if (command === 'dev') {
   console.log('  vista dev --flashpack   # Start dev server with Flashpack mode');
   console.log('  vista build          # Production Flight RSC/SSR build');
   console.log('  vista g api-init     # Generate typed API starter files');
+  console.log('  vista bind --route "(shop)/products/[id]"');
+  console.log('  vista bind --flashpack');
   console.log('');
 }

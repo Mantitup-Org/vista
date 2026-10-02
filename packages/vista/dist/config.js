@@ -90,8 +90,22 @@ function readEngineVariantFromEnv(env) {
         return 'default';
     return undefined;
 }
+function readEngineVariantFromPackage(cwd) {
+    try {
+        const pkg = JSON.parse(fs_1.default.readFileSync(path_1.default.join(cwd, 'package.json'), 'utf8'));
+        const vista = pkg.vista;
+        const raw = typeof vista === 'string' ? vista : vista?.engine;
+        return normalizeEngineVariant(raw);
+    }
+    catch {
+        return undefined;
+    }
+}
 function resolveEngineVariant(config, env = process.env) {
-    return readEngineVariantFromEnv(env) || readEngineVariantFromConfig(config) || 'default';
+    return (readEngineVariantFromEnv(env) ||
+        readEngineVariantFromPackage(env.VISTA_ARTIFACT_ROOT || process.cwd()) ||
+        readEngineVariantFromConfig(config) ||
+        'default');
 }
 function applyEngineVariantToEnv(variant, env = process.env) {
     env.VISTA_ENGINE = variant;

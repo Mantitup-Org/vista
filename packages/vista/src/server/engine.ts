@@ -417,6 +417,16 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
           })
           .filter((entry) => entry.trim().length > 0);
         logEvent('Build error detected, pushing to browser...');
+        console.error('');
+        logError(
+          `Build failed with ${errorMessages.length} error${errorMessages.length === 1 ? '' : 's'}`
+        );
+        for (const message of errorMessages) {
+          const text = message.replace(/\u001b\[[0-9;]*m/g, '').trim();
+          if (!text) continue;
+          console.error(text);
+          console.error('');
+        }
         pushCompileError(errorMessages);
       } else {
         pushBuildSuccess();
@@ -725,16 +735,17 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
       const layouts = resolveLayoutChain(cwd, pageDir, isDev);
 
       // Metadata extraction - merge all layout metadata + page metadata
+      const { deepMergeMetadata } = require('../metadata/merge');
       let metadata: any = {};
       for (const layout of layouts) {
         if (layout.metadata) {
-          metadata = { ...metadata, ...layout.metadata };
+          metadata = deepMergeMetadata(metadata, layout.metadata);
         }
       }
 
       // Get page static metadata (overrides layouts)
       if (PageModule.metadata) {
-        metadata = { ...metadata, ...PageModule.metadata };
+        metadata = deepMergeMetadata(metadata, PageModule.metadata);
       }
 
       // Get dynamic metadata from generateMetadata function
@@ -744,7 +755,7 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
             { params, searchParams: req.query },
             metadata // parent metadata
           );
-          metadata = { ...metadata, ...dynamicMeta };
+          metadata = deepMergeMetadata(metadata, dynamicMeta);
         } catch (e) {
           console.error('Error in generateMetadata:', e);
         }

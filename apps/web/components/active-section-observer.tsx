@@ -4,11 +4,10 @@ import { useEffect } from 'react';
 import { useTableOfContents } from '../ctx/use-table-of-contents';
 
 interface ActiveSectionObserverProps {
-  children: React.ReactNode;
   headings: Array<{ id: string; level: number; text: string }>;
 }
 
-export function ActiveSectionObserver({ children, headings }: ActiveSectionObserverProps) {
+export function ActiveSectionObserver({ headings }: ActiveSectionObserverProps) {
   const setVisibleSections = useTableOfContents((state) => state.setVisibleSections);
   const setAllHeadings = useTableOfContents((state) => state.setAllHeadings);
 
@@ -45,7 +44,7 @@ export function ActiveSectionObserver({ children, headings }: ActiveSectionObser
       observed.forEach((element) => observer.unobserve(element));
       observer.disconnect();
     };
-  }, [setVisibleSections]);
+  }, [headings, setVisibleSections]);
 
-  return <>{children}</>;
+  return null;
 }

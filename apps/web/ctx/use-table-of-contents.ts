@@ -19,7 +19,7 @@ type StoreSnapshot = Omit<TableOfContentsState, 'setAllHeadings' | 'setVisibleSe
 
 const listeners = new Set<() => void>();
 
-const snapshot: StoreSnapshot = {
+let snapshot: StoreSnapshot = {
   allHeadings: [],
   visibleSections: [],
 };
@@ -38,18 +38,35 @@ function getSnapshot(): StoreSnapshot {
 }
 
 function setAllHeadings(headings: Heading[]): void {
-  const serializedCurrent = JSON.stringify(snapshot.allHeadings);
-  const serializedNext = JSON.stringify(headings);
-  if (serializedCurrent === serializedNext) return;
-  snapshot.allHeadings = headings;
+  if (
+    snapshot.allHeadings.length === headings.length &&
+    snapshot.allHeadings.every(
+      (heading, index) =>
+        heading.id === headings[index]?.id &&
+        heading.level === headings[index]?.level &&
+        heading.text === headings[index]?.text
+    )
+  ) {
+    return;
+  }
+  snapshot = {
+    ...snapshot,
+    allHeadings: headings,
+  };
   notify();
 }
 
 function setVisibleSections(visibleSections: string[]): void {
-  const serializedCurrent = snapshot.visibleSections.join(',');
-  const serializedNext = visibleSections.join(',');
-  if (serializedCurrent === serializedNext) return;
-  snapshot.visibleSections = visibleSections;
+  if (
+    snapshot.visibleSections.length === visibleSections.length &&
+    snapshot.visibleSections.every((id, index) => id === visibleSections[index])
+  ) {
+    return;
+  }
+  snapshot = {
+    ...snapshot,
+    visibleSections,
+  };
   notify();
 }
 

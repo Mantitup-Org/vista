@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Copy, Check, Terminal } from 'lucide-react';
-import { CREATE_VISTA_APP_COMMAND } from '../data/site';
+import { CREATE_VISTA_APP_COMMAND } from '@/data/site';
 
 export default function CopyCommand() {
     const [copied, setCopied] = useState(false);

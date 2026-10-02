@@ -44,6 +44,99 @@ function removeLegacyFlashArtifacts(cwd: string, flashDir: string): void {
   }
 }
 
+export function flashpackPlatformTriple(): string {
+  return `${process.platform}-${process.arch}`;
+}
+
+export function flashpackBinaryName(): string {
+  return process.platform === 'win32' ? 'flashpack-cli.exe' : 'flashpack-cli';
+}
+
+function pushPackageRoot(roots: string[], root: string): void {
+  const resolved = path.resolve(root);
+  if (!roots.includes(resolved)) roots.push(resolved);
+  try {
+    const real = fs.realpathSync(resolved);
+    if (!roots.includes(real)) roots.push(real);
+  } catch {
+    // The package root may not exist at this path.
+  }
+}
+
+function vistaPackageRoots(): string[] {
+  const roots: string[] = [];
+  pushPackageRoot(roots, path.resolve(__dirname, '..', '..'));
+  if (process.argv[1]) {
+    pushPackageRoot(roots, path.resolve(path.dirname(process.argv[1]), '..'));
+  }
+  return roots;
+}
+
+export function findBundledFlashpackBinary(startCwd: string = process.cwd()): string | null {
+  const relative = path.join('native', flashpackPlatformTriple(), flashpackBinaryName());
+  // Prefer the monorepo package binary over a stale pnpm store copy.
+  const workspaceRoot = findFlashpackWorkspaceRoot(startCwd);
+  const roots = [
+    ...(workspaceRoot ? [path.join(workspaceRoot, 'packages', 'vista')] : []),
+    ...vistaPackageRoots(),
+  ];
+  for (const root of roots) {
+    const binary = path.join(root, relative);
+    if (fs.existsSync(binary)) return binary;
+  }
+  return null;
+}
+
+export function resolveFlashpackSsrRunner(startCwd: string = process.cwd()): string | null {
+  // Prefer the workspace package so newly added bin/*.mjs files (e.g. agent playground)
+  // are visible even when pnpm's store copy is stale.
+  const workspaceRoot = findFlashpackWorkspaceRoot(startCwd);
+  const roots = [
+    ...(workspaceRoot ? [path.join(workspaceRoot, 'packages', 'vista')] : []),
+    ...vistaPackageRoots(),
+  ];
+  for (const root of roots) {
+    const runner = path.join(root, 'bin', 'flashpack-ssr.mjs');
+    if (fs.existsSync(runner)) return runner;
+  }
+  return null;
+}
+
+export interface FlashpackLaunch {
+  command: string;
+  args: string[];
+  cwd: string;
+  source: 'binary' | 'workspace';
+}
+
+export function resolveFlashpackLaunch(startCwd: string = process.cwd()): FlashpackLaunch {
+  const fromSource = process.env.VISTA_FLASHPACK_FROM_SOURCE === '1';
+  const binary = findBundledFlashpackBinary(startCwd);
+  if (binary && !fromSource) {
+    return {
+      command: binary,
+      args: [],
+      cwd: startCwd,
+      source: 'binary',
+    };
+  }
+
+  const workspaceRoot = findFlashpackWorkspaceRoot(startCwd);
+  if (workspaceRoot) {
+    return {
+      command: resolveCargoCommand(),
+      args: ['run', '-q', '-p', 'flashpack-cli', '--'],
+      cwd: workspaceRoot,
+      source: 'workspace',
+    };
+  }
+
+  throw new Error(
+    `[flashpack] Native binary for ${flashpackPlatformTriple()} is not in this vista package. ` +
+      'The published package ships it under native/<platform>/. Reinstall @vistagenic/vista.'
+  );
+}
+
 export function findFlashpackWorkspaceRoot(startCwd: string): string | null {
   let current = path.resolve(startCwd);
 
@@ -134,13 +227,9 @@ export interface FlashpackRustCliResult {
   status: number | null;
 }
 
-function buildRustCliArgs(options: FlashpackRustCliOptions, graphPath: string): string[] {
+function buildRustCliArgs(options: FlashpackRustCliOptions, launch: FlashpackLaunch): string[] {
   const args = [
-    'run',
-    '-q',
-    '-p',
-    'flashpack-cli',
-    '--',
+    ...launch.args,
     '--cwd',
     options.cwd,
     '--phase',
@@ -168,12 +257,14 @@ export function runFlashpackRustCli(
   options: FlashpackRustCliOptions
 ): FlashpackRustCliResult {
   const flashDir = bootstrapFlashDirectories(options.cwd);
-  const workspaceRoot = findFlashpackWorkspaceRoot(options.cwd);
   const graphPath = path.join(flashDir, 'graph', `${options.phase}-rust.json`);
   const runtimeManifestPath = path.join(flashDir, 'runtime', `${options.phase}-manifest.json`);
   const logPath = path.join(flashDir, 'logs', `${options.phase}-cli.log`);
 
-  if (!workspaceRoot) {
+  let launch: FlashpackLaunch;
+  try {
+    launch = resolveFlashpackLaunch(options.cwd);
+  } catch (error) {
     return {
       flashDir,
       workspaceRoot: null,
@@ -182,22 +273,22 @@ export function runFlashpackRustCli(
       logPath,
       graphPath,
       runtimeManifestPath,
-      error: `Rust workspace not found from ${options.cwd}. Expected flashpack/xtask/Cargo.toml in an ancestor directory.`,
+      error: error instanceof Error ? error.message : String(error),
       status: null,
     };
   }
 
-  const cargoCommand = resolveCargoCommand();
-  const args = buildRustCliArgs(options, graphPath);
-  const result = spawnSync(cargoCommand, args, {
-    cwd: workspaceRoot,
+  const workspaceRoot = launch.source === 'workspace' ? launch.cwd : findFlashpackWorkspaceRoot(options.cwd);
+  const args = buildRustCliArgs(options, launch);
+  const result = spawnSync(launch.command, args, {
+    cwd: launch.cwd,
     encoding: 'utf-8',
     stdio: 'pipe',
   });
 
   const log = [
-    `[flashpack] workspace=${workspaceRoot}`,
-    `[flashpack] command=${cargoCommand} ${args.join(' ')}`,
+    `[flashpack] source=${launch.source}`,
+    `[flashpack] command=${launch.command} ${args.join(' ')}`,
     `[flashpack] status=${result.status ?? 'null'}`,
     `[flashpack] error=${result.error ? result.error.message : ''}`,
     '[flashpack] stdout:',
@@ -210,7 +301,7 @@ export function runFlashpackRustCli(
   return {
     flashDir,
     workspaceRoot,
-    cargoCommand,
+    cargoCommand: launch.command,
     args,
     logPath,
     graphPath,
@@ -222,6 +313,23 @@ export function runFlashpackRustCli(
         : (result.stderr || result.stdout || 'unknown cargo failure').trim(),
     status: result.status ?? null,
   };
+}
+
+export function flashpackCratesBound(flashDir: string): boolean {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(flashDir, 'pipeline', 'bound.json'), 'utf8')) as {
+      pipeline?: string;
+      crates?: string[];
+    };
+    return (
+      parsed.pipeline === 'flashpack-cli' &&
+      Array.isArray(parsed.crates) &&
+      parsed.crates.includes('flashpack-ecmascript') &&
+      parsed.crates.includes('flashpack-resolve')
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function prepareFlashpackRuntime(options: FlashpackPrepareOptions): FlashpackPrepareResult {
@@ -269,13 +377,6 @@ export function prepareFlashpackRuntime(options: FlashpackPrepareOptions): Flash
           errors: nativeScan.errors.length,
         },
       });
-
-      return {
-        flashDir,
-        rustPipelineUsed: true,
-        workspaceRoot: null,
-        graphPath: nativeGraphPath,
-      };
     }
   }
 
@@ -290,6 +391,19 @@ export function prepareFlashpackRuntime(options: FlashpackPrepareOptions): Flash
     const detail = rustResult.error || 'unknown cargo failure';
     if (!allowFallback) {
       throw new Error(`[flashpack] Rust pipeline failed: ${detail}`);
+    }
+
+    return {
+      flashDir,
+      rustPipelineUsed: false,
+      workspaceRoot: rustResult.workspaceRoot,
+      graphPath,
+    };
+  }
+
+  if (!flashpackCratesBound(flashDir)) {
+    if (!allowFallback) {
+      throw new Error('[flashpack] Rust pipeline did not bind the Flashpack crates.');
     }
 
     return {

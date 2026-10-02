@@ -1,3 +1,5 @@
+import type { SiteConfig } from '@/types/site';
+
 export const CREATE_VISTA_APP_COMMAND = 'npx create-vista-app@latest';
 
 export const siteConfig = {
@@ -14,4 +16,4 @@ export const siteConfig = {
   footer: {
     copyright: 'Vista Framework. All rights reserved.',
   },
-};
+} satisfies SiteConfig;

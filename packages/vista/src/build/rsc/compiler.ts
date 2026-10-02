@@ -10,7 +10,7 @@ import path from 'path';
 import webpack from 'webpack';
 import fs from 'fs';
 import { VistaDirs, getBuildId, getWebpackCacheConfig } from '../manifest';
-import { generateClientManifest } from './client-manifest';
+import { generateClientManifest, discoverProjectClientRoots } from './client-manifest';
 import { generateServerManifest } from './server-manifest';
 import {
   normalizeReactClientReferenceManifest,
@@ -19,6 +19,10 @@ import {
 import { STATIC_CHUNKS_PATH, BUILD_ID_DEFINE, SERVER_DEFINE, SSE_ENDPOINT } from '../../constants';
 import type { DeployOutput, VistaEngineVariant } from '../../config';
 import { resolveAppDir } from '../../server/app-dir';
+import {
+  loadProjectWebpackAliases,
+  requestUsesProjectAlias,
+} from '../../server/project-alias-resolver';
 
 export interface RSCCompilerOptions {
   cwd: string;
@@ -29,6 +33,74 @@ export interface RSCCompilerOptions {
   clientReferenceFiles?: string[];
   imagesUnoptimized?: boolean;
   deployOutput?: DeployOutput;
+}
+
+type FlightClientReferenceOption =
+  | string
+  | {
+      directory: string;
+      recursive: boolean;
+      include: RegExp;
+    };
+
+function isPathInside(target: string, ancestor: string): boolean {
+  const resolvedTarget = path.resolve(target);
+  const resolvedAncestor = path.resolve(ancestor);
+  if (resolvedTarget === resolvedAncestor) return true;
+  const prefix = resolvedAncestor.endsWith(path.sep)
+    ? resolvedAncestor
+    : `${resolvedAncestor}${path.sep}`;
+  return resolvedTarget.startsWith(prefix);
+}
+
+/**
+ * Build ReactFlightWebpackPlugin `clientReferences`.
+ *
+ * Project roots (`app/`, `components/`, `lib/`, ...) are passed as watched
+ * directories so newly added `'use client'` files are registered without a full
+ * rebuild. Framework package paths stay as absolute files.
+ */
+export function buildFlightClientReferenceOptions(
+  cwd: string,
+  explicitFiles: string[] = []
+): FlightClientReferenceOption[] {
+  const roots = discoverProjectClientRoots(cwd).filter((root) => fs.existsSync(root.dir));
+  const directoryRefs: FlightClientReferenceOption[] = roots.map((root) => ({
+    directory: path.resolve(root.dir),
+    recursive: true,
+    include: /\.[cm]?[jt]sx?$/,
+  }));
+
+  // Always include app/ even if discover somehow missed it (empty cwd edge cases).
+  const appDir = resolveAppDir(cwd);
+  if (
+    fs.existsSync(appDir) &&
+    !directoryRefs.some(
+      (entry) => typeof entry !== 'string' && path.resolve(entry.directory) === path.resolve(appDir)
+    )
+  ) {
+    directoryRefs.unshift({
+      directory: path.resolve(appDir),
+      recursive: true,
+      include: /\.[cm]?[jt]sx?$/,
+    });
+  }
+
+  const rootDirs = roots.map((root) => path.resolve(root.dir));
+  if (fs.existsSync(appDir)) {
+    rootDirs.push(path.resolve(appDir));
+  }
+
+  const externalFiles = Array.from(
+    new Set(
+      explicitFiles
+        .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+        .map((entry) => path.resolve(entry))
+        .filter((entry) => !rootDirs.some((dir) => isPathInside(entry, dir)))
+    )
+  );
+
+  return [...directoryRefs, ...externalFiles];
 }
 
 // Find module path (handles monorepo hoisting)
@@ -84,6 +156,7 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
   const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
   const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
   const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
+  const projectAliases = loadProjectWebpackAliases(cwd);
 
   // Generate server manifest first
   const serverManifest = generateServerManifest(cwd, resolveAppDir(cwd));
@@ -140,13 +213,14 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
     },
 
     externals: [
-      // Don't bundle node_modules on server
+      // Don't bundle node_modules on server. Project path aliases (@/…) stay inside the bundle.
       ({ request }: { request?: string }, callback: Function) => {
         if (
           request &&
           !request.startsWith('.') &&
           !request.startsWith('/') &&
-          !path.isAbsolute(request)
+          !path.isAbsolute(request) &&
+          !requestUsesProjectAlias(request, projectAliases)
         ) {
           // External - don't bundle
           return callback(null, 'commonjs ' + request);
@@ -161,6 +235,7 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
 
     resolve: {
       extensions: ['.tsx', '.ts', '.jsx', '.js'],
+      alias: projectAliases,
       modules: [path.resolve(cwd, 'node_modules'), 'node_modules'],
     },
 
@@ -227,6 +302,11 @@ export function createServerWebpackConfig(options: RSCCompilerOptions): webpack.
 
     devtool: isDev ? 'source-map' : false,
     stats: 'minimal',
+    // Webpack's infrastructure logger prints `<i> [webpack-dev-middleware] …`.
+    // Vista logs compile failures itself.
+    infrastructureLogging: {
+      level: isDev ? 'none' : 'error',
+    },
   };
 }
 
@@ -267,14 +347,12 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
     cwd
   );
   const ReactFlightWebpackPlugin = require(reactFlightPluginPath);
+  const projectAliases = loadProjectWebpackAliases(cwd);
 
-  const flightClientReferences = Array.from(
-    new Set(
-      clientReferenceFiles
-        .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-        .map((entry) => path.resolve(entry))
-    )
-  );
+  // Prefer watched project directories over a frozen absolute-file list so that
+  // newly added `'use client'` modules under components/, lib/, etc. enter the
+  // Flight client manifest without restarting the compiler.
+  const flightClientReferences = buildFlightClientReferenceOptions(cwd, clientReferenceFiles);
 
   // Entry: Only client components
   const clientEntry = path.join(vistaDirs.root, 'rsc-client.tsx');
@@ -305,6 +383,7 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
     resolve: {
       extensions: ['.tsx', '.ts', '.jsx', '.js'],
       alias: {
+        ...projectAliases,
         react: reactPath,
         'react-dom': reactDomPath,
         'react/jsx-runtime': path.join(reactPath, 'jsx-runtime'),
@@ -417,7 +496,7 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
                 {
                   directory: resolveAppDir(cwd),
                   recursive: true,
-                  include: /\.[jt]sx?$/,
+                  include: /\.[cm]?[jt]sx?$/,
                 },
               ],
       }),
@@ -516,6 +595,9 @@ export function createClientWebpackConfig(options: RSCCompilerOptions): webpack.
 
     devtool: isDev ? 'eval-cheap-module-source-map' : 'source-map',
     stats: 'minimal',
+    infrastructureLogging: {
+      level: isDev ? 'none' : 'error',
+    },
   };
 }
 

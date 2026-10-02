@@ -33,7 +33,9 @@ const METADATA_ROUTE_MAPPINGS = [
     { requestPath: '/sitemap.xml', stem: 'sitemap' },
     { requestPath: '/manifest.webmanifest', stem: 'manifest' },
 ];
+const IMAGE_ROUTE_STEMS = new Set(['opengraph-image', 'twitter-image']);
 const ROUTE_FILE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
+const STATIC_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 class BodyLimitError extends Error {
     status = 413;
     constructor(limitBytes) {
@@ -135,6 +137,42 @@ function resolveMetadataRoutePath(cwd, stem) {
         return null;
     };
     return searchGroupDirectories(appDir);
+}
+/**
+ * Resolve `opengraph-image` / `twitter-image` conventions (Next parity).
+ * `/docs/opengraph-image` → `app/docs/opengraph-image.tsx` (or static `.png`).
+ */
+function resolveImageMetadataRoutePath(cwd, requestPath) {
+    const pathname = String(requestPath || '').split('?')[0];
+    const match = pathname.match(/^(.*)\/(opengraph-image|twitter-image)(?:\.[a-z0-9]+)?$/i);
+    if (!match)
+        return null;
+    const prefix = (match[1] || '').replace(/\/+$/, '');
+    const stem = match[2].toLowerCase();
+    if (!IMAGE_ROUTE_STEMS.has(stem))
+        return null;
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
+    const dir = prefix ? path_1.default.join(appDir, prefix.replace(/^\//, '')) : appDir;
+    for (const extension of ROUTE_FILE_EXTENSIONS) {
+        const candidate = path_1.default.join(dir, `${stem}${extension}`);
+        if (fs_1.default.existsSync(candidate))
+            return candidate;
+    }
+    for (const extension of STATIC_IMAGE_EXTENSIONS) {
+        const candidate = path_1.default.join(dir, `${stem}${extension}`);
+        if (fs_1.default.existsSync(candidate))
+            return candidate;
+    }
+    // Also allow route-group nesting: app/(marketing)/opengraph-image.tsx for /
+    if (!prefix) {
+        return resolveMetadataRoutePath(cwd, stem);
+    }
+    return null;
+}
+function getMetadataStemForRequest(requestPath) {
+    const pathname = String(requestPath || '').split('?')[0];
+    const mapping = METADATA_ROUTE_MAPPINGS.find((entry) => entry.requestPath === pathname);
+    return mapping?.stem ?? null;
 }
 function hasMethodMatch(router, pathname, method) {
     const normalized = method.toLowerCase();
@@ -456,6 +494,10 @@ function resolveLegacyRouteHandlerPath(cwd, requestPath) {
             routeCandidates.push(resolvedMetadataPath);
         }
     }
+    const imageRoutePath = resolveImageMetadataRoutePath(cwd, requestPath);
+    if (imageRoutePath) {
+        routeCandidates.push(imageRoutePath);
+    }
     if (normalized.startsWith('api/')) {
         const apiRoute = normalized.slice('api/'.length);
         routeCandidates.push(path_1.default.join(appDir, 'api', apiRoute, 'route.ts'), path_1.default.join(appDir, 'api', apiRoute, 'route.tsx'), path_1.default.join(appDir, 'api', apiRoute, 'route.js'), path_1.default.join(appDir, 'api', apiRoute, 'route.jsx'), path_1.default.join(appDir, 'api', `${apiRoute}.ts`), path_1.default.join(appDir, 'api', `${apiRoute}.tsx`), path_1.default.join(appDir, 'api', `${apiRoute}.js`), path_1.default.join(appDir, 'api', `${apiRoute}.jsx`));
@@ -475,6 +517,23 @@ function getExportedRouteMethods(apiModule) {
 async function runLegacyApiRoute(options) {
     const { req, res, apiPath, isDev } = options;
     const params = options.params || {};
+    const requestPath = String(req.path || req.url || '').split('?')[0];
+    const fileExt = path_1.default.extname(apiPath).toLowerCase();
+    // Static opengraph-image.png / twitter-image.jpg convention files.
+    if (STATIC_IMAGE_EXTENSIONS.includes(fileExt)) {
+        const contentTypes = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+        };
+        res.status(200);
+        res.setHeader('Content-Type', contentTypes[fileExt] || 'application/octet-stream');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=3600');
+        fs_1.default.createReadStream(apiPath).pipe(res);
+        return;
+    }
     if (isDev) {
         delete require.cache[require.resolve(apiPath)];
     }
@@ -506,6 +565,16 @@ async function runLegacyApiRoute(options) {
                 await sendFetchResponse(res, result);
                 return;
             }
+            const metadataStem = getMetadataStemForRequest(requestPath);
+            if (metadataStem && result !== undefined) {
+                const { metadataRouteToResponse } = require('../metadata/routes');
+                const converted = metadataRouteToResponse(metadataStem, result);
+                if (converted) {
+                    res.req = res.req || req;
+                    await sendFetchResponse(res, converted);
+                    return;
+                }
+            }
             if (result !== undefined) {
                 res.status(200).json(result);
                 return;
@@ -518,6 +587,29 @@ async function runLegacyApiRoute(options) {
                 res.status(error.status).json({ error: error.message });
                 return;
             }
+            throw error;
+        }
+    }
+    // MetadataRoute + OG image conventions: default export returning data or Response.
+    const metadataStem = getMetadataStemForRequest(requestPath);
+    const isImageMetadataRoute = /(?:^|\/)(opengraph-image|twitter-image)(?:\.[a-z0-9]+)?$/i.test(requestPath);
+    if ((metadataStem || isImageMetadataRoute) &&
+        typeof apiModule.default === 'function' &&
+        (method === 'GET' || method === 'HEAD')) {
+        try {
+            const result = await apiModule.default({ params });
+            let response = result instanceof Response ? result : null;
+            if (!response && metadataStem) {
+                const { metadataRouteToResponse } = require('../metadata/routes');
+                response = metadataRouteToResponse(metadataStem, result);
+            }
+            if (response) {
+                res.req = res.req || req;
+                await sendFetchResponse(res, response);
+                return;
+            }
+        }
+        catch (error) {
             throw error;
         }
     }

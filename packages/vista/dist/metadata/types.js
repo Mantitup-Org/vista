@@ -11,5 +11,7 @@ exports.isTemplateString = isTemplateString;
 // Export type guard
 // ============================================================================
 function isTemplateString(title) {
-    return typeof title === 'object' && title !== null && 'default' in title;
+    if (typeof title !== 'object' || title === null)
+        return false;
+    return 'default' in title || 'absolute' in title || 'template' in title;
 }

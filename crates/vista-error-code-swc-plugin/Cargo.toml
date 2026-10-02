@@ -5,6 +5,6 @@ edition = "2021"
 description = "Vista SWC plugin surface for framework error codes"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]

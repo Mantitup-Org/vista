@@ -12,6 +12,11 @@ export interface VistaEngineConfig {
      * Compatibility alias accepted: webpack.
      */
     variant?: VistaEngineVariant | VistaEngineAlias;
+    /**
+     * Flashpack crate pipeline launched by the vista package.
+     * Set by create-vista-app when the selected engine is flashpack.
+     */
+    pipeline?: 'flashpack-cli';
 }
 export interface StructureValidationConfig {
     /** Enable structure validation. Default: true */

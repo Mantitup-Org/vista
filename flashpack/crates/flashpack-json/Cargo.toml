@@ -5,3 +5,4 @@ edition = "2021"
 description = "JSON asset helpers for Flashpack"
 
 [dependencies]
+serde_json = { workspace = true }
