@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetadataRenderer = MetadataRenderer;
 exports.generateMetadataHtml = generateMetadataHtml;
 const jsx_runtime_1 = require("react/jsx-runtime");
+const merge_1 = require("./merge");
 // ============================================================================
 // Helper Functions
 // ============================================================================
@@ -19,9 +20,10 @@ function resolveTitle(title, template) {
     if (title.absolute) {
         return title.absolute;
     }
-    const baseTitle = title.default;
-    if (title.template) {
-        return title.template.replace('%s', baseTitle);
+    const baseTitle = title.default ?? '';
+    const activeTemplate = title.template || template;
+    if (activeTemplate && baseTitle) {
+        return activeTemplate.replace('%s', baseTitle);
     }
     return baseTitle;
 }
@@ -98,12 +100,7 @@ function generateAuthorMeta(authors) {
     });
     return elements;
 }
-function generateRobotsMeta(robots) {
-    if (!robots)
-        return [];
-    if (typeof robots === 'string') {
-        return [(0, jsx_runtime_1.jsx)("meta", { name: "robots", content: robots }, "robots")];
-    }
+function robotsDirectives(robots) {
     const directives = [];
     if (robots.index !== undefined)
         directives.push(robots.index ? 'index' : 'noindex');
@@ -117,20 +114,36 @@ function generateRobotsMeta(robots) {
         directives.push('noimageindex');
     if (robots.nocache)
         directives.push('nocache');
+    if (robots.notranslate)
+        directives.push('notranslate');
     if (robots['max-snippet'] !== undefined)
         directives.push(`max-snippet:${robots['max-snippet']}`);
     if (robots['max-image-preview'])
         directives.push(`max-image-preview:${robots['max-image-preview']}`);
     if (robots['max-video-preview'] !== undefined)
         directives.push(`max-video-preview:${robots['max-video-preview']}`);
+    return directives;
+}
+function generateRobotsMeta(robots) {
+    if (!robots)
+        return [];
+    if (typeof robots === 'string') {
+        return [(0, jsx_runtime_1.jsx)("meta", { name: "robots", content: robots }, "robots")];
+    }
     const elements = [];
+    const directives = robotsDirectives(robots);
     if (directives.length > 0) {
         elements.push((0, jsx_runtime_1.jsx)("meta", { name: "robots", content: directives.join(', ') }, "robots"));
     }
-    // GoogleBot specific
     if (robots.googleBot) {
         if (typeof robots.googleBot === 'string') {
             elements.push((0, jsx_runtime_1.jsx)("meta", { name: "googlebot", content: robots.googleBot }, "googlebot"));
+        }
+        else {
+            const googleDirectives = robotsDirectives(robots.googleBot);
+            if (googleDirectives.length > 0) {
+                elements.push((0, jsx_runtime_1.jsx)("meta", { name: "googlebot", content: googleDirectives.join(', ') }, "googlebot"));
+            }
         }
     }
     return elements;
@@ -184,43 +197,107 @@ function generateOpenGraphMeta(og, base) {
                 if (image.alt) {
                     elements.push((0, jsx_runtime_1.jsx)("meta", { property: "og:image:alt", content: image.alt }, `og:image:alt:${index}`));
                 }
+                if (image.type) {
+                    elements.push((0, jsx_runtime_1.jsx)("meta", { property: "og:image:type", content: image.type }, `og:image:type:${index}`));
+                }
             }
+        });
+    }
+    if ('article' in og && og.article) {
+        const article = og.article;
+        if (article.publishedTime) {
+            elements.push((0, jsx_runtime_1.jsx)("meta", { property: "article:published_time", content: article.publishedTime }, "og:article:published_time"));
+        }
+        if (article.modifiedTime) {
+            elements.push((0, jsx_runtime_1.jsx)("meta", { property: "article:modified_time", content: article.modifiedTime }, "og:article:modified_time"));
+        }
+        if (article.section) {
+            elements.push((0, jsx_runtime_1.jsx)("meta", { property: "article:section", content: article.section }, "og:article:section"));
+        }
+        if (article.tags) {
+            const tags = Array.isArray(article.tags) ? article.tags : [article.tags];
+            tags.forEach((tag, index) => {
+                elements.push((0, jsx_runtime_1.jsx)("meta", { property: "article:tag", content: tag }, `og:article:tag:${index}`));
+            });
+        }
+    }
+    return elements;
+}
+function generateTwitterMeta(twitter, base) {
+    if (!twitter)
+        return [];
+    const elements = [];
+    if (twitter.card) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:card", content: twitter.card }, "twitter:card"));
+    }
+    if (twitter.site) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:site", content: twitter.site }, "twitter:site"));
+    }
+    if (twitter.creator) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:creator", content: twitter.creator }, "twitter:creator"));
+    }
+    if (twitter.title) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:title", content: twitter.title }, "twitter:title"));
+    }
+    if (twitter.description) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:description", content: twitter.description }, "twitter:description"));
+    }
+    if (twitter.images) {
+        const images = Array.isArray(twitter.images) ? twitter.images : [twitter.images];
+        images.forEach((image, index) => {
+            elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:image", content: resolveUrl(image, base) || image.toString() }, `twitter:image:${index}`));
         });
     }
     return elements;
 }
-function generateTwitterMeta(twitter) {
-    if (!twitter)
+function generateOtherMeta(other) {
+    if (!other)
         return [];
     const elements = [];
-    // Card type
-    if (twitter.card) {
-        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:card", content: twitter.card }, "twitter:card"));
-    }
-    // Site
-    if (twitter.site) {
-        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:site", content: twitter.site }, "twitter:site"));
-    }
-    // Creator
-    if (twitter.creator) {
-        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:creator", content: twitter.creator }, "twitter:creator"));
-    }
-    // Title
-    if (twitter.title) {
-        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:title", content: twitter.title }, "twitter:title"));
-    }
-    // Description
-    if (twitter.description) {
-        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:description", content: twitter.description }, "twitter:description"));
-    }
-    // Images
-    if (twitter.images) {
-        const images = Array.isArray(twitter.images) ? twitter.images : [twitter.images];
-        images.forEach((image, index) => {
-            elements.push((0, jsx_runtime_1.jsx)("meta", { name: "twitter:image", content: image.toString() }, `twitter:image:${index}`));
+    Object.entries(other).forEach(([name, value]) => {
+        const values = Array.isArray(value) ? value : [value];
+        values.forEach((entry, index) => {
+            elements.push((0, jsx_runtime_1.jsx)("meta", { name: name, content: String(entry) }, `other-${name}-${index}`));
         });
+    });
+    return elements;
+}
+function generateAppleWebAppMeta(appleWebApp) {
+    if (appleWebApp === null || appleWebApp === undefined)
+        return [];
+    const elements = [];
+    if (appleWebApp === true) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "apple-mobile-web-app-capable", content: "yes" }, "apple-mobile-web-app-capable"));
+        return elements;
+    }
+    if (appleWebApp === false)
+        return elements;
+    if (appleWebApp.capable !== undefined) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "apple-mobile-web-app-capable", content: appleWebApp.capable ? 'yes' : 'no' }, "apple-mobile-web-app-capable"));
+    }
+    if (appleWebApp.title) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "apple-mobile-web-app-title", content: appleWebApp.title }, "apple-mobile-web-app-title"));
+    }
+    if (appleWebApp.statusBarStyle) {
+        elements.push((0, jsx_runtime_1.jsx)("meta", { name: "apple-mobile-web-app-status-bar-style", content: appleWebApp.statusBarStyle }, "apple-mobile-web-app-status-bar-style"));
     }
     return elements;
+}
+function generateFormatDetectionMeta(formatDetection) {
+    if (!formatDetection)
+        return [];
+    const parts = [];
+    ['telephone', 'date', 'address', 'email', 'url'].forEach((key) => {
+        if (formatDetection[key] === false)
+            parts.push(`${key}=no`);
+        if (formatDetection[key] === true)
+            parts.push(`${key}=yes`);
+    });
+    if (parts.length === 0)
+        return [];
+    return [
+        (0, jsx_runtime_1.jsx)("meta", { name: "format-detection", content: parts.join(', ') }, "format-detection"),
+    ];
 }
 function generateIconLinks(icons) {
     if (!icons)
@@ -305,6 +382,22 @@ function generateAlternateLinks(alternates, base) {
             });
         });
     }
+    if (alternates.media) {
+        Object.entries(alternates.media).forEach(([media, url]) => {
+            const urls = Array.isArray(url) ? url : [url];
+            urls.forEach((u, index) => {
+                elements.push((0, jsx_runtime_1.jsx)("link", { rel: "alternate", media: media, href: resolveUrl(u, base) || '' }, `alternate-media-${media}-${index}`));
+            });
+        });
+    }
+    if (alternates.types) {
+        Object.entries(alternates.types).forEach(([type, url]) => {
+            const urls = Array.isArray(url) ? url : [url];
+            urls.forEach((u, index) => {
+                elements.push((0, jsx_runtime_1.jsx)("link", { rel: "alternate", type: type, href: resolveUrl(u, base) || '' }, `alternate-type-${type}-${index}`));
+            });
+        });
+    }
     return elements;
 }
 /**
@@ -313,16 +406,19 @@ function generateAlternateLinks(alternates, base) {
  */
 function MetadataRenderer({ metadata, parentTemplate, }) {
     const base = metadata.metadataBase;
-    const title = resolveTitle(metadata.title, parentTemplate);
-    return ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [title && (0, jsx_runtime_1.jsx)("title", { children: title }), generateBasicMeta(metadata), generateAuthorMeta(metadata.authors), generateRobotsMeta(metadata.robots), generateOpenGraphMeta(metadata.openGraph, base), generateTwitterMeta(metadata.twitter), generateIconLinks(metadata.icons), generateVerificationMeta(metadata.verification), generateAlternateLinks(metadata.alternates, base), metadata.manifest && ((0, jsx_runtime_1.jsx)("link", { rel: "manifest", href: resolveUrl(metadata.manifest, base) || '' }))] }));
+    const inheritedTemplate = parentTemplate ?? (0, merge_1.resolveParentTitleTemplate)(metadata);
+    const title = resolveTitle(metadata.title, inheritedTemplate);
+    return ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [title && (0, jsx_runtime_1.jsx)("title", { children: title }), generateBasicMeta(metadata), generateAuthorMeta(metadata.authors), generateRobotsMeta(metadata.robots), generateOpenGraphMeta(metadata.openGraph, base), generateTwitterMeta(metadata.twitter, base), generateIconLinks(metadata.icons), generateVerificationMeta(metadata.verification), generateAlternateLinks(metadata.alternates, base), generateAppleWebAppMeta(metadata.appleWebApp), generateFormatDetectionMeta(metadata.formatDetection), generateOtherMeta(metadata.other), metadata.manifest && ((0, jsx_runtime_1.jsx)("link", { rel: "manifest", href: resolveUrl(metadata.manifest, base) || '' })), metadata.classification && ((0, jsx_runtime_1.jsx)("meta", { name: "classification", content: metadata.classification }))] }));
 }
 /**
  * Converts metadata to HTML string for SSR injection.
+ * Applies title template from merged metadata when parentTemplate is omitted.
  */
 function generateMetadataHtml(metadata, parentTemplate) {
     if (!metadata || typeof metadata !== 'object')
         return '';
     const { renderToStaticMarkup } = require('react-dom/server');
-    return renderToStaticMarkup((0, jsx_runtime_1.jsx)(MetadataRenderer, { metadata: metadata, parentTemplate: parentTemplate }));
+    const template = parentTemplate ?? (0, merge_1.resolveParentTitleTemplate)(metadata);
+    return renderToStaticMarkup((0, jsx_runtime_1.jsx)(MetadataRenderer, { metadata: metadata, parentTemplate: template }));
 }
 exports.default = MetadataRenderer;

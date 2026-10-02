@@ -1,11 +1,13 @@
-import path from 'path';
 import { spawn } from 'child_process';
-import { buildRSC as buildRSCCore } from '../bin/build-rsc';
-import { startRSCServer as startRSCCoreServer } from '../server/rsc-engine';
+import fs from 'fs';
+import { createRequire } from 'module';
+import os from 'os';
+import path from 'path';
+import { getSharedDevClientSource } from '../bin/dev-client-runtime';
 import { getErrorMessage, isPermissionDeniedSpawnError } from '../server/spawn-permissions';
 import {
-  runFlashpackRustCli,
-  type FlashpackPhase,
+  resolveFlashpackLaunch,
+  resolveFlashpackSsrRunner,
   type FlashpackMode,
 } from './runtime';
 
@@ -15,6 +17,7 @@ interface RunFlashpackCommandOptions {
   cwd?: string;
   port?: string | number;
   strict?: boolean;
+  action?: 'prepare' | 'run';
 }
 
 function resolveMode(phase: FlashpackCommandPhase): FlashpackMode {
@@ -24,45 +27,34 @@ function resolveMode(phase: FlashpackCommandPhase): FlashpackMode {
   return process.env.NODE_ENV === 'development' ? 'development' : 'production';
 }
 
-function getRunnerPath(): string {
-  return path.resolve(__dirname, '..', 'bin', 'flashpack-runner.js');
-}
-
 function formatRustFailure(message: string): string {
   return `[flashpack] Rust command unavailable: ${message}`;
 }
 
-async function fallbackToCore(
-  phase: FlashpackCommandPhase,
-  port: string | number | undefined
-): Promise<void> {
-  const normalizedPort = Number(port || process.env.PORT || 3003) || 3003;
-  process.env.VISTA_ENGINE = 'flashpack';
-  process.env.VISTA_ENGINE_VARIANT = 'flashpack';
-  process.env.VISTA_FLASHPACK = 'true';
-  process.env.VISTA_FLASHPACK_PIPELINE = 'js-fallback';
-
-  console.warn(
-    `[flashpack] Using explicit webpack Flight SSR fallback for ${phase} (same inline-Flight contract; not renderToString).`
-  );
-
-  if (phase === 'build') {
-    await buildRSCCore(false);
-    return;
+function vistaVersion(): string {
+  try {
+    const require = createRequire(__filename);
+    const pkg = require('../../package.json') as { version?: string };
+    return pkg.version || '0.3.8';
+  } catch {
+    return '0.3.8';
   }
+}
 
-  if (phase === 'dev') {
-    const result = await buildRSCCore(true);
-    startRSCCoreServer({
-      port: normalizedPort,
-      compiler: result.clientCompiler,
-    });
-    return;
+function installDevClient(cwd: string): void {
+  const file = path.join(cwd, '.flash', 'dev', 'vista-dev.js');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, getSharedDevClientSource(String(Date.now())));
+}
+
+function networkHost(): string {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
   }
-
-  startRSCCoreServer({
-    port: normalizedPort,
-  });
+  return '';
 }
 
 export async function runFlashpackEngineCommand(
@@ -70,46 +62,20 @@ export async function runFlashpackEngineCommand(
   options: RunFlashpackCommandOptions = {}
 ): Promise<void> {
   const cwd = options.cwd || process.cwd();
-  const strict = options.strict ?? process.env.VISTA_FLASHPACK_STRICT !== 'false';
   const mode = resolveMode(phase);
-  const runnerPath = getRunnerPath();
   const port = options.port || process.env.PORT || 3003;
-
-  const prepare = runFlashpackRustCli({
-    cwd,
-    phase: phase as FlashpackPhase,
-    mode,
-    action: 'prepare',
-  });
-
-  if (prepare.error || prepare.status !== 0) {
-    if (strict) {
-      throw new Error(formatRustFailure(prepare.error || 'unknown failure'));
-    }
-
-    await fallbackToCore(phase, port);
-    return;
-  }
-
-  const workspaceRoot = prepare.workspaceRoot;
-  const cargoCommand = prepare.cargoCommand;
-  if (!workspaceRoot || !cargoCommand) {
-    if (strict) {
-      throw new Error('[flashpack] Rust workspace unavailable for flashpack command.');
-    }
-    await fallbackToCore(phase, port);
-    return;
+  const action = options.action || 'run';
+  const launch = resolveFlashpackLaunch(cwd);
+  const ssrRunner = action === 'run' ? resolveFlashpackSsrRunner(cwd) : null;
+  if (action === 'run') {
+    installDevClient(cwd);
   }
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(
-      cargoCommand,
+      launch.command,
       [
-        'run',
-        '-q',
-        '-p',
-        'flashpack-cli',
-        '--',
+        ...launch.args,
         '--cwd',
         cwd,
         '--phase',
@@ -117,43 +83,30 @@ export async function runFlashpackEngineCommand(
         '--mode',
         mode,
         '--action',
-        'run',
-        '--node',
-        process.execPath,
-        '--runner',
-        runnerPath,
-        '--port',
-        String(port),
+        action,
+        ...(action === 'run' ? ['--port', String(port)] : []),
+        ...(ssrRunner ? ['--ssr-runner', ssrRunner] : []),
       ],
       {
-        cwd: workspaceRoot,
+        cwd: launch.cwd,
         env: {
           ...process.env,
           VISTA_ENGINE: 'flashpack',
           VISTA_ENGINE_VARIANT: 'flashpack',
           VISTA_FLASHPACK: 'true',
-          VISTA_FLASHPACK_PIPELINE: 'rust-cli',
+          VISTA_FLASHPACK_PIPELINE: 'rust-swc',
+          VISTA_VERSION: vistaVersion(),
+          VISTA_NETWORK_HOST: networkHost(),
         },
         stdio: 'inherit',
         windowsHide: true,
       }
     );
 
-    child.once('error', async (error) => {
+    child.once('error', (error) => {
       const message = isPermissionDeniedSpawnError(error)
         ? formatRustFailure(`spawn blocked by environment permissions (${getErrorMessage(error)})`)
         : formatRustFailure(getErrorMessage(error));
-
-      if (!strict) {
-        try {
-          await fallbackToCore(phase, port);
-          resolve();
-          return;
-        } catch (fallbackError) {
-          reject(fallbackError);
-          return;
-        }
-      }
       reject(new Error(message));
     });
 

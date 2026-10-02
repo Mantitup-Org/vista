@@ -49,4 +49,10 @@ export const docsCategoryConfig: DocsCategoryConfig[] = [
     description: 'vista g auth, credentials POST, OAuth callbackUrl, fail-closed middleware.',
     order: 8,
   },
+  {
+    id: 'seo',
+    title: 'SEO',
+    description: 'Metadata, robots, sitemap, OG images, and JSON-LD.',
+    order: 9,
+  },
 ];

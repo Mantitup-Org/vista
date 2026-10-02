@@ -17,7 +17,6 @@ export default function MobileNavigation({ navigation }: MobileNavigationProps) 
   const pathname = usePathname();
 
   useEffect(() => {
-    // Ensure the backdrop never persists across route transitions.
     setIsOpen(false);
   }, [pathname]);
 
@@ -38,32 +37,39 @@ export default function MobileNavigation({ navigation }: MobileNavigationProps) 
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-background/80 px-3 py-1.5 text-sm text-foreground/84"
+        className="inline-flex items-center gap-1.5 rounded-md border border-foreground/12 bg-background px-2.5 py-1.5 text-[13px] text-foreground/70"
       >
-        <Menu className="h-4 w-4" />
+        <Menu className="h-3.5 w-3.5" />
         Menu
       </button>
 
-      {isOpen ? <button className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm" onClick={() => setIsOpen(false)} /> : null}
+      {isOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 bg-background/60 backdrop-blur-[2px]"
+          onClick={() => setIsOpen(false)}
+          aria-label="Close menu backdrop"
+        />
+      ) : null}
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-[60] w-[86%] max-w-xs border-r border-foreground/12 bg-background p-4 transition-transform',
+          'fixed inset-y-0 left-0 z-[60] w-[min(86vw,18rem)] border-r border-foreground/10 bg-background p-5 transition-transform',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="mb-4 flex items-center justify-between border-b border-foreground/10 pb-3">
+        <div className="mb-5 flex items-center justify-between">
           <Link
             href="/docs"
             onClick={() => setIsOpen(false)}
-            className="text-sm font-semibold tracking-wide text-foreground"
+            className="text-[13px] font-semibold tracking-tight text-foreground"
           >
             Vista Docs
           </Link>
           <button
             type="button"
             onClick={() => setIsOpen(false)}
-            className="rounded-md p-1 text-foreground/45 hover:bg-foreground/[0.05] hover:text-foreground"
+            className="rounded-md p-1 text-foreground/40 hover:bg-foreground/[0.05] hover:text-foreground"
             aria-label="Close docs navigation"
           >
             <X className="h-4 w-4" />

@@ -17,6 +17,7 @@ export interface MetadataRendererProps {
 export declare function MetadataRenderer({ metadata, parentTemplate, }: MetadataRendererProps): React.ReactElement;
 /**
  * Converts metadata to HTML string for SSR injection.
+ * Applies title template from merged metadata when parentTemplate is omitted.
  */
 export declare function generateMetadataHtml(metadata: Metadata, parentTemplate?: string): string;
 export default MetadataRenderer;

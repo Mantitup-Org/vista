@@ -1,3 +1,5 @@
+import { CopyButton } from './copy-button';
+
 interface CodeProps {
   title?: string;
   language: string;
@@ -28,7 +30,7 @@ const SHELL_REGEX =
 
 function pickRegex(language: string): RegExp | null {
   const normalized = language.toLowerCase();
-  if (normalized === 'txt' || normalized === 'text') {
+  if (normalized === 'txt' || normalized === 'text' || normalized === 'prompt') {
     return null;
   }
   if (normalized === 'bash' || normalized === 'sh' || normalized === 'shell') {
@@ -82,43 +84,38 @@ function tokenize(code: string, language: string): TokenPart[] {
 function getTokenClassName(type: TokenType): string {
   switch (type) {
     case 'comment':
-      return 'text-zinc-500 italic';
+      return 'text-zinc-500';
     case 'string':
-      return 'text-emerald-300';
+      return 'text-emerald-600 dark:text-emerald-400';
     case 'keyword':
-      return 'text-sky-300';
+      return 'text-sky-700 dark:text-sky-300';
     case 'boolean':
-      return 'text-violet-300';
+      return 'text-violet-700 dark:text-violet-300';
     case 'number':
-      return 'text-amber-300';
+      return 'text-amber-700 dark:text-amber-300';
     case 'function':
-      return 'text-cyan-300';
+      return 'text-cyan-700 dark:text-cyan-300';
     case 'operator':
-      return 'text-pink-300';
+      return 'text-pink-700 dark:text-pink-300';
     case 'flag':
-      return 'text-fuchsia-300';
+      return 'text-fuchsia-700 dark:text-fuchsia-300';
     default:
-      return 'text-zinc-200';
+      return 'text-zinc-800 dark:text-zinc-200';
   }
 }
 
 export function Code({ title, language, code }: CodeProps) {
   const tokens = tokenize(code, language);
+  const isPrompt = language.toLowerCase() === 'prompt';
+  const label = title || (isPrompt ? 'Copy for AI agents' : language);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
-      <div className="flex items-center justify-between border-b border-zinc-800 px-4 py-2">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-400/85" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-300/85" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-300/85" />
-          </div>
-          <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">{title || language}</p>
-        </div>
-        <span className="text-[11px] uppercase tracking-[0.1em] text-zinc-600">{language}</span>
+    <div className="overflow-hidden rounded-lg border border-foreground/10 bg-foreground/[0.03] dark:bg-white/[0.03]">
+      <div className="flex items-center justify-between gap-3 border-b border-foreground/10 px-3 py-1.5 sm:px-4">
+        <p className="min-w-0 truncate text-[12px] font-medium text-foreground/50">{label}</p>
+        <CopyButton value={code} label={isPrompt ? 'Copy prompt' : 'Copy'} />
       </div>
-      <pre className="overflow-x-auto p-4 text-sm leading-7">
+      <pre className="overflow-x-auto p-4 text-[13px] leading-6">
         <code className="whitespace-pre">
           {tokens.map((token, index) => (
             <span key={`${token.type}-${index}`} className={getTokenClassName(token.type)}>

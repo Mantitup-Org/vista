@@ -7,20 +7,19 @@ const DEFAULT_QUOTE =
 
 export default function SignatureBlock({ quote = DEFAULT_QUOTE }: SignatureBlockProps) {
   return (
-    <section className="mt-14 border-t border-dashed border-foreground/12 pt-10">
-      <p className="text-sm uppercase tracking-[0.18em] text-foreground/45">Founder Note</p>
-      <p className="mt-4 max-w-2xl text-lg leading-8 text-foreground/74">"{quote}"</p>
-
-      <div className="mt-8 flex flex-col items-start">
+    <aside className="border-l-2 border-foreground/15 pl-4">
+      <p className="text-[13px] font-medium text-foreground/45">Creator note</p>
+      <p className="mt-2 max-w-2xl text-[15px] leading-7 text-foreground/65">“{quote}”</p>
+      <div className="mt-5 flex flex-col items-start">
         <img
           src="/signature.svg"
           alt="Ankan Dalui Signature"
-          width={320}
-          height={110}
-          className="mb-1 -ml-8 opacity-80 dark:invert"
+          width={240}
+          height={82}
+          className="mb-1 -ml-6 opacity-70 dark:invert"
         />
-        <p className="text-sm font-medium text-foreground/55">Ankan Dalui, Founder, Vista.js</p>
+        <p className="text-[13px] text-foreground/45">Ankan Dalui, Creator</p>
       </div>
-    </section>
+    </aside>
   );
 }

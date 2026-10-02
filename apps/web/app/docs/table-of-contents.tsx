@@ -26,7 +26,6 @@ export default function TableOfContents({ mode = 'desktop' }: TableOfContentsPro
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    // Prevent stale mobile drawer overlay when navigating between docs routes.
     setIsOpen(false);
   }, [pathname]);
 
@@ -43,7 +42,7 @@ export default function TableOfContents({ mode = 'desktop' }: TableOfContentsPro
 
   const tocList = useMemo(
     () => (
-      <ul className="space-y-1">
+      <ul className="space-y-0.5">
         {headings.map((heading) => (
           <li key={heading.id}>
             <a
@@ -53,11 +52,11 @@ export default function TableOfContents({ mode = 'desktop' }: TableOfContentsPro
                 setIsOpen(false);
               }}
               className={cn(
-                'block border-l px-3 py-1 text-sm transition-colors',
-                heading.level === 3 ? 'ml-3' : 'ml-0',
+                'block border-l py-1 text-[13px] leading-snug transition-colors',
+                heading.level === 3 ? 'pl-5' : 'pl-3',
                 activeId === heading.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-foreground/48 hover:text-foreground'
+                  ? 'border-foreground font-medium text-foreground'
+                  : 'border-transparent text-foreground/45 hover:text-foreground'
               )}
             >
               {heading.text}
@@ -66,55 +65,62 @@ export default function TableOfContents({ mode = 'desktop' }: TableOfContentsPro
         ))}
       </ul>
     ),
-    [activeId, headings]
+    [activeId, headings, setVisibleSections]
   );
 
   if (mode === 'mobile-trigger') {
+    if (!hasHeadings) return null;
+
     return (
       <>
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-background/80 px-3 py-1.5 text-sm text-foreground/84 xl:hidden"
+          className="inline-flex items-center gap-1.5 rounded-md border border-foreground/12 bg-background px-2.5 py-1.5 text-[13px] text-foreground/70 xl:hidden"
         >
-          <AlignLeft className="h-4 w-4" />
+          <AlignLeft className="h-3.5 w-3.5" />
           On this page
-          <ChevronDown className="h-4 w-4 text-foreground/45" />
+          <ChevronDown className="h-3.5 w-3.5 text-foreground/40" />
         </button>
 
-        {isOpen ? <button className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm xl:hidden" onClick={() => setIsOpen(false)} /> : null}
+        {isOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-50 bg-background/60 backdrop-blur-[2px] xl:hidden"
+            onClick={() => setIsOpen(false)}
+            aria-label="Close on this page"
+          />
+        ) : null}
 
         <aside
           className={cn(
-            'fixed inset-y-0 right-0 z-[60] w-[86%] max-w-xs border-l border-foreground/12 bg-background p-4 transition-transform xl:hidden',
+            'fixed inset-y-0 right-0 z-[60] w-[min(86vw,18rem)] border-l border-foreground/10 bg-background p-5 transition-transform xl:hidden',
             isOpen ? 'translate-x-0' : 'translate-x-full'
           )}
         >
-          <div className="mb-4 flex items-center justify-between border-b border-foreground/10 pb-3">
-            <p className="text-sm font-semibold text-foreground">On this page</p>
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-[13px] font-semibold text-foreground">On this page</p>
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded-md p-1 text-foreground/45 hover:bg-foreground/[0.05] hover:text-foreground"
+              className="rounded-md p-1 text-foreground/40 hover:bg-foreground/[0.05] hover:text-foreground"
               aria-label="Close table of contents"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-
-          {hasHeadings ? tocList : <p className="text-sm text-foreground/52">No headings found for this page yet.</p>}
+          {tocList}
         </aside>
       </>
     );
   }
 
+  if (!hasHeadings) return null;
+
   return (
-    <div
-      id="docs-on-this-page"
-      className="rounded-xl border border-foreground/12 bg-foreground/[0.025] p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)] dark:bg-white/[0.03]"
-    >
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/45">On this page</p>
-      {hasHeadings ? tocList : <p className="text-sm text-foreground/52">No headings found for this page yet.</p>}
+    <div id="docs-on-this-page">
+      <p className="mb-3 text-[13px] font-semibold tracking-tight text-foreground">On this page</p>
+      {tocList}
     </div>
   );
 }

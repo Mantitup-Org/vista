@@ -44,19 +44,25 @@ function runPostCSS(cwd, vistaDir) {
         }
     }
 }
+function urlSegmentForNode(node) {
+    if (!node.segment)
+        return null;
+    if (node.kind === 'group' || node.kind === 'parallel' || node.kind === 'interception') {
+        return null;
+    }
+    if (node.kind === 'dynamic')
+        return `:${node.segment}`;
+    if (node.kind === 'catch-all')
+        return `:${node.segment}*`;
+    if (node.kind === 'optional-catch-all')
+        return `:${node.segment}*?`;
+    return node.segment;
+}
 function collectRouteArtifactEntries(node, segments = [], entries = []) {
     const nextSegments = [...segments];
-    if (node.segment) {
-        if (node.kind === 'dynamic') {
-            nextSegments.push(`:${node.segment}`);
-        }
-        else if (node.kind === 'catch-all') {
-            nextSegments.push(`:${node.segment}*`);
-        }
-        else if (node.kind !== 'group') {
-            nextSegments.push(node.segment);
-        }
-    }
+    const urlPiece = urlSegmentForNode(node);
+    if (urlPiece)
+        nextSegments.push(urlPiece);
     if (node.indexPath) {
         const pattern = nextSegments.length === 0 ? '/' : `/${nextSegments.join('/')}`;
         const type = pattern.includes('*')

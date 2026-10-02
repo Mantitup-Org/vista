@@ -10,6 +10,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildFlightClientReferenceOptions = buildFlightClientReferenceOptions;
 exports.createServerWebpackConfig = createServerWebpackConfig;
 exports.createClientWebpackConfig = createClientWebpackConfig;
 exports.runRSCBuild = runRSCBuild;
@@ -22,6 +23,51 @@ const server_manifest_1 = require("./server-manifest");
 const react_client_reference_manifest_1 = require("./react-client-reference-manifest");
 const constants_1 = require("../../constants");
 const app_dir_1 = require("../../server/app-dir");
+const project_alias_resolver_1 = require("../../server/project-alias-resolver");
+function isPathInside(target, ancestor) {
+    const resolvedTarget = path_1.default.resolve(target);
+    const resolvedAncestor = path_1.default.resolve(ancestor);
+    if (resolvedTarget === resolvedAncestor)
+        return true;
+    const prefix = resolvedAncestor.endsWith(path_1.default.sep)
+        ? resolvedAncestor
+        : `${resolvedAncestor}${path_1.default.sep}`;
+    return resolvedTarget.startsWith(prefix);
+}
+/**
+ * Build ReactFlightWebpackPlugin `clientReferences`.
+ *
+ * Project roots (`app/`, `components/`, `lib/`, ...) are passed as watched
+ * directories so newly added `'use client'` files are registered without a full
+ * rebuild. Framework package paths stay as absolute files.
+ */
+function buildFlightClientReferenceOptions(cwd, explicitFiles = []) {
+    const roots = (0, client_manifest_1.discoverProjectClientRoots)(cwd).filter((root) => fs_1.default.existsSync(root.dir));
+    const directoryRefs = roots.map((root) => ({
+        directory: path_1.default.resolve(root.dir),
+        recursive: true,
+        include: /\.[cm]?[jt]sx?$/,
+    }));
+    // Always include app/ even if discover somehow missed it (empty cwd edge cases).
+    const appDir = (0, app_dir_1.resolveAppDir)(cwd);
+    if (fs_1.default.existsSync(appDir) &&
+        !directoryRefs.some((entry) => typeof entry !== 'string' && path_1.default.resolve(entry.directory) === path_1.default.resolve(appDir))) {
+        directoryRefs.unshift({
+            directory: path_1.default.resolve(appDir),
+            recursive: true,
+            include: /\.[cm]?[jt]sx?$/,
+        });
+    }
+    const rootDirs = roots.map((root) => path_1.default.resolve(root.dir));
+    if (fs_1.default.existsSync(appDir)) {
+        rootDirs.push(path_1.default.resolve(appDir));
+    }
+    const externalFiles = Array.from(new Set(explicitFiles
+        .filter((entry) => typeof entry === 'string' && entry.length > 0)
+        .map((entry) => path_1.default.resolve(entry))
+        .filter((entry) => !rootDirs.some((dir) => isPathInside(entry, dir)))));
+    return [...directoryRefs, ...externalFiles];
+}
 // Find module path (handles monorepo hoisting)
 const findModulePath = (moduleName, cwd) => {
     const localPath = path_1.default.resolve(cwd, 'node_modules', moduleName);
@@ -65,6 +111,7 @@ function createServerWebpackConfig(options) {
     const swcLoaderPath = resolveFromWorkspace('swc-loader', cwd);
     const nullLoaderPath = resolveFromWorkspace('null-loader', cwd);
     const cssLoaderPath = resolveFromWorkspace('css-loader', cwd);
+    const projectAliases = (0, project_alias_resolver_1.loadProjectWebpackAliases)(cwd);
     // Generate server manifest first
     const serverManifest = (0, server_manifest_1.generateServerManifest)(cwd, (0, app_dir_1.resolveAppDir)(cwd));
     fs_1.default.writeFileSync(path_1.default.join(vistaDirs.server, 'server-manifest.json'), JSON.stringify(serverManifest, null, 2));
@@ -109,12 +156,13 @@ function createServerWebpackConfig(options) {
             clean: !isDev,
         },
         externals: [
-            // Don't bundle node_modules on server
+            // Don't bundle node_modules on server. Project path aliases (@/…) stay inside the bundle.
             ({ request }, callback) => {
                 if (request &&
                     !request.startsWith('.') &&
                     !request.startsWith('/') &&
-                    !path_1.default.isAbsolute(request)) {
+                    !path_1.default.isAbsolute(request) &&
+                    !(0, project_alias_resolver_1.requestUsesProjectAlias)(request, projectAliases)) {
                     // External - don't bundle
                     return callback(null, 'commonjs ' + request);
                 }
@@ -126,6 +174,7 @@ function createServerWebpackConfig(options) {
             : false,
         resolve: {
             extensions: ['.tsx', '.ts', '.jsx', '.js'],
+            alias: projectAliases,
             modules: [path_1.default.resolve(cwd, 'node_modules'), 'node_modules'],
         },
         module: {
@@ -189,6 +238,11 @@ function createServerWebpackConfig(options) {
         ],
         devtool: isDev ? 'source-map' : false,
         stats: 'minimal',
+        // Webpack's infrastructure logger prints `<i> [webpack-dev-middleware] …`.
+        // Vista logs compile failures itself.
+        infrastructureLogging: {
+            level: isDev ? 'none' : 'error',
+        },
     };
 }
 /**
@@ -211,9 +265,11 @@ function createClientWebpackConfig(options) {
     const reactFlightPluginPath = resolveFromWorkspace('react-server-dom-webpack/plugin', cwd);
     const reactFlightClientPath = resolveFromWorkspace('react-server-dom-webpack/client.browser', cwd);
     const ReactFlightWebpackPlugin = require(reactFlightPluginPath);
-    const flightClientReferences = Array.from(new Set(clientReferenceFiles
-        .filter((entry) => typeof entry === 'string' && entry.length > 0)
-        .map((entry) => path_1.default.resolve(entry))));
+    const projectAliases = (0, project_alias_resolver_1.loadProjectWebpackAliases)(cwd);
+    // Prefer watched project directories over a frozen absolute-file list so that
+    // newly added `'use client'` modules under components/, lib/, etc. enter the
+    // Flight client manifest without restarting the compiler.
+    const flightClientReferences = buildFlightClientReferenceOptions(cwd, clientReferenceFiles);
     // Entry: Only client components
     const clientEntry = path_1.default.join(vistaDirs.root, 'rsc-client.tsx');
     return {
@@ -238,6 +294,7 @@ function createClientWebpackConfig(options) {
         resolve: {
             extensions: ['.tsx', '.ts', '.jsx', '.js'],
             alias: {
+                ...projectAliases,
                 react: reactPath,
                 'react-dom': reactDomPath,
                 'react/jsx-runtime': path_1.default.join(reactPath, 'jsx-runtime'),
@@ -340,7 +397,7 @@ function createClientWebpackConfig(options) {
                         {
                             directory: (0, app_dir_1.resolveAppDir)(cwd),
                             recursive: true,
-                            include: /\.[jt]sx?$/,
+                            include: /\.[cm]?[jt]sx?$/,
                         },
                     ],
             }),
@@ -422,6 +479,9 @@ function createClientWebpackConfig(options) {
         ],
         devtool: isDev ? 'eval-cheap-module-source-map' : 'source-map',
         stats: 'minimal',
+        infrastructureLogging: {
+            level: isDev ? 'none' : 'error',
+        },
     };
 }
 /**

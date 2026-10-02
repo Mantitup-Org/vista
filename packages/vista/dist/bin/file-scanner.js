@@ -53,6 +53,7 @@ exports.getVersion = getVersion;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const native_scanner_1 = require("../build/rsc/native-scanner");
+const rust_1 = require("../rust");
 const RESERVED_INTERNAL_SEGMENTS = new Set(['[not-found]']);
 function hasReservedInternalSegment(relativePath) {
     return relativePath
@@ -111,34 +112,16 @@ function getRouteTree(appDir) {
     // JS Fallback - build route tree from file system
     return buildRouteTreeJS(appDir, appDir);
 }
-function classifySegment(segment) {
-    if (segment.startsWith('[[...') && segment.endsWith(']]'))
-        return 'optional-catch-all';
-    if (segment.startsWith('[...'))
-        return 'catch-all';
-    if (segment.startsWith('(.)') ||
-        segment.startsWith('(..)') ||
-        segment.startsWith('(..)(..)') ||
-        segment.startsWith('(...)')) {
-        return 'interception';
-    }
-    if (segment.startsWith('(') && segment.endsWith(')'))
-        return 'group';
-    if (segment.startsWith('@'))
-        return 'parallel';
-    if (segment.startsWith('['))
-        return 'dynamic';
-    return 'static';
-}
 /**
- * JS Fallback for building route tree when Rust bindings are unavailable
+ * JS Fallback for building route tree when Rust bindings are unavailable.
+ * Classification goes through `vista/rust`, which uses the native addon when it is loaded.
  */
 function buildRouteTreeJS(dir, appDir) {
-    const segment = dir === appDir ? '' : path.basename(dir);
-    const kind = classifySegment(segment);
+    const folder = dir === appDir ? '' : path.basename(dir);
+    const classified = folder === '' ? { kind: 'static', segment: '' } : (0, rust_1.classifyAppSegment)(folder);
     const node = {
-        segment: kind === 'group' ? '' : segment,
-        kind,
+        segment: classified.segment,
+        kind: classified.kind,
         children: [],
     };
     if (!fs.existsSync(dir)) {

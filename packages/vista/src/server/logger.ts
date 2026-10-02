@@ -100,7 +100,8 @@ export function printServerReady(info: ServerReadyInfo): void {
 
   console.log(VISTA_BANNER);
 
-  console.log(`  ${green('▼')} ${bold('Vista.Js')} ${dim(`v${getVistaVersion()}`)}`);
+  const engineLabel = process.env.VISTA_ENGINE === 'flashpack' ? ` ${cyan('(flashpack)')}` : '';
+  console.log(`  ${green('▼')} ${bold('Vista.Js')} ${dim(`v${getVistaVersion()}`)}${engineLabel}`);
   console.log('');
   console.log(`  ${dim('┃')} ${bold('Local:')}        ${cyan(localUrl)}`);
   if (networkUrl) {

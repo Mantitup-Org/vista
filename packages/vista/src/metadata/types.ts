@@ -13,7 +13,7 @@
  * Template string for title with inheritance support
  */
 export type TemplateString = {
-    default: string;
+    default?: string;
     template?: string;
     absolute?: string;
 };
@@ -440,5 +440,6 @@ export type GenerateMetadata<Params = Record<string, string>> = (
 // ============================================================================
 
 export function isTemplateString(title: unknown): title is TemplateString {
-    return typeof title === 'object' && title !== null && 'default' in title;
+    if (typeof title !== 'object' || title === null) return false;
+    return 'default' in title || 'absolute' in title || 'template' in title;
 }

@@ -1,7 +1,10 @@
 use napi_derive::napi;
-use vista_transforms::{detect_client_directive_fast, has_client_directive};
-use vista_transforms::naming;
 use std::path::Path;
+use vista_core::classify_app_segment;
+use vista_error_code_swc_plugin::{encode_error_code, find_error_codes};
+use vista_taskless::{TasklessMode, TasklessSchedule};
+use vista_transforms::naming;
+use vista_transforms::{detect_client_directive_fast, has_client_directive};
 
 // ============================================================================
 // Framework Identity & Integrity (baked into compiled .node binary)
@@ -97,35 +100,17 @@ pub fn get_route_tree(app_dir: String) -> RouteNode {
 }
 
 fn build_route_node(dir_path: &Path, base_path: &Path) -> RouteNode {
-    let dir_name = dir_path.file_name()
+    let dir_name = dir_path
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "".to_string());
+        .unwrap_or_default();
 
-    let mut segment = dir_name.clone();
-    let mut kind = "static".to_string();
-
-    // Handle route groups (folder) - doesn't contribute to URL
-    if segment.starts_with('(') && segment.ends_with(')') {
-        kind = "group".to_string();
-        segment = "".to_string(); // Groups don't add to the path
-    }
-    // Handle optional catch-all routes [[...slug]]
-    else if segment.starts_with("[[...") && segment.ends_with("]]") {
-        kind = "optional-catch-all".to_string();
-        segment = segment[5..segment.len()-2].to_string();
-    }
-    // Handle dynamic routes [slug] and catch-all [...slug]
-    else if segment.starts_with('[') && segment.ends_with(']') {
-        if segment.starts_with("[...") {
-            kind = "catch-all".to_string();
-            segment = segment[4..segment.len()-1].to_string();
-        } else {
-            kind = "dynamic".to_string();
-            segment = segment[1..segment.len()-1].to_string();
-        }
-    } else if dir_path == base_path {
-        segment = "".to_string();
-    }
+    let (kind, segment) = if dir_path == base_path {
+        ("static".to_string(), String::new())
+    } else {
+        let classified = classify_app_segment(&dir_name);
+        (classified.kind.to_string(), classified.segment)
+    };
 
     let mut node = RouteNode {
         segment,
@@ -137,6 +122,8 @@ fn build_route_node(dir_path: &Path, base_path: &Path) -> RouteNode {
         not_found_path: None,
         children: Vec::new(),
     };
+    let mut index_rank = 0u8;
+    let mut layout_rank = 0u8;
 
     if let Ok(entries) = std::fs::read_dir(dir_path) {
         for entry in entries.flatten() {
@@ -144,27 +131,27 @@ fn build_route_node(dir_path: &Path, base_path: &Path) -> RouteNode {
             let file_name = entry.file_name().to_string_lossy().to_string();
             
             if path.is_dir() {
-                // Skip hidden folders and node_modules
                 if !file_name.starts_with('.') && file_name != "node_modules" && file_name != "[not-found]" {
                     let child_node = build_route_node(&path, base_path);
-                    // Only add child if it has some content or children
-                    if child_node.index_path.is_some() || child_node.layout_path.is_some() || !child_node.children.is_empty() {
-                         node.children.push(child_node);
+                    if route_node_has_files(&child_node) || !child_node.children.is_empty() {
+                        node.children.push(child_node);
                     }
                 }
             } else {
-                // Check for special files
                 let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
                 let full_path = path.to_string_lossy().to_string();
-                
-                // We only care about .tsx/.ts/.jsx/.js
-                if !file_name.ends_with(".tsx") && !file_name.ends_with(".ts") && !file_name.ends_with(".jsx") && !file_name.ends_with(".js") {
+                let ext_rank = source_ext_rank(&file_name);
+                if ext_rank == 0 {
                     continue;
                 }
 
                 match stem {
-                    "page" | "index" => node.index_path = Some(full_path),
-                    "layout" | "root" => node.layout_path = Some(full_path),
+                    // app/page.tsx wins over a sibling app/index.tsx.
+                    "page" => assign_ranked(&mut node.index_path, &mut index_rank, 10 + ext_rank, full_path),
+                    "index" => assign_ranked(&mut node.index_path, &mut index_rank, ext_rank, full_path),
+                    // root.tsx is the document shell and wins over layout.tsx.
+                    "root" => assign_ranked(&mut node.layout_path, &mut layout_rank, 10 + ext_rank, full_path),
+                    "layout" => assign_ranked(&mut node.layout_path, &mut layout_rank, ext_rank, full_path),
                     "loading" => node.loading_path = Some(full_path),
                     "error" => node.error_path = Some(full_path),
                     "not-found" => node.not_found_path = Some(full_path),
@@ -174,23 +161,106 @@ fn build_route_node(dir_path: &Path, base_path: &Path) -> RouteNode {
         }
     }
     
-    // Sort children: static first, then dynamic, then catch-all
     node.children.sort_by(|a, b| {
-        let order_a = match a.kind.as_str() { "static" => 0, "dynamic" => 1, _ => 2 };
-        let order_b = match b.kind.as_str() { "static" => 0, "dynamic" => 1, _ => 2 };
-        if order_a != order_b {
-            return order_a.cmp(&order_b);
+        fn kind_order(kind: &str) -> u8 {
+            match kind {
+                "static" | "group" | "parallel" | "interception" => 0,
+                "dynamic" => 1,
+                "catch-all" | "optional-catch-all" => 2,
+                _ => 3,
+            }
         }
-        a.segment.cmp(&b.segment)
+        kind_order(&a.kind)
+            .cmp(&kind_order(&b.kind))
+            .then_with(|| a.segment.cmp(&b.segment))
     });
 
     node
+}
+
+fn source_ext_rank(file_name: &str) -> u8 {
+    if file_name.ends_with(".tsx") {
+        4
+    } else if file_name.ends_with(".ts") {
+        3
+    } else if file_name.ends_with(".jsx") {
+        2
+    } else if file_name.ends_with(".js") {
+        1
+    } else {
+        0
+    }
+}
+
+fn assign_ranked(slot: &mut Option<String>, rank: &mut u8, next: u8, path: String) {
+    if next > *rank {
+        *slot = Some(path);
+        *rank = next;
+    }
+}
+
+fn route_node_has_files(node: &RouteNode) -> bool {
+    node.index_path.is_some()
+        || node.layout_path.is_some()
+        || node.loading_path.is_some()
+        || node.error_path.is_some()
+        || node.not_found_path.is_some()
 }
 
 /// Version of vista-napi
 #[napi]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[napi(object)]
+pub struct ClassifiedSegmentInfo {
+    pub kind: String,
+    pub segment: String,
+}
+
+/// Classify one `app/` folder name. Used by the package and CLI.
+#[napi]
+pub fn classify_app_segment_info(folder: String) -> ClassifiedSegmentInfo {
+    let classified = classify_app_segment(&folder);
+    ClassifiedSegmentInfo {
+        kind: classified.kind.to_string(),
+        segment: classified.segment,
+    }
+}
+
+/// URL pattern for a list of `app/` folder names.
+#[napi]
+pub fn route_pattern(folders: Vec<String>) -> String {
+    let refs: Vec<&str> = folders.iter().map(String::as_str).collect();
+    vista_core::route_pattern(&refs)
+}
+
+/// Encode a framework error code as `VISTA_*`.
+#[napi]
+pub fn encode_vista_error_code(code: String) -> String {
+    encode_error_code(&code)
+}
+
+/// Find `VISTA_` codes in source.
+#[napi]
+pub fn find_vista_error_codes(source: String) -> Vec<String> {
+    find_error_codes(&source)
+}
+
+/// Taskless schedule for the enabled or queued runtime.
+#[napi]
+pub fn taskless_steps(enabled: bool) -> Vec<String> {
+    let mode = if enabled {
+        TasklessMode::Enabled
+    } else {
+        TasklessMode::Disabled
+    };
+    TasklessSchedule::default_for(mode)
+        .steps
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 // ============================================================================
@@ -201,17 +271,14 @@ pub fn version() -> String {
 /// Looks for: `export const metadata` or `export const metadata:`
 #[napi]
 pub fn has_metadata_export(source: String) -> bool {
-    // Simple regex-like pattern matching
-    source.contains("export const metadata") || source.contains("export let metadata")
+    vista_transforms::rsc::has_metadata_export(&source)
 }
 
 /// Check if source file has generateMetadata function
 /// Looks for: `export function generateMetadata` or `export async function generateMetadata`
 #[napi]
 pub fn has_generate_metadata(source: String) -> bool {
-    source.contains("export function generateMetadata") || 
-    source.contains("export async function generateMetadata") ||
-    source.contains("export const generateMetadata")
+    vista_transforms::rsc::has_generate_metadata(&source)
 }
 
 /// Metadata information extracted from a source file
@@ -546,6 +613,60 @@ mod tests {
     fn test_is_client() {
         assert!(is_client_component("'use client';\n".to_string()));
         assert!(!is_client_component("export default function() {}".to_string()));
+    }
+
+    #[test]
+    fn route_tree_prefers_page_and_classifies_optional_catch_all() {
+        let root = std::env::temp_dir().join(format!(
+            "vista-route-tree-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let app = root.join("app");
+        let catch_all = app.join("docs").join("[[...slug]]");
+        std::fs::create_dir_all(&catch_all).unwrap();
+        std::fs::write(app.join("index.tsx"), "export default function Index() { return null }\n").unwrap();
+        std::fs::write(app.join("page.tsx"), "export default function Page() { return null }\n").unwrap();
+        std::fs::write(app.join("layout.tsx"), "export default function Layout() { return null }\n").unwrap();
+        std::fs::write(app.join("root.tsx"), "export default function Root() { return null }\n").unwrap();
+        std::fs::write(catch_all.join("page.tsx"), "export default function Docs() { return null }\n").unwrap();
+
+        let tree = get_route_tree(app.to_string_lossy().to_string());
+        assert!(tree.index_path.unwrap().replace('\\', "/").ends_with("page.tsx"));
+        assert!(tree.layout_path.unwrap().replace('\\', "/").ends_with("root.tsx"));
+        let docs = tree.children.iter().find(|child| child.segment == "docs").unwrap();
+        let slug = docs.children.iter().find(|child| child.kind == "optional-catch-all").unwrap();
+        assert_eq!(slug.segment, "slug");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn metadata_binding_is_exact() {
+        assert!(has_metadata_export("export const metadata = {}\n".to_string()));
+        assert!(!has_metadata_export("export const metadataExtra = {}\n".to_string()));
+    }
+
+    #[test]
+    fn package_bindings_match_the_crates() {
+        let docs = classify_app_segment_info("[[...slug]]".to_string());
+        assert_eq!(docs.kind, "optional-catch-all");
+        assert_eq!(docs.segment, "slug");
+        assert_eq!(
+            route_pattern(vec!["(shop)".to_string(), "products".to_string(), "[id]".to_string()]),
+            "/products/:id"
+        );
+        assert_eq!(encode_vista_error_code("ROUTE_MISSING".to_string()), "VISTA_ROUTE_MISSING");
+        assert_eq!(
+            find_vista_error_codes("VISTA_ROUTE_MISSING".to_string()),
+            vec!["ROUTE_MISSING".to_string()]
+        );
+        assert_eq!(
+            taskless_steps(true),
+            vec!["scan".to_string(), "reuse-state".to_string(), "serve".to_string()]
+        );
     }
 }
 

@@ -14,6 +14,7 @@ export function getDevErrorOverlayBootstrapSource(): string {
   var messageNode = null;
   var titleNode = null;
   var detailNode = null;
+  var stackNode = null;
   var filesWrapNode = null;
   var filesNode = null;
   var tabNameNodes = null;
@@ -186,7 +187,7 @@ export function getDevErrorOverlayBootstrapSource(): string {
     var style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = [
-      '#' + ROOT_ID + '{position:fixed;inset:0;z-index:2147482500;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;}',
+      '#' + ROOT_ID + '{position:fixed;inset:0;z-index:2147482500;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;visibility:visible!important;}',
       '#' + ROOT_ID + '[hidden]{display:none;}',
       '#' + ROOT_ID + ' .vista-ov-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.72);}',
       '#' + ROOT_ID + ' .vista-ov-panel{position:relative;width:min(1180px,calc(100vw - 32px));height:min(820px,calc(100vh - 32px));display:flex;flex-direction:column;overflow:hidden;border-radius:8px;border:1px solid #2b2b2b;background:#1e1e1e;box-shadow:0 24px 80px rgba(0,0,0,0.62);color:#ededed;font-family:"Segoe UI",ui-sans-serif,system-ui,-apple-system,sans-serif;animation:vista-ov-in 160ms ease;}',
@@ -269,9 +270,12 @@ export function getDevErrorOverlayBootstrapSource(): string {
       '#' + ROOT_ID + ' .vista-ov-source-badge.is-server{background:#1f6feb;}',
       '#' + ROOT_ID + ' .vista-ov-source-badge.is-hydration{background:#9e6a03;}',
       '#' + ROOT_ID + ' .vista-ov-source-badge.is-client{background:#238636;}',
-      '#' + ROOT_ID + ' .vista-ov-title{margin:6px 0 0;font-size:13px;line-height:1.5;font-weight:500;color:#e6edf3;word-break:break-word;}',
-      '#' + ROOT_ID + ' .vista-ov-detail{margin:6px 0 0;font-size:12px;line-height:1.5;color:#8b949e;white-space:pre-wrap;word-break:break-word;}',
+      '#' + ROOT_ID + ' .vista-ov-title{margin:6px 0 0;font-size:14px;line-height:1.45;font-weight:600;color:#e6edf3;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}',
+      '#' + ROOT_ID + ' .vista-ov-detail{margin:8px 0 0;font-size:12px;line-height:1.5;color:#8b949e;white-space:pre-wrap;word-break:break-word;}',
       '#' + ROOT_ID + ' .vista-ov-detail[hidden]{display:none;}',
+      '#' + ROOT_ID + ' .vista-ov-stack{margin:12px 0 0;padding:12px 14px;border:1px solid #30363d;border-radius:6px;background:#0d1117;color:#e6edf3;font-size:12px;line-height:1.55;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:min(52vh,520px);}',
+      '#' + ROOT_ID + ' .vista-ov-stack[hidden]{display:none;}',
+      '#' + ROOT_ID + ' .vista-ov-stack .vista-ov-stack-file{color:#79c0ff;}',
       '@keyframes vista-ov-in{from{opacity:0;transform:translateY(8px) scale(0.98);}to{opacity:1;transform:translateY(0) scale(1);}}',
       '@media (max-width: 720px){',
       '  #' + ROOT_ID + '{padding:10px;}',
@@ -329,6 +333,7 @@ export function getDevErrorOverlayBootstrapSource(): string {
         '          <p class="vista-ov-kind" data-vista-ov-kind>Build Error</p>',
         '          <h1 class="vista-ov-title" data-vista-ov-title>Build Error</h1>',
         '          <p class="vista-ov-detail" data-vista-ov-detail hidden></p>',
+        '          <pre class="vista-ov-stack" data-vista-ov-stack hidden></pre>',
         '        </div>',
         '      </div>',
         '    </div>',
@@ -344,6 +349,7 @@ export function getDevErrorOverlayBootstrapSource(): string {
     messageNode = root.querySelector('[data-vista-message]');
     titleNode = root.querySelector('[data-vista-ov-title]');
     detailNode = root.querySelector('[data-vista-ov-detail]');
+    stackNode = root.querySelector('[data-vista-ov-stack]');
     filesWrapNode = root.querySelector('[data-vista-files-wrap]');
     tabNameNodes = root.querySelectorAll('[data-vista-tab-name]');
     crumbsNode = root.querySelector('[data-vista-crumbs]');
@@ -479,13 +485,38 @@ export function getDevErrorOverlayBootstrapSource(): string {
       }
     }
 
-    var title = trimmedLines.length ? trimmedLines[0] : 'Build Error';
-    if (title.length > 140) {
-      title = title.slice(0, 137) + '...';
+    var kind = 'build';
+    var headline = trimmedLines.length ? trimmedLines[0] : 'Build Error';
+    if (/hydration/i.test(headline) || /hydration|did not match|server rendered html/i.test(raw)) {
+      kind = 'hydration';
+    } else if (/server error|flight ssr|ssr failed/i.test(headline + ' ' + raw)) {
+      kind = 'server';
+    } else if (/runtime|unhandled promise/i.test(headline)) {
+      kind = 'runtime';
+    } else if (/TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|AggregateError/i.test(raw)) {
+      kind = 'runtime';
+    }
+
+    // Prefer the real exception line over a generic "Runtime Error" label.
+    var title = headline;
+    var exceptionLine = '';
+    for (var t = 0; t < trimmedLines.length; t += 1) {
+      if (/^(TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|AggregateError|Error)\b/.test(trimmedLines[t])) {
+        exceptionLine = trimmedLines[t];
+        break;
+      }
+    }
+    if (exceptionLine) {
+      title = exceptionLine;
+    } else if (kind === 'runtime' && trimmedLines.length > 1 && /^(runtime error|unhandled)/i.test(headline)) {
+      title = trimmedLines[1];
+    }
+    if (title.length > 180) {
+      title = title.slice(0, 177) + '...';
     }
 
     var files = [];
-    var filePattern = /(?:[A-Za-z]:)?[\\/\w.@-]+\.(?:tsx?|jsx?|mjs|cjs|css|json|mdx?)(?::\d+(?::\d+)?)?/;
+    var filePattern = /(?:[A-Za-z]:)?[\\/\w.@+-]+\.(?:tsx?|jsx?|mjs|cjs|css|json|mdx?)(?::\d+(?::\d+)?)?/;
     for (var fileIdx = 0; fileIdx < lines.length; fileIdx += 1) {
       var maybeFile = lines[fileIdx].match(filePattern);
       if (!maybeFile) continue;
@@ -493,7 +524,22 @@ export function getDevErrorOverlayBootstrapSource(): string {
       if (files.indexOf(normalized) === -1) {
         files.push(normalized);
       }
-      if (files.length >= 5) break;
+      if (files.length >= 8) break;
+    }
+
+    var stackStart = -1;
+    for (var s = 0; s < lines.length; s += 1) {
+      if (/^\s*at\s+/.test(lines[s]) || /^(TypeError|ReferenceError|SyntaxError|RangeError|Error)\b/.test(lines[s].trim())) {
+        stackStart = s;
+        break;
+      }
+    }
+    var stackText = '';
+    if (stackStart !== -1) {
+      stackText = lines.slice(stackStart).join('\n').replace(/^\n+/, '').trim();
+    } else if (kind === 'runtime' || kind === 'server') {
+      var bodyLines = trimmedLines.slice(/^(runtime error|unhandled|server error)/i.test(headline) ? 1 : 0);
+      stackText = bodyLines.join('\n');
     }
 
     var hints = [];
@@ -512,20 +558,11 @@ export function getDevErrorOverlayBootstrapSource(): string {
     if (/Structure Validation Failed/i.test(raw)) {
       hints.push('App structure rules failed. Verify route files, layout/page naming, and required conventions.');
     }
-    if (hints.length === 0 && files.length > 0) {
+    if (/reading ['"]map['"]/i.test(raw)) {
+      hints.push('Something expected an array was undefined. Check the prop or data passed into .map().');
+    }
+    if (hints.length === 0 && files.length > 0 && kind === 'build') {
       hints.push('Start with the first file above, then re-run after each fix.');
-    }
-    if (hints.length === 0) {
-      hints.push('Resolve the top-most failure first, then reload to see remaining issues.');
-    }
-
-    var kind = 'build';
-    if (/hydration/i.test(title) || /hydration|did not match|server rendered html/i.test(raw)) {
-      kind = 'hydration';
-    } else if (/server error|flight ssr/i.test(title + ' ' + raw)) {
-      kind = 'server';
-    } else if (/runtime|unhandled promise/i.test(title)) {
-      kind = 'runtime';
     }
 
     return {
@@ -533,6 +570,7 @@ export function getDevErrorOverlayBootstrapSource(): string {
       title: title,
       files: files,
       hints: hints,
+      stack: stackText,
       kind: kind,
       timestamp: new Date(),
     };
@@ -609,6 +647,23 @@ export function getDevErrorOverlayBootstrapSource(): string {
       }
       detailNode.textContent = hintText;
       detailNode.hidden = hintText.length === 0;
+    }
+    if (stackNode) {
+      var stackBody = String(parsed.stack || '').trim();
+      if (!stackBody && terminal) {
+        stackBody = String(parsed.raw || '').trim();
+      }
+      if (stackBody) {
+        var stackHtml = escapeHtml(stackBody).replace(
+          /((?:[A-Za-z]:)?[\\/\w.@+-]+\.(?:tsx?|jsx?|mjs|cjs)(?::\d+(?::\d+)?)?)/g,
+          '<span class="vista-ov-stack-file">$1</span>'
+        );
+        stackNode.innerHTML = stackHtml;
+        stackNode.hidden = false;
+      } else {
+        stackNode.textContent = '';
+        stackNode.hidden = true;
+      }
     }
     if (fileTabsNode) {
       var tabs = '';
@@ -704,6 +759,9 @@ export function getDevErrorOverlayBootstrapSource(): string {
   }
 
   function show(input) {
+    try {
+      document.documentElement.setAttribute('data-vista-ready', '');
+    } catch (err) {}
     ensureMounted();
     var messages = normalizeMessages(input);
     if (messages.length === 0) {

@@ -33,6 +33,7 @@ import {
   resolveStructureValidationConfig,
 } from '../config';
 import { FLASH_DIR, HYDRATE_DOCUMENT_FLAG, RSC_DATA_FLAG, SSE_ENDPOINT } from '../constants';
+import { prepareFlashpackRuntime } from '../flashpack/runtime';
 import {
   validateAppStructure,
   type StructureValidationResult,
@@ -415,6 +416,23 @@ export async function buildRSC(watch: boolean = false): Promise<{
     process.env.VISTA_DEPLOY_OUTPUT = deployConfig.output;
   }
   if (_debug) console.log(`[vista:build] Engine variant: ${engineVariant}`);
+
+  if (engineVariant === 'flashpack') {
+    const prepared = prepareFlashpackRuntime({
+      cwd,
+      phase: watch ? 'dev' : 'build',
+      mode: watch ? 'development' : 'production',
+      allowFallback: process.env.VISTA_FLASHPACK_STRICT !== 'true',
+    });
+    if (!prepared.rustPipelineUsed) {
+      const message =
+        '[vista] Flashpack crates were not bound. Run `vista bind --flashpack` after the Rust CLI is available.';
+      if (process.env.VISTA_FLASHPACK_STRICT === 'true') {
+        throw new Error(message);
+      }
+      console.warn(message);
+    }
+  }
 
   if (structureConfig.enabled) {
     const result: StructureValidationResult = validateAppStructure({ cwd });

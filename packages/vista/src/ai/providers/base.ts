@@ -96,6 +96,14 @@ export function resolveModel(
         apiKey: options.apiKey || process.env.GROQ_API_KEY || '',
       });
 
+    case 'openrouter':
+      return createOpenAIModel({
+        ...modelOptions,
+        baseURL:
+          options.baseURL || process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+        apiKey: options.apiKey || process.env.OPENROUTER_API_KEY || '',
+      });
+
     case 'mock':
       return createMockModel({
         modelName,
@@ -103,7 +111,7 @@ export function resolveModel(
 
     default:
       throw new Error(
-        `Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, nvidia, groq, mock.`
+        `Unsupported model provider "${provider}". Supported providers: openai, anthropic, gemini, ollama, nvidia, groq, openrouter, mock.`
       );
   }
 }

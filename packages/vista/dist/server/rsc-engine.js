@@ -616,13 +616,29 @@ async function createRouteElement(route, context, isDev, rootLayout, runtimeRoot
         clearProjectRequireCache(runtimeRoot);
     }
     const PageModule = require(route.pagePath);
-    let metadata = { ...(rootLayout.metadata || {}) };
+    const { deepMergeMetadata, mergeMetadataChain } = require('../metadata/merge');
+    const layoutMetadata = [];
+    for (const layoutPath of route.layoutPaths || []) {
+        try {
+            const layoutModule = require(layoutPath);
+            if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
+                layoutMetadata.push(layoutModule.metadata);
+            }
+        }
+        catch {
+            // Ignore layout metadata load failures
+        }
+    }
+    if (layoutMetadata.length === 0 && rootLayout.metadata) {
+        layoutMetadata.push(rootLayout.metadata);
+    }
+    let metadata = mergeMetadataChain(layoutMetadata);
     if (PageModule.metadata) {
-        metadata = { ...metadata, ...PageModule.metadata };
+        metadata = deepMergeMetadata(metadata, PageModule.metadata);
     }
     if (typeof PageModule.generateMetadata === 'function') {
         const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-        metadata = { ...metadata, ...dynamicMeta };
+        metadata = deepMergeMetadata(metadata, dynamicMeta);
     }
     const element = await renderAppSubtreeElement({
         subtreeRootDir: (0, app_dir_1.resolveAppDir)(runtimeRoot),
@@ -876,6 +892,18 @@ function wrapInDocumentShell(bodyContent, metadataHtml, chunkFiles, rootMode) {
   ${scripts}
 </body>
 </html>`;
+}
+function logWebpackBuildErrors(errors) {
+    const count = errors.length;
+    console.error('');
+    (0, logger_1.logError)(`Build failed with ${count} error${count === 1 ? '' : 's'}`);
+    for (const message of errors) {
+        const text = message.replace(/\u001b\[[0-9;]*m/g, '').trim();
+        if (!text)
+            continue;
+        console.error(text);
+        console.error('');
+    }
 }
 function normalizeWebpackErrors(stats) {
     const errors = stats.toJson().errors || [];
@@ -1137,8 +1165,26 @@ function startRSCServer(options = {}) {
     // - Pushes compile errors/success from webpack client build
     // ========================================================================
     const sseReloadClients = new Set();
+    // Cold start only: block until the first successful client compile.
+    // After that, rebuilds must not flash a full-page "compiling" interstitial
+    // (Next does not either — HMR/reload waits for the rebuild to finish).
     let clientCompileState = isDev && options.compiler ? 'compiling' : 'ready';
     let clientCompileErrors = [];
+    let clientBundleReadyOnce = !(isDev && options.compiler);
+    let clientRebuildInFlight = false;
+    let pendingLiveReload = false;
+    const pushSSE = (payload) => {
+        sseReloadClients.forEach((c) => c.write(`data: ${payload}\n\n`));
+    };
+    const flushPendingLiveReload = () => {
+        if (!pendingLiveReload)
+            return;
+        pendingLiveReload = false;
+        (0, logger_1.logEvent)('Source changed, reloading...');
+        pushSSE('reload');
+    };
+    /** True only while we still have no usable client/SSR bundle to serve. */
+    const shouldBlockForClientCompile = () => Boolean(isDev && options.compiler && !clientBundleReadyOnce && clientCompileState === 'compiling');
     if (isDev) {
         app.get(constants_1.SSE_ENDPOINT, (req, res) => {
             res.setHeader('Content-Type', 'text/event-stream');
@@ -1151,9 +1197,6 @@ function startRSCServer(options = {}) {
                 sseReloadClients.delete(res);
             });
         });
-        const pushSSE = (payload) => {
-            sseReloadClients.forEach((c) => c.write(`data: ${payload}\n\n`));
-        };
         const watchExtPattern = /\.(?:[cm]?[jt]sx?|css|md|mdx|json)$/i;
         const watchRoots = [
             'app',
@@ -1171,6 +1214,12 @@ function startRSCServer(options = {}) {
             .filter((entry) => fs_1.default.existsSync(entry));
         let reloadTimer = null;
         const scheduleReload = () => {
+            // If webpack is mid-rebuild, wait for `done` so the browser does not
+            // reload into a compiling gate (the intermittent Next-unlike flash).
+            if (options.compiler && (clientRebuildInFlight || !clientBundleReadyOnce)) {
+                pendingLiveReload = true;
+                return;
+            }
             if (reloadTimer)
                 clearTimeout(reloadTimer);
             reloadTimer = setTimeout(() => {
@@ -1229,28 +1278,36 @@ function startRSCServer(options = {}) {
         }));
         // No webpack-hot-middleware — Vista uses SSE live-reload for RSC
         options.compiler.hooks.invalid.tap('VistaRSCCompileStateInvalid', () => {
-            clientCompileState = 'compiling';
+            clientRebuildInFlight = true;
             clientCompileErrors = [];
+            // Only gate requests on the cold first compile — not every HMR rebuild.
+            if (!clientBundleReadyOnce) {
+                clientCompileState = 'compiling';
+            }
         });
         // Push compile errors/success to SSE clients
         options.compiler.hooks.done.tap('VistaRSCLiveReload', (stats) => {
+            clientRebuildInFlight = false;
             if (stats.hasErrors()) {
                 const normalizedErrors = normalizeWebpackErrors(stats);
                 const fallback = normalizedErrors.join('\n\n');
                 clientCompileState = 'error';
                 clientCompileErrors = normalizedErrors;
+                logWebpackBuildErrors(normalizedErrors);
                 const payload = JSON.stringify({
                     type: 'error',
                     message: fallback,
                     errors: normalizedErrors,
                 });
-                sseReloadClients.forEach((c) => c.write(`data: ${payload}\n\n`));
+                pushSSE(payload);
             }
             else {
                 clientCompileState = 'ready';
                 clientCompileErrors = [];
+                clientBundleReadyOnce = true;
                 const payload = JSON.stringify({ type: 'ok' });
-                sseReloadClients.forEach((c) => c.write(`data: ${payload}\n\n`));
+                pushSSE(payload);
+                flushPendingLiveReload();
             }
         });
         options.compiler.hooks.afterEmit.tap('VistaRSCServerManifestReload', () => {
@@ -1341,13 +1398,17 @@ function startRSCServer(options = {}) {
     const imageHandler = (0, image_optimizer_1.createImageHandler)(runtimeRoot, isDev);
     app.get(constants_1.IMAGE_ENDPOINT, imageHandler);
     app.use(express_1.default.static(path_1.default.join(runtimeRoot, 'public')));
+    // Also serve the project public/ (dev + apps whose runtimeRoot is a standalone copy).
+    if (path_1.default.resolve(runtimeRoot) !== path_1.default.resolve(cwd)) {
+        app.use(express_1.default.static(path_1.default.join(cwd, 'public')));
+    }
     app.use(`${constants_1.URL_PREFIX}/static`, express_1.default.static(path_1.default.join(cwd, constants_1.BUILD_DIR, 'static')));
     app.use(constants_1.URL_PREFIX, express_1.default.static(path_1.default.join(cwd, constants_1.BUILD_DIR)));
     app.use(express_1.default.static(path_1.default.join(cwd, constants_1.BUILD_DIR)));
     const getUpstreamUnavailableMessage = () => `RSC upstream unavailable (${upstreamOrigin}/rsc): ${upstreamUnavailableReason || 'upstream process is not running'}`;
     const proxyRSCRequest = async (req, res) => {
         if (isDev && options.compiler) {
-            if (clientCompileState === 'compiling') {
+            if (shouldBlockForClientCompile()) {
                 res.status(503).type('text/plain').send('[vista] Client bundle is compiling. Retry shortly.');
                 return;
             }
@@ -1457,7 +1518,7 @@ function startRSCServer(options = {}) {
                 return;
             }
             if (isDev && options.compiler) {
-                if (clientCompileState === 'compiling') {
+                if (shouldBlockForClientCompile()) {
                     res.status(503).type('text/html').send(renderCompilePendingHTML());
                     return;
                 }
@@ -1556,8 +1617,8 @@ function startRSCServer(options = {}) {
                 }
             }
             if (!useFlightSSR || !flightSSRClient || !isSSRManifestReady(ssrManifest)) {
-                if (isDev && options.compiler) {
-                    // Wait for a non-empty SSR manifest after the first webpack emit.
+                if (isDev && options.compiler && !clientBundleReadyOnce) {
+                    // Cold start only — wait for the first webpack emit / SSR manifest.
                     res.status(503).type('text/html').send(renderCompilePendingHTML());
                     return;
                 }
@@ -1589,15 +1650,31 @@ function startRSCServer(options = {}) {
                             clearProjectRequireCache(runtimeRoot);
                         }
                         const PageModule = require(route.pagePath);
-                        let metadata = { ...(rootLayout.metadata || {}) };
+                        const { deepMergeMetadata, mergeMetadataChain } = require('../metadata/merge');
+                        const layoutMetadata = [];
+                        for (const layoutPath of route.layoutPaths || []) {
+                            try {
+                                const layoutModule = require(layoutPath);
+                                if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
+                                    layoutMetadata.push(layoutModule.metadata);
+                                }
+                            }
+                            catch {
+                                // Ignore layout metadata load failures
+                            }
+                        }
+                        if (layoutMetadata.length === 0 && rootLayout.metadata) {
+                            layoutMetadata.push(rootLayout.metadata);
+                        }
+                        let metadata = mergeMetadataChain(layoutMetadata);
                         if (PageModule.metadata) {
-                            metadata = { ...metadata, ...PageModule.metadata };
+                            metadata = deepMergeMetadata(metadata, PageModule.metadata);
                         }
                         if (typeof PageModule.generateMetadata === 'function') {
                             const params = extractParams(req.path, route);
                             const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
                             const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-                            metadata = { ...metadata, ...dynamicMeta };
+                            metadata = deepMergeMetadata(metadata, dynamicMeta);
                         }
                         const { generateMetadataHtml } = require('../metadata/generate');
                         metadataHtml = metadata ? generateMetadataHtml(metadata) : '';

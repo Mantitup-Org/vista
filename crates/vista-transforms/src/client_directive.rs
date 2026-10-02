@@ -7,7 +7,7 @@ use rustc_hash::FxHashSet;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for client directive detection
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClientDirectiveConfig {
     /// The directive string to look for (default: "use client")
     pub directive: String,
@@ -18,6 +18,12 @@ impl ClientDirectiveConfig {
         Self {
             directive: "use client".to_string(),
         }
+    }
+}
+
+impl Default for ClientDirectiveConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

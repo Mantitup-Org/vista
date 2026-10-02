@@ -4,6 +4,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createProjectAliasResolver = createProjectAliasResolver;
+exports.loadProjectWebpackAliases = loadProjectWebpackAliases;
+exports.requestUsesProjectAlias = requestUsesProjectAlias;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const projectAliasCache = new Map();
@@ -214,4 +216,72 @@ function createProjectAliasResolver(cwd, resolveFromWorkspace) {
     };
     projectAliasCache.set(cwd, resolver);
     return resolver;
+}
+/**
+ * Webpack resolve.alias entries for the project's tsconfig/jsconfig `paths`.
+ * Wildcard `@/*` becomes the prefix alias `@` so client bundles resolve `@/data/site`.
+ */
+function loadProjectWebpackAliases(cwd) {
+    const configPath = ['tsconfig.json', 'jsconfig.json']
+        .map((filename) => path_1.default.join(cwd, filename))
+        .find((filename) => fs_1.default.existsSync(filename));
+    if (!configPath)
+        return {};
+    let compilerOptions = null;
+    try {
+        const rawConfig = fs_1.default.readFileSync(configPath, 'utf-8');
+        const parsedConfig = JSON.parse(stripJsonComments(rawConfig));
+        compilerOptions = parsedConfig.compilerOptions ?? null;
+    }
+    catch {
+        return {};
+    }
+    const rawPaths = compilerOptions?.paths;
+    if (!rawPaths || typeof rawPaths !== 'object')
+        return {};
+    const configDir = path_1.default.dirname(configPath);
+    const baseDir = path_1.default.resolve(configDir, typeof compilerOptions?.baseUrl === 'string' && compilerOptions.baseUrl.trim()
+        ? compilerOptions.baseUrl
+        : '.');
+    const aliases = {};
+    for (const [pattern, targetsValue] of Object.entries(rawPaths)) {
+        const targets = Array.isArray(targetsValue)
+            ? targetsValue.filter((entry) => typeof entry === 'string' && entry.trim().length > 0)
+            : [];
+        const target = targets[0];
+        if (!target)
+            continue;
+        if (pattern.includes('*')) {
+            const starIndex = pattern.indexOf('*');
+            const requestPrefix = pattern.slice(0, starIndex);
+            const targetStar = target.indexOf('*');
+            const targetPrefix = targetStar === -1 ? target : target.slice(0, targetStar);
+            if (!requestPrefix)
+                continue;
+            // enhanced-resolve matches `name` or `${name}/`. A tsconfig prefix of
+            // `@/` must be registered as `@`, or the resolver looks for `@//`.
+            const aliasName = requestPrefix.endsWith('/')
+                ? requestPrefix.slice(0, -1)
+                : requestPrefix;
+            if (!aliasName)
+                continue;
+            // The matched remainder already begins with `/`. path.resolve drops a
+            // trailing separator, so do not add one back.
+            aliases[aliasName] = path_1.default.resolve(baseDir, targetPrefix);
+            continue;
+        }
+        const resolved = resolveAliasTargetPath(path_1.default.resolve(baseDir, target));
+        if (resolved) {
+            aliases[pattern] = resolved;
+        }
+    }
+    return aliases;
+}
+/** True when a module request is covered by a webpack path alias. */
+function requestUsesProjectAlias(request, aliases) {
+    for (const key of Object.keys(aliases)) {
+        if (request === key || request.startsWith(`${key}/`))
+            return true;
+    }
+    return false;
 }

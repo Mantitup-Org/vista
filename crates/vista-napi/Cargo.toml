@@ -19,6 +19,9 @@ triples = [
 
 [dependencies]
 vista-api = { path = "../vista-api" }
+vista-core = { path = "../vista-core" }
+vista-error-code-swc-plugin = { path = "../vista-error-code-swc-plugin" }
+vista-taskless = { path = "../vista-taskless" }
 vista-transforms = { path = "../vista-transforms" }
 napi = { workspace = true }
 napi-derive = { workspace = true }

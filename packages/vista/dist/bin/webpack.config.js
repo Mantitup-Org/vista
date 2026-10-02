@@ -12,6 +12,7 @@ const server_component_plugin_1 = require("./server-component-plugin");
 const vista_flight_plugin_1 = require("../build/webpack/plugins/vista-flight-plugin");
 const constants_1 = require("../constants");
 const app_dir_1 = require("../server/app-dir");
+const project_alias_resolver_1 = require("../server/project-alias-resolver");
 function createWebpackConfig(options) {
     const { cwd, isDev, engineVariant = 'default', cacheComponentsEnabled = false, imagesUnoptimized = false, deployOutput, } = options;
     const vistaDir = path_1.default.join(cwd, constants_1.BUILD_DIR);
@@ -76,6 +77,7 @@ function createWebpackConfig(options) {
         resolve: {
             extensions: ['.tsx', '.ts', '.jsx', '.js'],
             alias: {
+                ...(0, project_alias_resolver_1.loadProjectWebpackAliases)(cwd),
                 react: reactPath,
                 'react-dom': reactDomPath,
                 'react/jsx-runtime': path_1.default.join(reactPath, 'jsx-runtime'),
@@ -177,7 +179,7 @@ function createWebpackConfig(options) {
         devtool: isDev ? 'eval-cheap-module-source-map' : 'source-map',
         stats: 'minimal',
         infrastructureLogging: {
-            level: 'warn',
+            level: isDev ? 'none' : 'error',
         },
     };
 }

@@ -1,32 +1,15 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use flashpack::{
     FlashpackFileEntry, FlashpackLatestState, FlashpackProjectGraph, FlashpackRouteEntry,
     FlashpackRuntimeManifest, FlashpackStats,
 };
+use flashpack_cli::pipeline::{emit_bound_pipeline, project_files, source_directives};
+use flashpack_cli_utils::{flag, FlashpackCliContext};
+use flash_tasks_fs::read_file;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-fn parse_arg(args: &[String], key: &str) -> Option<String> {
-    let mut index = 0usize;
-    while index < args.len() {
-        let current = &args[index];
-        if current == key {
-            let next = args.get(index + 1)?;
-            return Some(next.clone());
-        }
-
-        if let Some(value) = current.strip_prefix(&(key.to_owned() + "=")) {
-            return Some(value.to_string());
-        }
-
-        index += 1;
-    }
-
-    None
-}
 
 fn normalize_phase(value: &str) -> &'static str {
     match value {
@@ -81,13 +64,6 @@ fn append_log(path: &Path, lines: &[String]) -> Result<()> {
         body.push('\n');
     }
     fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
-}
-
-fn should_skip_directory(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | ".vista" | ".flash" | ".next" | ".turbo" | ".vercel" | "node_modules" | "coverage"
-    )
 }
 
 fn is_source_file(path: &Path) -> bool {
@@ -191,29 +167,12 @@ fn parse_route_entry(relative_path: &str) -> Option<FlashpackRouteEntry> {
 
 fn scan_directory(
     root: &Path,
-    current: &Path,
     files: &mut Vec<FlashpackFileEntry>,
     routes: &mut Vec<FlashpackRouteEntry>,
     stats: &mut FlashpackStats,
 ) -> Result<()> {
-    for entry in fs::read_dir(current).with_context(|| format!("failed to read {}", current.display()))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-
-        if file_type.is_dir() {
-            if should_skip_directory(entry.file_name().to_string_lossy().as_ref()) {
-                continue;
-            }
-            scan_directory(root, &path, files, routes, stats)?;
-            continue;
-        }
-
-        if !file_type.is_file() {
-            continue;
-        }
-
+    let paths = project_files(root).map_err(anyhow::Error::msg)?;
+    for path in paths {
         stats.total_files += 1;
         if !is_source_file(&path) {
             continue;
@@ -221,9 +180,8 @@ fn scan_directory(
 
         let relative_path = normalize_relative_path(root, &path);
         let source_kind = classify_source_kind(&relative_path);
-        let source = fs::read_to_string(&path).unwrap_or_default();
-        let client_component = source.contains("\"use client\"") || source.contains("'use client'");
-        let server_action = source.contains("\"use server\"") || source.contains("'use server'");
+        let source = read_file(&path).unwrap_or_default();
+        let (client_component, server_action) = source_directives(&source);
 
         stats.source_files += 1;
         if source_kind == "app" {
@@ -266,7 +224,7 @@ fn build_project_graph(cwd: &Path, phase: &str, mode: &str) -> Result<FlashpackP
     let mut files = Vec::new();
     let mut routes = Vec::new();
     let mut stats = FlashpackStats::default();
-    scan_directory(cwd, cwd, &mut files, &mut routes, &mut stats)?;
+    scan_directory(cwd, &mut files, &mut routes, &mut stats)?;
     files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     routes.sort_by(|left, right| left.file.cmp(&right.file));
 
@@ -286,15 +244,19 @@ fn build_project_graph(cwd: &Path, phase: &str, mode: &str) -> Result<FlashpackP
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
-    let cwd = parse_arg(&args, "--cwd")
-        .map(PathBuf::from)
-        .unwrap_or(env::current_dir().context("failed to resolve current directory")?);
-    let phase = normalize_phase(&parse_arg(&args, "--phase").unwrap_or_else(|| "build".to_string()));
-    let mode = normalize_mode(&parse_arg(&args, "--mode").unwrap_or_else(|| "production".to_string()));
-    let node_command = parse_arg(&args, "--node");
-    let runner = parse_arg(&args, "--runner");
-    let port = parse_arg(&args, "--port").and_then(|value| value.parse::<u16>().ok());
-    let action = normalize_action(parse_arg(&args, "--action"), runner.is_some());
+    let context = FlashpackCliContext::from_args(&args);
+    let cwd = if context.cwd == "." {
+        env::current_dir().context("failed to resolve current directory")?
+    } else {
+        PathBuf::from(context.cwd)
+    };
+    let phase = normalize_phase(&context.phase);
+    let mode = normalize_mode(&flag(&args, "mode").unwrap_or_else(|| "production".to_string()));
+    let node_command = flag(&args, "node");
+    let runner = flag(&args, "runner");
+    let port = flag(&args, "port").and_then(|value| value.parse::<u16>().ok());
+    let ssr_runner = flag(&args, "ssr-runner").map(PathBuf::from);
+    let action = normalize_action(flag(&args, "action"), runner.is_some());
     let flash_dir = cwd.join(".flash");
     let graph_path = flash_dir.join("graph").join(format!("{phase}-rust.json"));
     let runtime_manifest_path = flash_dir.join("runtime").join(format!("{phase}-manifest.json"));
@@ -308,6 +270,7 @@ fn main() -> Result<()> {
 
     let graph = build_project_graph(&cwd, phase, mode)?;
     write_json_file(&graph_path, &graph)?;
+    let bound_path = emit_bound_pipeline(&cwd, phase).map_err(anyhow::Error::msg)?;
 
     let runtime_manifest = FlashpackRuntimeManifest {
         schema_version: 1,
@@ -351,6 +314,7 @@ fn main() -> Result<()> {
         format!("[flashpack-cli] cwd={}", cwd.display()),
         format!("[flashpack-cli] graph={}", graph_path.display()),
         format!("[flashpack-cli] runtime_manifest={}", runtime_manifest_path.display()),
+        format!("[flashpack-cli] pipeline={}", bound_path.display()),
     ];
 
     if action == "prepare" {
@@ -365,57 +329,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let node_command = node_command.context("missing --node for flashpack run action")?;
-    let runner = runner.context("missing --runner for flashpack run action")?;
-    if !Path::new(&runner).exists() {
-        bail!("flashpack runner not found: {}", runner);
-    }
-
-    let mut child = Command::new(&node_command);
-    child
-        .arg(&runner)
-        .arg("--phase")
-        .arg(phase)
-        .current_dir(&cwd)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .env("VISTA_ENGINE", "flashpack")
-        .env("VISTA_ENGINE_VARIANT", "flashpack")
-        .env("VISTA_FLASHPACK", "true")
-        .env("VISTA_FLASHPACK_PIPELINE", "rust-cli")
-        .env("VISTA_FLASHPACK_GRAPH_PATH", &graph_path)
-        .env("VISTA_FLASHPACK_RUNTIME_MANIFEST", &runtime_manifest_path);
-
-    if let Some(port_value) = port {
-        child
-            .arg("--port")
-            .arg(port_value.to_string())
-            .env("PORT", port_value.to_string());
-    }
-
-    log_lines.push(format!("[flashpack-cli] node={node_command}"));
-    log_lines.push(format!("[flashpack-cli] runner={runner}"));
+    let port = port.unwrap_or(3003);
+    log_lines.push("[flashpack-cli] pipeline=rust-swc".to_string());
+    log_lines.push(format!("[flashpack-cli] dev-server port={port}"));
     append_log(&log_path, &log_lines)?;
 
-    let status = child
-        .status()
-        .with_context(|| format!("failed to launch flashpack runner {}", runner))?;
-
-    let exit_line = format!(
-        "[flashpack-cli] child_exit={}",
-        status
-            .code()
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "signal".to_string())
-    );
-    let mut final_log_lines = log_lines.clone();
-    final_log_lines.push(exit_line.clone());
-    append_log(&log_path, &final_log_lines)?;
-
-    if !status.success() {
-        bail!("flashpack runner failed with {}", exit_line);
-    }
+    flashpack::serve(flashpack::ServeOptions {
+        cwd,
+        port,
+        phase: phase.to_string(),
+        mode: mode.to_string(),
+        graph_path,
+        ssr_runner,
+    })?;
 
     Ok(())
 }

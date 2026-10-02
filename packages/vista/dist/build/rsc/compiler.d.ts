@@ -18,6 +18,19 @@ export interface RSCCompilerOptions {
     imagesUnoptimized?: boolean;
     deployOutput?: DeployOutput;
 }
+type FlightClientReferenceOption = string | {
+    directory: string;
+    recursive: boolean;
+    include: RegExp;
+};
+/**
+ * Build ReactFlightWebpackPlugin `clientReferences`.
+ *
+ * Project roots (`app/`, `components/`, `lib/`, ...) are passed as watched
+ * directories so newly added `'use client'` files are registered without a full
+ * rebuild. Framework package paths stay as absolute files.
+ */
+export declare function buildFlightClientReferenceOptions(cwd: string, explicitFiles?: string[]): FlightClientReferenceOption[];
 /**
  * Create Server-Side Webpack Configuration
  *
@@ -39,3 +52,4 @@ export declare function runRSCBuild(cwd: string, isDev: boolean): Promise<{
     serverCompiler: webpack.Compiler;
     clientCompiler: webpack.Compiler;
 }>;
+export {};

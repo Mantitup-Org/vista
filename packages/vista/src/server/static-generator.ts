@@ -442,12 +442,13 @@ async function prerenderPage(
 
         let metadata: Record<string, unknown> = {};
         const searchParams = {};
+        const { deepMergeMetadata } = require('../metadata/merge');
 
         for (const layoutPath of route.layoutPaths) {
           try {
             const layoutModule = require(layoutPath);
             if (layoutModule?.metadata && typeof layoutModule.metadata === 'object') {
-              metadata = { ...metadata, ...layoutModule.metadata };
+              metadata = deepMergeMetadata(metadata as any, layoutModule.metadata) as any;
             }
           } catch {
             // Ignore layout metadata failures for static generation.
@@ -455,7 +456,7 @@ async function prerenderPage(
         }
 
         if (pageModule.metadata && typeof pageModule.metadata === 'object') {
-          metadata = { ...metadata, ...pageModule.metadata };
+          metadata = deepMergeMetadata(metadata as any, pageModule.metadata) as any;
         }
 
         if (typeof pageModule.generateMetadata === 'function') {
@@ -465,7 +466,7 @@ async function prerenderPage(
               metadata
             );
             if (dynamicMeta && typeof dynamicMeta === 'object') {
-              metadata = { ...metadata, ...dynamicMeta };
+              metadata = deepMergeMetadata(metadata as any, dynamicMeta) as any;
             }
           } catch (metadataError) {
             console.warn(

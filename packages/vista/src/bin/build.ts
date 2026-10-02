@@ -58,21 +58,25 @@ function runPostCSS(cwd: string, vistaDir: string) {
   }
 }
 
+function urlSegmentForNode(node: { segment?: string; kind?: string }): string | null {
+  if (!node.segment) return null;
+  if (node.kind === 'group' || node.kind === 'parallel' || node.kind === 'interception') {
+    return null;
+  }
+  if (node.kind === 'dynamic') return `:${node.segment}`;
+  if (node.kind === 'catch-all') return `:${node.segment}*`;
+  if (node.kind === 'optional-catch-all') return `:${node.segment}*?`;
+  return node.segment;
+}
+
 function collectRouteArtifactEntries(
   node: any,
   segments: string[] = [],
   entries: RouteArtifactEntry[] = []
 ): RouteArtifactEntry[] {
   const nextSegments = [...segments];
-  if (node.segment) {
-    if (node.kind === 'dynamic') {
-      nextSegments.push(`:${node.segment}`);
-    } else if (node.kind === 'catch-all') {
-      nextSegments.push(`:${node.segment}*`);
-    } else if (node.kind !== 'group') {
-      nextSegments.push(node.segment);
-    }
-  }
+  const urlPiece = urlSegmentForNode(node);
+  if (urlPiece) nextSegments.push(urlPiece);
 
   if (node.indexPath) {
     const pattern = nextSegments.length === 0 ? '/' : `/${nextSegments.join('/')}`;

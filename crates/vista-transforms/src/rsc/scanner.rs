@@ -94,30 +94,135 @@ const CLIENT_APIS: &[&str] = &[
     "useFormStatus", "useFormState", "useOptimistic",
 ];
 
-/// Detect client hooks used in source
+/// Detect client hooks used in source.
+///
+/// Matches a call or generic (`useState(` / `useState<`) on an identifier
+/// boundary, and ignores comments and string literals so a mention in a
+/// comment does not mark a Server Component as invalid.
 fn detect_client_hooks(source: &str) -> Vec<String> {
+    let source = mask_non_code(source);
     let mut used = Vec::new();
-    
+
     for hook in CLIENT_HOOKS {
-        // Match hook usage: useState( or useState<
-        if source.contains(&format!("{}(", hook)) || source.contains(&format!("{}<", hook)) {
-            used.push(hook.to_string());
+        if has_ident_call(&source, hook) {
+            used.push((*hook).to_string());
         }
     }
-    
+
     for api in CLIENT_APIS {
-        if source.contains(&format!("{}(", api)) || source.contains(&format!("{}<", api)) {
-            used.push(api.to_string());
+        if has_ident_call(&source, api) {
+            used.push((*api).to_string());
         }
     }
-    
-    // Check for event handlers
-    if source.contains("onClick=") || source.contains("onChange=") || 
-       source.contains("onSubmit=") || source.contains("onFocus=") {
+
+    if ["onClick", "onChange", "onSubmit", "onFocus"]
+        .iter()
+        .any(|name| has_ident_followed_by(&source, name, b'='))
+    {
         used.push("event handlers".to_string());
     }
-    
+
     used
+}
+
+fn mask_non_code(source: &str) -> String {
+    let chars: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '/' && chars.get(index + 1) == Some(&'/') {
+            while index < chars.len() && chars[index] != '\n' {
+                out.push(' ');
+                index += 1;
+            }
+            continue;
+        }
+        if chars[index] == '/' && chars.get(index + 1) == Some(&'*') {
+            out.push(' ');
+            out.push(' ');
+            index += 2;
+            while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {
+                out.push(if chars[index] == '\n' { '\n' } else { ' ' });
+                index += 1;
+            }
+            if index < chars.len() {
+                out.push(' ');
+                index += 1;
+            }
+            if index < chars.len() {
+                out.push(' ');
+                index += 1;
+            }
+            continue;
+        }
+        if matches!(chars[index], '\'' | '"' | '`') {
+            let quote = chars[index];
+            out.push(' ');
+            index += 1;
+            while index < chars.len() && chars[index] != quote {
+                if chars[index] == '\\' && index + 1 < chars.len() {
+                    out.push(' ');
+                    out.push(' ');
+                    index += 2;
+                    continue;
+                }
+                if chars[index] == '\n' && quote != '`' {
+                    break;
+                }
+                out.push(if chars[index] == '\n' { '\n' } else { ' ' });
+                index += 1;
+            }
+            if index < chars.len() {
+                out.push(' ');
+                index += 1;
+            }
+            continue;
+        }
+        out.push(chars[index]);
+        index += 1;
+    }
+    out
+}
+
+fn has_ident_call(source: &str, name: &str) -> bool {
+    let bytes = source.as_bytes();
+    let name_bytes = name.as_bytes();
+    let mut index = 0;
+    while index + name_bytes.len() <= bytes.len() {
+        if &bytes[index..index + name_bytes.len()] == name_bytes {
+            let prev_ok = index == 0 || !is_ident_byte(bytes[index - 1]);
+            let mut cursor = index + name_bytes.len();
+            while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+                cursor += 1;
+            }
+            let next_ok = matches!(bytes.get(cursor), Some(b'(') | Some(b'<'));
+            if prev_ok && next_ok {
+                return true;
+            }
+        }
+        index += 1;
+    }
+    false
+}
+
+fn has_ident_followed_by(source: &str, name: &str, next: u8) -> bool {
+    let bytes = source.as_bytes();
+    let name_bytes = name.as_bytes();
+    let mut index = 0;
+    while index + name_bytes.len() < bytes.len() {
+        if &bytes[index..index + name_bytes.len()] == name_bytes {
+            let prev_ok = index == 0 || !is_ident_byte(bytes[index - 1]);
+            if prev_ok && bytes[index + name_bytes.len()] == next {
+                return true;
+            }
+        }
+        index += 1;
+    }
+    false
+}
+
+fn is_ident_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$'
 }
 
 /// Extract export names from source
@@ -165,15 +270,45 @@ fn extract_identifier(line: &str, after: &str) -> Option<String> {
     None
 }
 
-/// Check for metadata exports
-fn has_metadata_export(source: &str) -> bool {
-    source.contains("export const metadata") || source.contains("export let metadata")
+/// True when the file exports a binding with this exact name.
+pub fn has_export_binding(source: &str, name: &str) -> bool {
+    source.lines().any(|line| line_exports_binding(line, name))
 }
 
-fn has_generate_metadata(source: &str) -> bool {
-    source.contains("export function generateMetadata") ||
-    source.contains("export async function generateMetadata") ||
-    source.contains("export const generateMetadata")
+fn line_exports_binding(line: &str, name: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.starts_with("//") || trimmed.starts_with('*') {
+        return false;
+    }
+    let Some(rest) = trimmed.strip_prefix("export ") else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix("default ").unwrap_or(rest).trim_start();
+    let rest = rest.strip_prefix("async ").unwrap_or(rest).trim_start();
+    let rest = rest
+        .strip_prefix("const ")
+        .or_else(|| rest.strip_prefix("let "))
+        .or_else(|| rest.strip_prefix("function "))
+        .unwrap_or(rest)
+        .trim_start();
+    let Some(after) = rest.strip_prefix(name) else {
+        return false;
+    };
+    after
+        .chars()
+        .next()
+        .map(|ch| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '$')
+        .unwrap_or(true)
+}
+
+/// Check for metadata exports
+pub fn has_metadata_export(source: &str) -> bool {
+    has_export_binding(source, "metadata")
+}
+
+pub fn has_generate_metadata(source: &str) -> bool {
+    has_export_binding(source, "generateMetadata")
 }
 
 fn is_reserved_internal_route(relative_path: &str) -> bool {
@@ -499,6 +634,26 @@ mod tests {
         assert!(hooks.contains(&"useState".to_string()));
         assert!(hooks.contains(&"useEffect".to_string()));
         assert!(hooks.contains(&"event handlers".to_string()));
+    }
+
+    #[test]
+    fn hook_mentions_in_comments_and_longer_names_are_ignored() {
+        let source = r#"
+            // useState( is only mentioned here
+            const label = "onClick=";
+            function myuseState() {}
+            export default function Page() { return null; }
+        "#;
+        assert!(detect_client_hooks(source).is_empty());
+    }
+
+    #[test]
+    fn metadata_export_requires_the_exact_binding_name() {
+        assert!(has_metadata_export("export const metadata = { title: 'A' };"));
+        assert!(has_generate_metadata("export async function generateMetadata() { return {}; }"));
+        assert!(!has_metadata_export("export const metadataExtra = 1;"));
+        assert!(!has_metadata_export("// export const metadata = {}"));
+        assert!(!has_generate_metadata("export const generateMetadataFactory = () => {};"));
     }
     
     #[test]
