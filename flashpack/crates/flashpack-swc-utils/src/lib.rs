@@ -24,11 +24,15 @@ pub fn transform_for_path(path: &str) -> FlashSwcTransform {
     }
 }
 
+/// Returns `(typescript, jsx)`.
+///
+/// `.js` enables JSX the same way Next/Vite do — App Router fixtures commonly
+/// ship JSX in `.js` files without a `.jsx` rename.
 pub fn parser_syntax(path: &str) -> (bool, bool) {
     match file_extension(path).as_str() {
         "ts" => (true, false),
         "tsx" => (true, true),
-        "jsx" => (false, true),
+        "jsx" | "js" => (false, true),
         _ => (false, false),
     }
 }
@@ -75,12 +79,15 @@ mod tests {
         );
         assert_eq!(parser_syntax("page.JSX"), (false, true));
 
-        for path in ["plain.js", "index.mjs", "app.cjs"] {
+        assert_eq!(parser_syntax("plain.js"), (false, true));
+        assert_eq!(transform_for_path("plain.js").name, "javascript");
+        for path in ["index.mjs", "app.cjs"] {
             let transform = transform_for_path(path);
             assert_eq!(transform.name, "javascript");
             assert_eq!(parser_syntax(path), (false, false));
         }
         assert_eq!(transform_for_path("dir.tsx/file.js").source_kind, "js");
+        assert_eq!(parser_syntax("dir.tsx/file.js"), (false, true));
     }
 
     #[test]

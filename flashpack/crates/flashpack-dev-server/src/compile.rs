@@ -11,7 +11,7 @@ use swc_core::common::{FileName, Globals, Mark, SourceMap, GLOBALS};
 use swc_core::ecma::ast::{EsVersion, Program};
 use swc_core::ecma::codegen::text_writer::JsWriter;
 use swc_core::ecma::codegen::{Config as CodegenConfig, Emitter};
-use swc_core::ecma::parser::{parse_file_as_module, Syntax, TsSyntax};
+use swc_core::ecma::parser::{parse_file_as_module, EsSyntax, Syntax, TsSyntax};
 use swc_core::ecma::transforms::base::fixer::fixer;
 use swc_core::ecma::transforms::base::helpers::{Helpers, HELPERS};
 use swc_core::ecma::transforms::base::hygiene::hygiene;
@@ -126,12 +126,19 @@ fn compile_file(cwd: &Path, source: &Path, rel: &Path, output: &Path) -> Result<
         Lrc::new(FileName::Real(source.to_path_buf())),
         code,
     );
-    let (_, tsx) = flashpack_swc_utils::parser_syntax(&source.to_string_lossy());
-    let syntax = Syntax::Typescript(TsSyntax {
-        tsx,
-        decorators: true,
-        ..Default::default()
-    });
+    let (typescript, jsx_enabled) = flashpack_swc_utils::parser_syntax(&source.to_string_lossy());
+    let syntax = if typescript {
+        Syntax::Typescript(TsSyntax {
+            tsx: jsx_enabled,
+            decorators: true,
+            ..Default::default()
+        })
+    } else {
+        Syntax::Es(EsSyntax {
+            jsx: jsx_enabled,
+            ..Default::default()
+        })
+    };
 
     let globals = Globals::new();
     let comments = SingleThreadedComments::default();
@@ -266,11 +273,9 @@ fn project_source(cwd: &Path, spec: &str) -> Option<PathBuf> {
 }
 
 fn module_name(rel: &Path) -> String {
-    let mut name = rel.to_string_lossy().replace('\\', "/");
-    if !name.ends_with(".js") {
-        name.push_str(".js");
-    }
-    name
+    // Always append `.js` so URLs match `module_output_path` for both
+    // `page.tsx` → `page.tsx.js` and `page.js` → `page.js.js`.
+    format!("{}.js", rel.to_string_lossy().replace('\\', "/"))
 }
 
 fn module_output_path(out_dir: &Path, rel: &Path) -> PathBuf {
