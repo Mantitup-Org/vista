@@ -25,10 +25,10 @@ function vistaVersion() {
     try {
         const require = (0, module_1.createRequire)(__filename);
         const pkg = require('../../package.json');
-        return pkg.version || '0.3.8';
+        return pkg.version || '0.3.9';
     }
     catch {
-        return '0.3.8';
+        return '0.3.9';
     }
 }
 function installDevClient(cwd) {
