@@ -15,6 +15,7 @@ export interface DeployContext {
   prod: boolean;
   preview: boolean;
   force: boolean;
+  outputExplicit?: boolean;
   debug?: boolean;
   log?: (message: string) => void;
   warn?: (message: string) => void;

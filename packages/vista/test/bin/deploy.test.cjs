@@ -288,6 +288,63 @@ test('cloudflare adapter auto-detects static Pages from wrangler.toml', async ()
   }
 });
 
+test('runDeploy auto-detects Cloudflare Pages from wrangler.toml', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'tmp' }), 'utf8');
+    fs.writeFileSync(
+      path.join(cwd, 'wrangler.toml'),
+      'pages_build_output_dir = ".vista/deploy/cloudflare"\n',
+      'utf8'
+    );
+
+    const result = await runDeploy({
+      cwd,
+      target: 'cloudflare',
+      dryRun: true,
+      skipBuild: true,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    const wrangler = fs.readFileSync(path.join(cwd, 'wrangler.toml'), 'utf8');
+    assert.match(wrangler, /pages_build_output_dir = "\.vista\/deploy\/cloudflare"/);
+    assert.doesNotMatch(wrangler, /\[\[containers\]\]/);
+    assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), false);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('explicit standalone output keeps Cloudflare Containers with Pages wrangler.toml', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'tmp' }), 'utf8');
+    fs.writeFileSync(
+      path.join(cwd, 'wrangler.toml'),
+      'pages_build_output_dir = ".vista/deploy/cloudflare"\n',
+      'utf8'
+    );
+
+    const result = await runDeploy({
+      cwd,
+      target: 'cloudflare',
+      output: 'standalone',
+      dryRun: true,
+      skipBuild: true,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    assert.match(fs.readFileSync(path.join(cwd, 'wrangler.toml'), 'utf8'), /\[\[containers\]\]/);
+    assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), true);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('svg Image props skip /_vista/image srcSet', () => {
   const { getImgProps } = require('../../dist/image/get-img-props');
   const { defaultLoader } = require('../../dist/image/image-loader');

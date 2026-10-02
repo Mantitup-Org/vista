@@ -9,7 +9,7 @@ export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
     return true;
   }
   if (ctx.target === 'cloudflare') {
-    if (ctx.config.deploy?.output === 'standalone') {
+    if (ctx.outputExplicit && ctx.deployConfig.output === 'standalone') {
       return false;
     }
     if (process.env.CF_PAGES === '1' || process.env.CLOUDFLARE_PAGES) {
