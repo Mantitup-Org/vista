@@ -24,5 +24,6 @@ type ImgProps = React.ImgHTMLAttributes<HTMLImageElement> & {
     height?: number;
     srcSet?: string;
 };
-export declare function getImgProps(props: ImageProps, config: ImageConfigComplete, defaultLoader: ImageLoader): ImgProps;
+export declare function getImgProps(props: ImageProps, config?: ImageConfigComplete, defaultLoader?: ImageLoader): ImgProps;
+export declare const getImageProps: typeof getImgProps;
 export {};

@@ -18,4 +18,5 @@ export declare const Image: React.ForwardRefExoticComponent<React.ImgHTMLAttribu
         naturalHeight: number;
     }) => void;
 } & React.RefAttributes<HTMLImageElement>>;
+export { getImgProps, getImageProps } from './get-img-props';
 export default Image;

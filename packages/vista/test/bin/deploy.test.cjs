@@ -301,6 +301,26 @@ test('svg Image props skip /_vista/image srcSet', () => {
   assert.equal(props.srcSet, undefined);
 });
 
+test('getImgProps resolves optimized src and works without defaultLoader parameter', () => {
+  const { getImgProps, getImageProps } = require('../../dist/image/get-img-props');
+  assert.equal(typeof getImageProps, 'function');
+
+  // Should not throw when called with only props (defaultLoader is defaulted)
+  const propsWithWidth = getImgProps({ src: '/test.png', alt: 'test', width: 400, height: 300 });
+  assert.equal(propsWithWidth.src, '/_vista/image?url=%2Ftest.png&w=400&q=75');
+  assert.ok(propsWithWidth.srcSet.includes('/_vista/image?url=%2Ftest.png'));
+
+  // Should fallback to max device size when width is omitted (e.g. fill)
+  const propsFill = getImageProps({ src: '/hero.jpg', alt: 'hero', fill: true });
+  assert.equal(propsFill.src, '/_vista/image?url=%2Fhero.jpg&w=3840&q=75');
+
+  // Should preserve custom loader for both src and srcSet
+  const customLoader = ({ src, width, quality }) => `https://img.cdn.com/${src}?w=${width}&q=${quality || 75}`;
+  const propsCustom = getImgProps({ src: 'banner.webp', alt: 'banner', width: 800, loader: customLoader, quality: 80 });
+  assert.equal(propsCustom.src, 'https://img.cdn.com/banner.webp?w=800&q=80');
+  assert.ok(propsCustom.srcSet.includes('https://img.cdn.com/banner.webp?w=640&q=80'));
+});
+
 test('PPR shell HTML does not inline the full-page Flight payload', () => {
   const src = fs.readFileSync(path.join(__dirname, '../../src/server/static-generator.ts'), 'utf8');
   const fn = src.slice(
