@@ -91,20 +91,69 @@ function detectSharp(): boolean {
 // Fetch image source
 // ---------------------------------------------------------------------------
 
+function sanitizeLocalImagePath(rawUrl: string): string {
+  let decoded = rawUrl;
+  try {
+    decoded = decodeURIComponent(rawUrl);
+  } catch {
+    // Keep decoded as-is if malformed
+  }
+
+  // Strip query parameters and fragment identifier
+  decoded = decoded.split('?')[0].split('#')[0];
+
+  // Normalize path separators and remove leading slashes
+  decoded = decoded.replace(/\\/g, '/');
+  while (decoded.startsWith('/')) {
+    decoded = decoded.slice(1);
+  }
+
+  return decoded;
+}
+
 function fetchLocalFile(filePath: string, cwd: string): Promise<Buffer> {
-  // Resolve against public/ directory
-  const publicPath = path.join(cwd, 'public', filePath);
-  if (fs.existsSync(publicPath)) {
-    return fs.promises.readFile(publicPath);
+  const safeRelative = sanitizeLocalImagePath(filePath);
+
+  // Reject paths containing null bytes or upward traversal tokens
+  if (safeRelative.includes('\0') || safeRelative.split('/').includes('..')) {
+    const err = new Error(`Access denied: path traversal detected: ${filePath}`);
+    (err as any).statusCode = 403;
+    throw err;
   }
 
-  // Also try app/ directory
-  const appPath = path.join(resolveAppDir(cwd), filePath);
-  if (fs.existsSync(appPath)) {
-    return fs.promises.readFile(appPath);
+  // 1. Resolve against public/ directory
+  const publicDir = path.resolve(cwd, 'public');
+  const resolvedPublic = path.resolve(publicDir, safeRelative);
+
+  if (resolvedPublic.startsWith(publicDir + path.sep) || resolvedPublic === publicDir) {
+    if (fs.existsSync(resolvedPublic)) {
+      const stat = fs.statSync(resolvedPublic);
+      if (stat.isFile()) {
+        return fs.promises.readFile(resolvedPublic);
+      }
+    }
+  } else {
+    const err = new Error(`Access denied: path traversal outside public directory: ${filePath}`);
+    (err as any).statusCode = 403;
+    throw err;
   }
 
-  throw new Error(`Image not found: ${filePath}`);
+  // 2. Resolve against app/ directory
+  const appDir = path.resolve(resolveAppDir(cwd));
+  const resolvedApp = path.resolve(appDir, safeRelative);
+
+  if (resolvedApp.startsWith(appDir + path.sep) || resolvedApp === appDir) {
+    if (fs.existsSync(resolvedApp)) {
+      const stat = fs.statSync(resolvedApp);
+      if (stat.isFile()) {
+        return fs.promises.readFile(resolvedApp);
+      }
+    }
+  }
+
+  const notFoundErr = new Error(`Image not found: ${filePath}`);
+  (notFoundErr as any).statusCode = 404;
+  throw notFoundErr;
 }
 
 function fetchRemoteImage(url: string): Promise<Buffer> {
@@ -379,7 +428,7 @@ export function createImageHandler(cwd: string, isDev: boolean) {
         }
 
         // SVG safety check
-        if (!config.dangerouslyAllowSVG && url.endsWith('.svg')) {
+        if (!config.dangerouslyAllowSVG && url.toLowerCase().endsWith('.svg')) {
           res
             .status(400)
             .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
@@ -389,7 +438,16 @@ export function createImageHandler(cwd: string, isDev: boolean) {
         sourceBuffer = await fetchRemoteImage(url);
       } else {
         // Local file
-        const cleanedUrl = url.startsWith('/') ? url.slice(1) : url;
+        const cleanedUrl = sanitizeLocalImagePath(url);
+
+        // SVG safety check for local files
+        if (!config.dangerouslyAllowSVG && cleanedUrl.toLowerCase().endsWith('.svg')) {
+          res
+            .status(400)
+            .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
+          return;
+        }
+
         sourceBuffer = await fetchLocalFile(cleanedUrl, cwd);
       }
 
@@ -436,12 +494,18 @@ export function createImageHandler(cwd: string, isDev: boolean) {
       res.send(result.buffer);
     } catch (err) {
       const message = (err as Error)?.message || String(err);
-      console.error(`[vista:image] Error processing image: ${message}`);
+      const statusCode = (err as any)?.statusCode || (message.includes('not found') ? 404 : (message.includes('Access denied') || message.includes('path traversal')) ? 403 : 500);
 
-      if (message.includes('not found')) {
-        res.status(404).send(`Image not found`);
+      if (process.env.VISTA_DEBUG) {
+        console.error(`[vista:image] Error processing image: ${message}`);
+      }
+
+      if (statusCode === 403) {
+        res.status(403).send('Forbidden: invalid image path');
+      } else if (statusCode === 404) {
+        res.status(404).send('Image not found');
       } else {
-        res.status(500).send(`Image optimization error`);
+        res.status(500).send('Image optimization error');
       }
     }
   };
