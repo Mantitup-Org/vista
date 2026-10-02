@@ -138,10 +138,17 @@ export function flattenPrerenderedFlight(pagesDir: string, targetDir: string): v
 
 function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
   const redirectsPath = path.join(targetDir, '_redirects');
-  const lines = [
+  let lines: string[] = [];
+  
+  if (fs.existsSync(redirectsPath)) {
+    lines.push(fs.readFileSync(redirectsPath, 'utf8').trim());
+    lines.push('');
+  }
+
+  lines.push(
     '/rsc /rsc/index.rsc 200',
-    '/rsc/ /rsc/index.rsc 200',
-  ];
+    '/rsc/ /rsc/index.rsc 200'
+  );
 
   walkFiles(pagesDir, (_absolutePath, relativePath) => {
     const posix = relativePath.replace(/\\/g, '/');
@@ -166,6 +173,7 @@ export function prepareStaticCdnOutput(targetDir: string): void {
   flattenPrerenderedPages(pagesDir, targetDir);
   flattenPrerenderedFlight(pagesDir, targetDir);
   writeStaticRscRedirects(pagesDir, targetDir);
+  fs.rmSync(staticDir, { recursive: true, force: true });
 }
 
 export function copyStaticHostAssets(cwd: string, vistaDir: string, targetDir: string): void {
