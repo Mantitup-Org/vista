@@ -75,7 +75,21 @@ function resolveInstalledPackage(name, searchRoots) {
       // try next root
     }
   }
-  return null;
+
+  // pnpm store fallback (CI may not hoist apps/web deps to a resolvable root).
+  const pnpmDir = path.join(repoRoot, 'node_modules', '.pnpm');
+  if (!fs.existsSync(pnpmDir)) return null;
+  const prefix = name.startsWith('@')
+    ? `${name.replace('/', '+')}@`
+    : `${name}@`;
+  const matches = fs
+    .readdirSync(pnpmDir)
+    .filter((entry) => entry.startsWith(prefix))
+    .sort();
+  const latest = matches.at(-1);
+  if (!latest) return null;
+  const candidate = path.join(pnpmDir, latest, 'node_modules', ...name.split('/'));
+  return fs.existsSync(path.join(candidate, 'package.json')) ? candidate : null;
 }
 
 function ensureFixtureDeps(appDir) {
@@ -91,7 +105,12 @@ function ensureFixtureDeps(appDir) {
 
   linkOrCopy(path.join(nm, 'vista'), vistaPkg);
 
-  for (const name of ['react', 'react-dom', 'postcss', 'tailwindcss', '@tailwindcss/postcss']) {
+  // Required for SSR. CSS tooling is optional — the conformance fixture has no globals.css.
+  const required = ['react', 'react-dom'];
+  const optional = ['postcss', 'tailwindcss', '@tailwindcss/postcss'];
+  const linked = {};
+
+  for (const name of required) {
     const source = resolveInstalledPackage(name, searchRoots);
     if (!source) {
       throw new Error(`[test:flashpack-dev] missing dependency ${name} in workspace`);
@@ -100,6 +119,17 @@ function ensureFixtureDeps(appDir) {
       ? path.join(nm, ...name.split('/'))
       : path.join(nm, name);
     linkOrCopy(target, source);
+    linked[name] = '*';
+  }
+
+  for (const name of optional) {
+    const source = resolveInstalledPackage(name, searchRoots);
+    if (!source) continue;
+    const target = name.startsWith('@')
+      ? path.join(nm, ...name.split('/'))
+      : path.join(nm, name);
+    linkOrCopy(target, source);
+    linked[name] = '*';
   }
 
   const pkgPath = path.join(appDir, 'package.json');
@@ -107,11 +137,7 @@ function ensureFixtureDeps(appDir) {
   pkg.dependencies = {
     ...(pkg.dependencies || {}),
     vista: `file:${vistaPkg}`,
-    react: '*',
-    'react-dom': '*',
-    postcss: '*',
-    tailwindcss: '*',
-    '@tailwindcss/postcss': '*',
+    ...linked,
   };
   fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
 }
