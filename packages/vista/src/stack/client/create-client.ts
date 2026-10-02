@@ -182,7 +182,13 @@ async function requestRoute<TOutput>(options: {
     if (!requestHeaders.has('content-type')) {
       requestHeaders.set('content-type', 'application/json');
     }
-    requestInit.body = JSON.stringify(serializeWithMode(options.input, options.serialization));
+    // Skip body serialization for inputless calls. serializeWithMode(undefined)
+    // runs JSON.parse(JSON.stringify(undefined)) -> JSON.parse("undefined"),
+    // which throws before the request is even sent. Explicit null still
+    // serializes to "null" and normal payloads are unaffected.
+    if (options.input !== undefined) {
+      requestInit.body = JSON.stringify(serializeWithMode(options.input, options.serialization));
+    }
   }
 
   const response = await options.fetchImpl(url, requestInit);
