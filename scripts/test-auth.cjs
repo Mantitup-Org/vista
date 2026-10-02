@@ -295,6 +295,89 @@ async function main() {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 
+  // Verify src/app layout support and import path resolution
+  const srcCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-g-auth-src-'));
+  try {
+    fs.mkdirSync(path.join(srcCwd, 'src', 'app'), { recursive: true });
+    fs.mkdirSync(path.join(srcCwd, 'src', 'components'), { recursive: true });
+    const srcExit = await runGenerateCommand(['auth'], { cwd: srcCwd, log() {} });
+    assert.equal(srcExit, 0);
+
+    assert.equal(fs.existsSync(path.join(srcCwd, 'src', 'auth.ts')), true, 'src/auth.ts should be created');
+    assert.equal(fs.existsSync(path.join(srcCwd, 'src', 'middleware.ts')), true, 'src/middleware.ts should be created');
+    assert.equal(
+      fs.existsSync(path.join(srcCwd, 'src', 'components', 'auth-session-provider.tsx')),
+      true,
+      'src/components/auth-session-provider.tsx should be created'
+    );
+
+    const routeSource = fs.readFileSync(
+      path.join(srcCwd, 'src', 'app', 'api', 'auth', '[...vista]', 'route.ts'),
+      'utf8'
+    );
+    const routeImportMatch = routeSource.match(/from '([^']+)';/);
+    assert.ok(routeImportMatch, 'Route handler should import auth');
+    const resolvedRouteAuth = path.resolve(
+      path.join(srcCwd, 'src', 'app', 'api', 'auth', '[...vista]'),
+      routeImportMatch[1] + '.ts'
+    );
+    assert.equal(fs.existsSync(resolvedRouteAuth), true, 'Route auth import must resolve to an existing file');
+
+    const accountSource = fs.readFileSync(path.join(srcCwd, 'src', 'app', 'account', 'page.tsx'), 'utf8');
+    const accountImportMatch = accountSource.match(/from '([^']+)';/);
+    assert.ok(accountImportMatch, 'Account page should import auth');
+    const resolvedAccountAuth = path.resolve(
+      path.join(srcCwd, 'src', 'app', 'account'),
+      accountImportMatch[1] + '.ts'
+    );
+    assert.equal(fs.existsSync(resolvedAccountAuth), true, 'Account auth import must resolve to an existing file');
+
+    // Test layout.tsx fallback patching in src/app layout
+    const templateRoot = path.join(
+      repoRoot,
+      'packages',
+      'create-vista-app',
+      'template',
+      'app',
+      'root.tsx'
+    );
+    fs.copyFileSync(templateRoot, path.join(srcCwd, 'src', 'app', 'layout.tsx'));
+    const patchLayoutExit = await runGenerateCommand(['auth'], { cwd: srcCwd, log() {} });
+    assert.equal(patchLayoutExit, 0);
+    const patchedLayout = fs.readFileSync(path.join(srcCwd, 'src', 'app', 'layout.tsx'), 'utf8');
+    assert.match(patchedLayout, /AuthSessionProvider/);
+  } finally {
+    fs.rmSync(srcCwd, { recursive: true, force: true });
+  }
+
+  // Verify coexistence when auth.ts is at root in a src/app project
+  const mixedCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'vista-g-auth-mixed-'));
+  try {
+    fs.mkdirSync(path.join(mixedCwd, 'src', 'app'), { recursive: true });
+    fs.writeFileSync(path.join(mixedCwd, 'auth.ts'), '// preexisting root auth\nexport const handlers = {};\n');
+    const mixedExit = await runGenerateCommand(['auth'], { cwd: mixedCwd, log() {} });
+    assert.equal(mixedExit, 0);
+
+    const routeSource = fs.readFileSync(
+      path.join(mixedCwd, 'src', 'app', 'api', 'auth', '[...vista]', 'route.ts'),
+      'utf8'
+    );
+    const routeImportMatch = routeSource.match(/from '([^']+)';/);
+    assert.ok(routeImportMatch);
+    assert.equal(
+      routeImportMatch[1],
+      '../../../../../auth',
+      'Route handler must navigate 5 levels up to resolve root auth.ts in src/app layout'
+    );
+    const resolvedRouteAuth = path.resolve(
+      path.join(mixedCwd, 'src', 'app', 'api', 'auth', '[...vista]'),
+      routeImportMatch[1] + '.ts'
+    );
+    assert.equal(fs.existsSync(resolvedRouteAuth), true, 'Resolved route auth file must exist');
+  } finally {
+    fs.rmSync(mixedCwd, { recursive: true, force: true });
+  }
+
   console.log('[test:auth] ALL PASSED');
 }
 
