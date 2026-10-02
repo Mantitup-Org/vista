@@ -85,6 +85,7 @@ exports.netlifyAdapter = {
         const functionDir = path_1.default.join(ctx.cwd, 'netlify', 'functions');
         fs_1.default.rmSync(functionDir, { recursive: true, force: true });
         (0, runtime_pack_1.writeNetlifySsrHandler)(functionDir);
+        (0, runtime_pack_1.ensureStandaloneServerFallback)(ctx.vistaDir);
         (0, utils_1.copyDirectoryRecursive)(ctx.vistaDir, path_1.default.join(functionDir, '.vista'));
         (0, runtime_pack_1.packRuntimeNodeModules)(ctx.cwd, functionDir);
         const netlifyTomlPath = writeFullRuntimeNetlifyToml(ctx);
