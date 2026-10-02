@@ -70,28 +70,32 @@ function useAgent(options = {}) {
                     const payload = trimmed.slice(6);
                     if (payload === '[DONE]')
                         break;
+                    let chunk = null;
                     try {
-                        const chunk = JSON.parse(payload);
-                        if (chunk.type === 'text-delta' && chunk.textDelta) {
-                            assistantText += chunk.textDelta;
-                            setMessages((prev) => {
-                                const updated = [...prev];
-                                const lastIdx = updated.length - 1;
-                                if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-                                    updated[lastIdx] = {
-                                        ...updated[lastIdx],
-                                        content: assistantText,
-                                    };
-                                }
-                                return updated;
-                            });
-                        }
-                        else if (chunk.type === 'error' && chunk.error) {
-                            throw new Error(chunk.error);
-                        }
+                        chunk = JSON.parse(payload);
                     }
                     catch {
                         // Ignore partial JSON chunks
+                        continue;
+                    }
+                    if (!chunk)
+                        continue;
+                    if (chunk.type === 'text-delta' && chunk.textDelta) {
+                        assistantText += chunk.textDelta;
+                        setMessages((prev) => {
+                            const updated = [...prev];
+                            const lastIdx = updated.length - 1;
+                            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                                updated[lastIdx] = {
+                                    ...updated[lastIdx],
+                                    content: assistantText,
+                                };
+                            }
+                            return updated;
+                        });
+                    }
+                    else if (chunk.type === 'error' && chunk.error) {
+                        throw new Error(chunk.error);
                     }
                 }
             }

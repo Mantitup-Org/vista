@@ -183,6 +183,7 @@ export function createOpenAIModel(options: ModelOptions): LanguageModel {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      const activeToolCalls = new Map<number, { id: string; name: string; argumentsStr: string }>();
 
       try {
         while (true) {
@@ -197,6 +198,24 @@ export function createOpenAIModel(options: ModelOptions): LanguageModel {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith(':')) continue;
             if (trimmed === 'data: [DONE]') {
+              // Flush any remaining accumulated tool calls
+              for (const [_, tc] of activeToolCalls) {
+                let parsedArgs = {};
+                try {
+                  parsedArgs = JSON.parse(tc.argumentsStr || '{}');
+                } catch {
+                  parsedArgs = { raw: tc.argumentsStr };
+                }
+                yield {
+                  type: 'tool-call',
+                  toolCall: {
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: parsedArgs,
+                  },
+                };
+              }
+              activeToolCalls.clear();
               yield { type: 'done' };
               return;
             }
@@ -209,21 +228,41 @@ export function createOpenAIModel(options: ModelOptions): LanguageModel {
                 }
                 if (delta?.tool_calls) {
                   for (const tc of delta.tool_calls) {
+                    const idx = typeof tc.index === 'number' ? tc.index : 0;
+                    if (!activeToolCalls.has(idx)) {
+                      activeToolCalls.set(idx, {
+                        id: tc.id || `call_${Date.now()}_${idx}`,
+                        name: '',
+                        argumentsStr: '',
+                      });
+                    }
+                    const current = activeToolCalls.get(idx)!;
+                    if (tc.id) current.id = tc.id;
+                    if (tc.function?.name && !current.name) {
+                      current.name = tc.function.name;
+                    }
+                    if (tc.function?.arguments) current.argumentsStr += tc.function.arguments;
+                  }
+                }
+                const finishReason = parsed.choices?.[0]?.finish_reason;
+                if (finishReason === 'tool_calls') {
+                  for (const [_, tc] of activeToolCalls) {
                     let parsedArgs = {};
                     try {
-                      parsedArgs = JSON.parse(tc.function?.arguments || '{}');
+                      parsedArgs = JSON.parse(tc.argumentsStr || '{}');
                     } catch {
-                      parsedArgs = { raw: tc.function?.arguments };
+                      parsedArgs = { raw: tc.argumentsStr };
                     }
                     yield {
                       type: 'tool-call',
                       toolCall: {
-                        id: tc.id || `call_${Date.now()}`,
-                        name: tc.function?.name || '',
+                        id: tc.id,
+                        name: tc.name,
                         arguments: parsedArgs,
                       },
                     };
                   }
+                  activeToolCalls.clear();
                 }
               } catch {
                 // Ignore parse errors on partial chunks

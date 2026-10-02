@@ -6,33 +6,13 @@ const os = require('node:os');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const vistaSrc = path.join(repoRoot, 'packages', 'vista', 'src');
+const vistaDist = path.join(repoRoot, 'packages', 'vista', 'dist');
 
-function registerTypeScriptRuntime() {
-  const searchRoots = [repoRoot, path.join(repoRoot, 'packages', 'vista')];
-  const resolveFromWorkspace = (specifier) => {
-    for (const root of searchRoots) {
-      try {
-        return require.resolve(specifier, { paths: [root] });
-      } catch {}
-    }
-    throw new Error(`Unable to resolve ${specifier}`);
-  };
-  try {
-    require(resolveFromWorkspace('@swc-node/register'));
-    return;
-  } catch {}
-  try {
-    require(resolveFromWorkspace('ts-node/register/transpile-only'));
-    return;
-  } catch {}
-  throw new Error('No TypeScript runtime found.');
-}
-
-registerTypeScriptRuntime();
-
-const { parseModelIdentifier, resolveModel, embedTexts } = require(path.join(vistaSrc, 'ai', 'index.ts'));
-const { runGenerateCommand } = require(path.join(vistaSrc, 'bin', 'generate.ts'));
+// Import provider, embedding, and code generation modules directly
+const { parseModelIdentifier, resolveModel } = require(path.join(vistaDist, 'ai', 'providers', 'base.js'));
+const { createOpenAIModel } = require(path.join(vistaDist, 'ai', 'providers', 'openai.js'));
+const { embedTexts } = require(path.join(vistaDist, 'ai', 'embeddings.js'));
+const { runGenerateCommand } = require(path.join(vistaDist, 'bin', 'generate.js'));
 
 async function main() {
   assert.equal(parseModelIdentifier('nvidia:meta/llama-3.1-8b-instruct').provider, 'nvidia');
@@ -90,6 +70,42 @@ async function main() {
     );
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+
+  // Verify OpenAI streaming tool call accumulation across split delta chunks
+  const openAIModel = createOpenAIModel({ model: 'gpt-4o', apiKey: 'mock-key' });
+  const streamChunks = [
+    'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_test1', type: 'function', function: { name: 'get_stock_price', arguments: '{"sym' } }] } }] }) + '\n\n',
+    'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'bol": "AAPL"}' } }] } }] }) + '\n\n',
+    'data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls' }] }) + '\n\n',
+    'data: [DONE]\n\n',
+  ];
+
+  const fakeStreamResponse = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const sc of streamChunks) {
+        controller.enqueue(encoder.encode(sc));
+      }
+      controller.close();
+    },
+  });
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(fakeStreamResponse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+
+  try {
+    const collectedChunks = [];
+    for await (const chunk of openAIModel.streamText({ messages: [{ role: 'user', content: 'check AAPL' }] })) {
+      collectedChunks.push(chunk);
+    }
+    const toolCallChunks = collectedChunks.filter((c) => c.type === 'tool-call');
+    assert.equal(toolCallChunks.length, 1, 'Must emit exactly one consolidated tool call, not fragmented chunks');
+    assert.equal(toolCallChunks[0].toolCall.id, 'call_test1');
+    assert.equal(toolCallChunks[0].toolCall.name, 'get_stock_price');
+    assert.deepEqual(toolCallChunks[0].toolCall.arguments, { symbol: 'AAPL' }, 'Must parse complete accumulated arguments JSON');
+  } finally {
+    globalThis.fetch = prevFetch;
   }
 
   assert.equal(fs.existsSync(path.join(repoRoot, 'AGENTS.md')), true);
