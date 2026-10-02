@@ -158,15 +158,74 @@ function createIncomingMessage(event) {
 function createServerResponse(req) {
   const chunks = [];
   const res = new http.ServerResponse(req);
+  // No-op socket so ServerResponse can operate; we never read wire bytes from it.
   const sink = new stream.Writable({
-    write(chunk, _enc, cb) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      cb();
-    },
+    write(_chunk, _enc, cb) { cb(); },
+    final(cb) { cb(); },
   });
   res.assignSocket(sink);
   res.flushHeaders = res.flushHeaders || function flushHeaders() {
     if (!this._header) this._implicitHeader();
+  };
+  // Capture application body bytes only. assignSocket() would otherwise make
+  // ServerResponse serialize the status line, headers and chunked transfer
+  // framing into the socket, and those wire bytes must not leak into the
+  // Lambda body. Status and headers are reported separately via res.getHeaders().
+  const pushChunk = (chunk, enc) => {
+    if (chunk == null || chunk.length === 0) return;
+    chunks.push(
+      Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, typeof enc === 'string' ? enc : 'utf8')
+    );
+  };
+  // Route writeHead(status[, message][, headers]) through setHeader so the
+  // headers are reported by res.getHeaders() (they would otherwise only exist
+  // in the now-suppressed wire output).
+  res.writeHead = function writeHead(statusCode, statusMessage, headers) {
+    res.statusCode = statusCode;
+    let headerObj = headers;
+    if (statusMessage && typeof statusMessage === 'object') {
+      headerObj = statusMessage;
+    } else if (typeof statusMessage === 'string') {
+      res.statusMessage = statusMessage;
+    }
+    if (Array.isArray(headerObj)) {
+      // Node also accepts a flat [name, value, name, value, ...] array. Group
+      // repeated names (e.g. Set-Cookie) so every value is kept.
+      const grouped = new Map();
+      for (let i = 0; i + 1 < headerObj.length; i += 2) {
+        const name = String(headerObj[i]);
+        const key = name.toLowerCase();
+        const entry = grouped.get(key) || { name, values: [] };
+        entry.values.push(headerObj[i + 1]);
+        grouped.set(key, entry);
+      }
+      for (const { name, values } of grouped.values()) {
+        res.setHeader(name, values.length > 1 ? values.map(String) : values[0]);
+      }
+    } else if (headerObj) {
+      for (const key of Object.keys(headerObj)) {
+        if (headerObj[key] != null) res.setHeader(key, headerObj[key]);
+      }
+    }
+    return res;
+  };
+  res.write = function write(chunk, enc, cb) {
+    if (typeof enc === 'function') { cb = enc; enc = undefined; }
+    pushChunk(chunk, enc);
+    if (typeof cb === 'function') cb();
+    return true;
+  };
+  let ended = false;
+  res.end = function end(chunk, enc, cb) {
+    if (typeof chunk === 'function') { cb = chunk; chunk = undefined; enc = undefined; }
+    else if (typeof enc === 'function') { cb = enc; enc = undefined; }
+    pushChunk(chunk, enc);
+    if (!ended) {
+      ended = true;
+      res.emit('finish');
+    }
+    if (typeof cb === 'function') cb();
+    return res;
   };
   return {
     res,
