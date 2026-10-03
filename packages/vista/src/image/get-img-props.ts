@@ -1,6 +1,6 @@
 
 import { ImageConfigComplete, imageConfigDefault } from './image-config';
-import { ImageLoader } from './image-loader';
+import { ImageLoader, defaultLoader as defaultVistaLoader } from './image-loader';
 import React from 'react';
 
 export type PlaceholderValue = 'blur' | 'empty';
@@ -51,7 +51,7 @@ function generateSrcSet(
 export function getImgProps(
   props: ImageProps,
   config: ImageConfigComplete = imageConfigDefault,
-  defaultLoader: ImageLoader
+  defaultLoader: ImageLoader = defaultVistaLoader
 ): ImgProps {
   const {
     src,
@@ -123,9 +123,15 @@ export function getImgProps(
     quality ? Number(quality) : undefined
   );
 
+  // Run the src through the loader when optimization is enabled so that the
+  // rendered <img> points at the optimized URL (not the raw source).
+  const optimizedSrc = disableOptimization
+    ? src
+    : loader({ src, width: widthInt || 0, quality: quality ? Number(quality) : undefined });
+
   return {
     ...rest,
-    src,
+    src: optimizedSrc,
     alt,
     width: widthInt,
     height: heightInt,
