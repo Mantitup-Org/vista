@@ -63,7 +63,7 @@ function createResponseToolkit(mode = 'json') {
     return {
         json(data, init) {
             const payload = (0, serialization_1.serializeWithMode)(data, 'json');
-            return Response.json(payload, normalizeResponseInit(init));
+            return Response.json(payload === undefined ? null : payload, normalizeResponseInit(init));
         },
         text(data, init) {
             return new Response(String(data), normalizeResponseInit(init));

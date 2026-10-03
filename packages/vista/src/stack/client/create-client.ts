@@ -140,10 +140,16 @@ async function parseSuccessResponse(
 
   const contentType = response.headers.get('content-type') ?? '';
   if (!contentType.includes('application/json')) {
-    return response.text();
+    const text = await response.text();
+    return text ? text : undefined;
   }
 
-  const json = await response.json();
+  const text = await response.text();
+  if (!text || !text.trim()) {
+    return undefined;
+  }
+
+  const json = JSON.parse(text);
   return deserializeWithMode(json, serialization);
 }
 
@@ -179,10 +185,13 @@ async function requestRoute<TOutput>(options: {
     const query = toQueryParams(options.input, options.serialization);
     url = buildRequestUrl(options.baseUrl, normalizedPath, query);
   } else {
-    if (!requestHeaders.has('content-type')) {
-      requestHeaders.set('content-type', 'application/json');
+    const serialized = serializeWithMode(options.input, options.serialization);
+    if (serialized !== undefined) {
+      if (!requestHeaders.has('content-type')) {
+        requestHeaders.set('content-type', 'application/json');
+      }
+      requestInit.body = JSON.stringify(serialized);
     }
-    requestInit.body = JSON.stringify(serializeWithMode(options.input, options.serialization));
   }
 
   const response = await options.fetchImpl(url, requestInit);

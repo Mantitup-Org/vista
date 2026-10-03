@@ -76,7 +76,7 @@ export function createResponseToolkit(mode: StackSerializationMode = 'json'): St
   return {
     json<T>(data: T, init?: number | ResponseInit) {
       const payload = serializeWithMode(data, 'json');
-      return Response.json(payload, normalizeResponseInit(init));
+      return Response.json(payload === undefined ? null : payload, normalizeResponseInit(init));
     },
     text(data: string, init?: number | ResponseInit) {
       return new Response(String(data), normalizeResponseInit(init));
