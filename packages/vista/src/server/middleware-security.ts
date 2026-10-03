@@ -190,12 +190,23 @@ export function chain(middlewares: MiddlewareLike[]): MiddlewareLike {
       if (!fn) {
         return originalNext();
       }
-      const next = async () => dispatch(current + 1);
+      let nextCalled = false;
+      let nextResult: Response | undefined;
+      const next = async () => {
+        nextCalled = true;
+        nextResult = await dispatch(current + 1);
+        return nextResult;
+      };
       const result = await fn({ ...context, next });
       if (result instanceof Response) {
         return result;
       }
-      return next();
+      // Support the `await next()` idiom (work before and after, no return):
+      // only advance the chain here if the middleware didn't already call next().
+      if (nextCalled) {
+        return nextResult as Response;
+      }
+      return dispatch(current + 1);
     };
 
     return dispatch(0);
