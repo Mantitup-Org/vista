@@ -1,6 +1,6 @@
 
 import { ImageConfigComplete, imageConfigDefault } from './image-config';
-import { ImageLoader } from './image-loader';
+import { ImageLoader, defaultLoader as defaultImageLoader } from './image-loader';
 import React from 'react';
 
 export type PlaceholderValue = 'blur' | 'empty';
@@ -51,7 +51,7 @@ function generateSrcSet(
 export function getImgProps(
   props: ImageProps,
   config: ImageConfigComplete = imageConfigDefault,
-  defaultLoader: ImageLoader
+  defaultLoader: ImageLoader = defaultImageLoader
 ): ImgProps {
   const {
     src,
@@ -123,9 +123,25 @@ export function getImgProps(
     quality ? Number(quality) : undefined
   );
 
+  const defaultWidth =
+    widthInt ||
+    (config.deviceSizes && config.deviceSizes.length > 0
+      ? config.deviceSizes[config.deviceSizes.length - 1]
+      : (config.imageSizes && config.imageSizes.length > 0
+          ? config.imageSizes[config.imageSizes.length - 1]
+          : 1080));
+
+  const finalSrc = disableOptimization
+    ? src
+    : loader({
+        src,
+        width: defaultWidth,
+        quality: quality ? Number(quality) : undefined,
+      });
+
   return {
     ...rest,
-    src,
+    src: finalSrc,
     alt,
     width: widthInt,
     height: heightInt,
@@ -137,3 +153,5 @@ export function getImgProps(
     className,
   };
 }
+
+export const getImageProps = getImgProps;

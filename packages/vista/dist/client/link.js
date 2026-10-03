@@ -140,9 +140,10 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
     // Check if link is active (current route)
     (0, react_1.useEffect)(() => {
         if (typeof window !== 'undefined') {
+            const targetPathname = targetPath.split(/[?#]/)[0] || '/';
             // Exact match or starts-with for nested routes
-            const exact = pathname === targetPath;
-            const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+            const exact = pathname === targetPathname;
+            const partial = targetPathname !== '/' && pathname.startsWith(targetPathname + '/');
             setIsActive(exact || partial);
         }
     }, [targetPath, pathname]);
@@ -215,12 +216,21 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
             return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
             return; // modifier = new tab
-        if (target === '_blank')
-            return; // explicit new tab
+        if (target && target !== '_self')
+            return; // explicit new tab or frame target
+        if (props.download !== undefined && props.download !== false)
+            return; // native file download
         if (!href)
             return;
         if (!internal)
             return; // external / mailto / tel
+
+        const targetPathname = targetPath.split(/[?#]/)[0] || '/';
+        if (targetPath.includes('#') && targetPathname === pathname) {
+            // Same-page hash link: allow native document scroll
+            return;
+        }
+
         if (!rscRouter && !legacyRouter)
             return; // No router provider -> allow native navigation
         e.preventDefault();
@@ -247,12 +257,14 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
         onClick,
         href,
         targetPath,
+        pathname,
         replace,
         scroll,
         rscRouter,
         legacyRouter,
         onNavigate,
         target,
+        props.download,
         internal,
     ]);
     // Data + Aria attributes for styling active links
@@ -275,12 +287,11 @@ const useLinkStatus = () => {
     return { pending: false };
 };
 exports.useLinkStatus = useLinkStatus;
-/**
- * Hook to check if a path is active
- */
 const useIsActive = (path) => {
-    const pathname = (0, router_1.usePathname)();
-    return pathname === path;
+    const routerPathname = (0, router_1.usePathname)();
+    const currentPathname = routerPathname || (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
+    const targetPathname = path.split(/[?#]/)[0] || '/';
+    return currentPathname === targetPathname;
 };
 exports.useIsActive = useIsActive;
 exports.default = exports.Link;

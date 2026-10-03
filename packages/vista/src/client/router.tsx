@@ -284,6 +284,11 @@ export function useParams(): Record<string, string> {
 
 export function usePathname(): string {
   const context = React.useContext(RouterContext);
-  if (!context) return '';
+  if (!context) {
+    if (typeof window !== 'undefined' && window.location) {
+      return window.location.pathname;
+    }
+    return '';
+  }
   return context.pathname;
 }
