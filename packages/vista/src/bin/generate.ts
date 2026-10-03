@@ -417,6 +417,102 @@ function renderEnvExample(): string {
   ].join('\n');
 }
 
+/**
+ * Ensure the AuthSessionProvider import is present. Handles both "vista/theme" and
+ * components layout conventions. Falls back to appending an import line when no
+ * anchor import is found.
+ */
+function ensureAuthSessionProviderImport(source: string): string {
+  if (source.includes("from '../components/auth-session-provider'")) {
+    return source;
+  }
+
+  const importLine = "import { AuthSessionProvider } from '../components/auth-session-provider';";
+
+  // Anchor on the existing vista/theme import when present (preserves grouping).
+  const themeImportMatch = source.match(/from 'vista\/theme';/);
+  if (themeImportMatch && typeof themeImportMatch.index === 'number') {
+    const insertAt = themeImportMatch.index + themeImportMatch[0].length;
+    return `${source.slice(0, insertAt)}\n${importLine}${source.slice(insertAt)}`;
+  }
+
+  // Otherwise insert after the last top-level import statement.
+  const importRegex = /^\s*import\s[^;]*;\s*$/gm;
+  let lastImportEnd = -1;
+  let match: RegExpExecArray | null;
+  while ((match = importRegex.exec(source)) !== null) {
+    lastImportEnd = match.index + match[0].length;
+  }
+  if (lastImportEnd >= 0) {
+    return `${source.slice(0, lastImportEnd)}\n${importLine}${source.slice(lastImportEnd)}`;
+  }
+
+  // No imports at all — prepend.
+  return `${importLine}\n${source}`;
+}
+
+/**
+ * Insert the AuthSessionProvider as the innermost wrapper around {children}
+ * inside a <ThemeProvider> opening/closing pair, tolerating multiline bodies.
+ *
+ * Strategy: locate `<ThemeProvider ...>` and its matching `</ThemeProvider>`,
+ * then replace the body with `<AuthSessionProvider>{children}</AuthSessionProvider>`.
+ * If the body already is `{children}` (single or multiline, with surrounding
+ * whitespace), we simply wrap. If the body is more complex, we still wrap the
+ * whole existing body so session is wired regardless.
+ */
+function wrapChildrenInsideThemeProvider(source: string): string | null {
+  const openMatch = source.match(/<ThemeProvider(\s[^>]*)?>/);
+  if (!openMatch || typeof openMatch.index !== 'number') {
+    return null;
+  }
+
+  const openTagEnd = openMatch.index + openMatch[0].length;
+  const closeIndex = source.indexOf('</ThemeProvider>', openTagEnd);
+  if (closeIndex < 0) {
+    return null;
+  }
+
+  const inner = source.slice(openTagEnd, closeIndex);
+
+  // If already wrapped, bail (caller checks AuthSessionProvider presence first).
+  if (inner.includes('<AuthSessionProvider')) {
+    return null;
+  }
+
+  const before = source.slice(0, openTagEnd);
+  const after = source.slice(closeIndex);
+
+  // Preserve the existing inner content (which may be `{children}` or a multiline
+  // expression) and wrap it with the AuthSessionProvider.
+  const replacement = `${before}<AuthSessionProvider>${inner}</AuthSessionProvider>${after}`;
+  return replacement;
+}
+
+/**
+ * Insert <AuthSessionProvider>{children}</AuthSessionProvider> directly inside the
+ * <body> tag when no ThemeProvider is present. Falls back to wrapping {children}
+ * usage in the body if a literal <body> tag is not found.
+ */
+function insertAuthSessionProviderInBody(source: string): string | null {
+  const bodyOpenMatch = source.match(/<body(\s[^>]*)?>/);
+  if (bodyOpenMatch && typeof bodyOpenMatch.index === 'number') {
+    const bodyTagEnd = bodyOpenMatch.index + bodyOpenMatch[0].length;
+    const before = source.slice(0, bodyTagEnd);
+    const after = source.slice(bodyTagEnd);
+    return `${before}<AuthSessionProvider>{children}</AuthSessionProvider>${after}`;
+  }
+
+  // Fallback: wrap the {children} expression inside the default export's return.
+  const childrenMatch = source.match(/(\{children\})/);
+  if (childrenMatch && typeof childrenMatch.index === 'number') {
+    const idx = childrenMatch.index;
+    return `${source.slice(0, idx)}<AuthSessionProvider>${childrenMatch[0]}</AuthSessionProvider>${source.slice(idx + childrenMatch[0].length)}`;
+  }
+
+  return null;
+}
+
 function patchRootWithSessionProvider(cwd: string): { path: string; patched: boolean } {
   const absolutePath = path.join(resolveAppDir(cwd), 'root.tsx');
   if (!fs.existsSync(absolutePath)) {
@@ -428,24 +524,19 @@ function patchRootWithSessionProvider(cwd: string): { path: string; patched: boo
     return { path: absolutePath, patched: false };
   }
 
-  if (!source.includes('<ThemeProvider')) {
+  let next: string | null = null;
+
+  if (source.includes('<ThemeProvider')) {
+    next = wrapChildrenInsideThemeProvider(source);
+  } else {
+    next = insertAuthSessionProviderInBody(source);
+  }
+
+  if (next === null || next === source) {
     return { path: absolutePath, patched: false };
   }
 
-  if (!source.includes("from '../components/auth-session-provider'")) {
-    source = source.replace(
-      /from 'vista\/theme';/,
-      "from 'vista/theme';\nimport { AuthSessionProvider } from '../components/auth-session-provider';"
-    );
-  }
-
-  const next = source.replace(
-    /<ThemeProvider([^>]*)>\{children\}<\/ThemeProvider>/,
-    '<ThemeProvider$1><AuthSessionProvider>{children}</AuthSessionProvider></ThemeProvider>'
-  );
-  if (next === source) {
-    return { path: absolutePath, patched: false };
-  }
+  next = ensureAuthSessionProviderImport(next);
 
   fs.writeFileSync(absolutePath, next, 'utf8');
   return { path: absolutePath, patched: true };
