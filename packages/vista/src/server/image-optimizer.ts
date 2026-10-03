@@ -107,7 +107,11 @@ function fetchLocalFile(filePath: string, cwd: string): Promise<Buffer> {
   throw new Error(`Image not found: ${filePath}`);
 }
 
-function fetchRemoteImage(url: string): Promise<Buffer> {
+function fetchRemoteImage(
+  url: string,
+  isAllowed: (candidate: string) => boolean,
+  redirectsLeft = 3
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     const client = parsedUrl.protocol === 'https:' ? https : http;
@@ -119,8 +123,19 @@ function fetchRemoteImage(url: string): Promise<Buffer> {
         response.statusCode < 400 &&
         response.headers.location
       ) {
-        // Follow redirect
-        fetchRemoteImage(response.headers.location).then(resolve).catch(reject);
+        response.resume(); // drain the redirect response
+        if (redirectsLeft <= 0) {
+          reject(new Error(`Too many redirects fetching remote image: ${url}`));
+          return;
+        }
+        // Resolve relative redirects, then re-check the target against the
+        // allowlist so a permitted host cannot redirect to an internal one (SSRF).
+        const nextUrl = new URL(response.headers.location, url).toString();
+        if (!isAllowed(nextUrl)) {
+          reject(new Error(`Redirect to disallowed host blocked: ${nextUrl}`));
+          return;
+        }
+        fetchRemoteImage(nextUrl, isAllowed, redirectsLeft - 1).then(resolve).catch(reject);
         return;
       }
 
@@ -386,7 +401,9 @@ export function createImageHandler(cwd: string, isDev: boolean) {
           return;
         }
 
-        sourceBuffer = await fetchRemoteImage(url);
+        sourceBuffer = await fetchRemoteImage(url, (candidate) =>
+          isAllowedRemoteUrl(candidate, config)
+        );
       } else {
         // Local file
         const cleanedUrl = url.startsWith('/') ? url.slice(1) : url;

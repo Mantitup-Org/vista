@@ -78,7 +78,7 @@ function fetchLocalFile(filePath, cwd) {
     }
     throw new Error(`Image not found: ${filePath}`);
 }
-function fetchRemoteImage(url) {
+function fetchRemoteImage(url, isAllowed, redirectsLeft = 3) {
     return new Promise((resolve, reject) => {
         const parsedUrl = new url_1.URL(url);
         const client = parsedUrl.protocol === 'https:' ? https_1.default : http_1.default;
@@ -87,8 +87,19 @@ function fetchRemoteImage(url) {
                 response.statusCode >= 300 &&
                 response.statusCode < 400 &&
                 response.headers.location) {
-                // Follow redirect
-                fetchRemoteImage(response.headers.location).then(resolve).catch(reject);
+                response.resume(); // drain the redirect response
+                if (redirectsLeft <= 0) {
+                    reject(new Error(`Too many redirects fetching remote image: ${url}`));
+                    return;
+                }
+                // Resolve relative redirects, then re-check the target against the
+                // allowlist so a permitted host cannot redirect to an internal one (SSRF).
+                const nextUrl = new url_1.URL(response.headers.location, url).toString();
+                if (!isAllowed(nextUrl)) {
+                    reject(new Error(`Redirect to disallowed host blocked: ${nextUrl}`));
+                    return;
+                }
+                fetchRemoteImage(nextUrl, isAllowed, redirectsLeft - 1).then(resolve).catch(reject);
                 return;
             }
             if (response.statusCode && response.statusCode !== 200) {
@@ -308,7 +319,7 @@ function createImageHandler(cwd, isDev) {
                         .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
                     return;
                 }
-                sourceBuffer = await fetchRemoteImage(url);
+                sourceBuffer = await fetchRemoteImage(url, (candidate) => isAllowedRemoteUrl(candidate, config));
             }
             else {
                 // Local file
