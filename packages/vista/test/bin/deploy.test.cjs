@@ -147,6 +147,92 @@ test('vercel adapter dry-run emits build output when forced', async () => {
   }
 });
 
+test('vercel static-only Build Output routes point to actual file locations', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    // Create a static-only build (no standalone server)
+    const vistaDir = path.join(cwd, '.vista');
+    fs.mkdirSync(path.join(vistaDir, 'server'), { recursive: true });
+    fs.mkdirSync(path.join(vistaDir, 'static', 'pages'), { recursive: true });
+    fs.mkdirSync(path.join(vistaDir, 'static', 'chunks'), { recursive: true });
+
+    const requiredFiles = [
+      'BUILD_ID',
+      'artifact-manifest.json',
+      'build-manifest.json',
+      'routes-manifest.json',
+      'app-path-routes-manifest.json',
+      'prerender-manifest.json',
+      'required-server-files.json',
+      'react-client-manifest.json',
+      'react-server-manifest.json',
+      'server/server-manifest.json',
+      'server/runtime-manifest.json',
+      'server/file-trace.json',
+    ];
+    for (const rel of requiredFiles) {
+      const abs = path.join(vistaDir, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      if (rel.endsWith('.json')) {
+        const payload =
+          rel === 'artifact-manifest.json' || rel === 'server/runtime-manifest.json' || rel === 'server/file-trace.json'
+            ? { schemaVersion: 1, copiedFiles: [] }
+            : rel === 'prerender-manifest.json'
+              ? { routes: { '/': {} } }
+              : rel === 'routes-manifest.json'
+                ? { staticRoutes: [{ page: '/' }] }
+                : {};
+        fs.writeFileSync(abs, `${JSON.stringify(payload)}\n`, 'utf8');
+      } else {
+        fs.writeFileSync(abs, 'ok', 'utf8');
+      }
+    }
+
+    // Static pages + RSC payloads
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'index.html'), '<html>home</html>', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'index.rsc'), 'flight-home', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'about.html'), '<html>about</html>', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'about.rsc'), 'flight-about', 'utf8');
+    fs.writeFileSync(path.join(vistaDir, 'static', 'chunks', 'main.js'), 'console.log(1)', 'utf8');
+
+    fs.mkdirSync(path.join(cwd, 'public'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, 'public', 'favicon.ico'), 'icon', 'utf8');
+
+    const { writeVercelBuildOutput } = require('../../dist/deploy/adapters/vercel');
+    const wrote = writeVercelBuildOutput({ cwd, vistaDir, force: true });
+    assert.equal(wrote, true);
+
+    const configPath = path.join(cwd, '.vercel', 'output', 'config.json');
+    assert.equal(fs.existsSync(configPath), true);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    // copyStaticHostAssets nests files under static/static/ — routes must match.
+    assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'static', 'static', 'pages', 'index.html')), true);
+    assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'static', 'static', 'pages', 'about.rsc')), true);
+
+    // Verify every non-filesystem route dest resolves to a real file
+    // (using a concrete substitution that matches an actual file path).
+    const substitutions = {
+      '^/_vista/static/(.*)$': 'chunks/main.js',
+      '^/(?:rsc|_rsc)/(.+)$': 'about',
+      '^/(.+)$': 'about',
+    };
+    for (const route of config.routes) {
+      if (route.handle || !route.dest) continue;
+      const sub = substitutions[route.src] || 'index';
+      const testDest = route.dest.replace('$1', sub);
+      const resolved = path.join(cwd, '.vercel', 'output', testDest.replace(/^\//, ''));
+      assert.equal(
+        fs.existsSync(resolved),
+        true,
+        `Route dest ${route.dest} (resolved ${testDest}) does not match any file at ${resolved}`
+      );
+    }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('runDeployCommand returns non-zero when target cannot be detected', async () => {
   const cwd = makeTempWorkspace();
   try {
