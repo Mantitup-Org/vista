@@ -147,6 +147,7 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
       onTouchStart,
       onNavigate,
       target,
+      download,
       ...props
     },
     ref
@@ -179,9 +180,19 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
     // Check if link is active (current route)
     useEffect(() => {
       if (typeof window !== 'undefined') {
+        // Build the full current location including query string and hash so
+        // that links carrying search params / fragments match correctly.
+        const fullPath =
+          (pathname || '') +
+          (window.location.search || '') +
+          (window.location.hash || '');
         // Exact match or starts-with for nested routes
-        const exact = pathname === targetPath;
-        const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+        const exact = fullPath === targetPath;
+        const partial =
+          targetPath !== '/' &&
+          !targetPath.includes('?') &&
+          !targetPath.includes('#') &&
+          (pathname || '').startsWith(targetPath + '/');
         setIsActive(exact || partial);
       }
     }, [targetPath, pathname]);
@@ -259,10 +270,25 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
         if (e.defaultPrevented) return;
         if (e.button !== 0) return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // modifier = new tab
-        if (target === '_blank') return; // explicit new tab
+        // Let the browser handle links that should not be intercepted:
+        //  - download attribute present (native download flow)
+        //  - target set to anything other than _self (e.g. _blank/_top/_parent)
+        if (download !== undefined && download !== false) return;
+        if (target && target !== '_self') return;
         if (!href) return;
         if (!internal) return; // external / mailto / tel
         if (!rscRouter && !legacyRouter) return; // No router provider -> allow native navigation
+
+        // Same-page hash links: let the browser scroll natively instead of
+        // triggering a route transition.
+        const currentHash = typeof window !== 'undefined' ? window.location.hash : '';
+        if (
+          targetPath.startsWith('#') &&
+          typeof window !== 'undefined' &&
+          targetPath === currentHash
+        ) {
+          return;
+        }
 
         e.preventDefault();
 
@@ -311,6 +337,7 @@ export const Link = React.forwardRef<HTMLAnchorElement, LinkProps>(
         onTouchStart={handleTouchStart}
         ref={setRefs}
         target={target}
+        download={download}
         {...dataProps}
         {...props}
       >
