@@ -150,11 +150,13 @@ function discoverRouteMiddlewares(cwd, pathname, bustCache) {
 // Matcher Support
 // ---------------------------------------------------------------------------
 function patternToRegExp(pattern) {
+    // Escape regex metacharacters except `*` and `:` which are used for parameter/wildcard matching
+    let escaped = pattern.replace(/[\\^$.+?()[\]{}|]/g, '\\$&');
     // Convert Next.js-style / path pattern to RegExp:
     //   /foo/:path*  → /foo(?:/(.*))?
     //   /foo/:bar    → /foo/[^/]+
     //   /foo/*       → /foo(?:/(.*))?
-    let re = pattern
+    let re = escaped
         .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
         .replace(/:[^/]+\*/g, '(.*)') // bare :path*
         .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
