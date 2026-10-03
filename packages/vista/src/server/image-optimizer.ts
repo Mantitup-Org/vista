@@ -107,9 +107,25 @@ function fetchLocalFile(filePath: string, cwd: string): Promise<Buffer> {
   throw new Error(`Image not found: ${filePath}`);
 }
 
-function fetchRemoteImage(url: string): Promise<Buffer> {
+export function fetchRemoteImage(
+  url: string,
+  config?: ImageConfigComplete,
+  maxRedirects: number = 5
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      reject(new Error(`Invalid remote image URL: ${url}`));
+      return;
+    }
+
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      reject(new Error(`Unsupported remote image protocol: ${parsedUrl.protocol}`));
+      return;
+    }
+
     const client = parsedUrl.protocol === 'https:' ? https : http;
 
     const request = client.get(url, { timeout: 10000 }, (response) => {
@@ -119,8 +135,27 @@ function fetchRemoteImage(url: string): Promise<Buffer> {
         response.statusCode < 400 &&
         response.headers.location
       ) {
-        // Follow redirect
-        fetchRemoteImage(response.headers.location).then(resolve).catch(reject);
+        if (maxRedirects <= 0) {
+          reject(new Error(`Too many redirects fetching remote image: ${url}`));
+          return;
+        }
+
+        let redirectUrl: string;
+        try {
+          redirectUrl = new URL(response.headers.location, url).toString();
+        } catch {
+          reject(new Error(`Invalid redirect location header: ${response.headers.location}`));
+          return;
+        }
+
+        if (config && !isAllowedRemoteUrl(redirectUrl, config)) {
+          reject(new Error(`Redirect target not allowed by image configuration: ${redirectUrl}`));
+          return;
+        }
+
+        fetchRemoteImage(redirectUrl, config, maxRedirects - 1)
+          .then(resolve)
+          .catch(reject);
         return;
       }
 
@@ -147,9 +182,14 @@ function fetchRemoteImage(url: string): Promise<Buffer> {
 // Domain / remote pattern validation
 // ---------------------------------------------------------------------------
 
-function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
+export function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
   try {
     const parsed = new URL(url);
+
+    // Block non-http/https protocols
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false;
+    }
 
     // Check domains
     if (config.domains.length > 0) {
@@ -162,10 +202,14 @@ function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
     if ((config.remotePatterns as any[]).length > 0) {
       for (const pattern of config.remotePatterns as any[]) {
         const hostMatch = pattern.hostname
-          ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+          ? new RegExp(
+              `^${pattern.hostname
+                .replace(/[\\^$.+?()[\]{}|]/g, '\\$&')
+                .replace(/\*/g, '.*')}$`
+            ).test(parsed.hostname)
           : true;
         const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
-        const portMatch = pattern.port ? parsed.port === pattern.port : true;
+        const portMatch = pattern.port ? parsed.port === String(pattern.port) : true;
         const pathMatch = pattern.pathname
           ? parsed.pathname.startsWith(pattern.pathname.replace(/\*\*$/, ''))
           : true;
@@ -292,7 +336,11 @@ async function processPassthrough(
 // Express handler
 // ---------------------------------------------------------------------------
 
-export function createImageHandler(cwd: string, isDev: boolean) {
+export function createImageHandler(
+  cwd: string,
+  isDev: boolean,
+  customConfig?: Partial<ImageConfigComplete>
+) {
   const sharpAvailable = detectSharp();
 
   if (!sharpAvailable && isDev && process.env.VISTA_DEBUG) {
@@ -302,7 +350,7 @@ export function createImageHandler(cwd: string, isDev: boolean) {
     );
   }
 
-  const config = { ...imageConfigDefault };
+  const config = { ...imageConfigDefault, ...customConfig };
 
   return async function handleImageRequest(req: Request, res: Response): Promise<void> {
     try {
@@ -386,7 +434,7 @@ export function createImageHandler(cwd: string, isDev: boolean) {
           return;
         }
 
-        sourceBuffer = await fetchRemoteImage(url);
+        sourceBuffer = await fetchRemoteImage(url, config);
       } else {
         // Local file
         const cleanedUrl = url.startsWith('/') ? url.slice(1) : url;
