@@ -147,7 +147,7 @@ function fetchRemoteImage(url: string): Promise<Buffer> {
 // Domain / remote pattern validation
 // ---------------------------------------------------------------------------
 
-function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
+export function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
   try {
     const parsed = new URL(url);
 
@@ -162,10 +162,14 @@ function isAllowedRemoteUrl(url: string, config: ImageConfigComplete): boolean {
     if ((config.remotePatterns as any[]).length > 0) {
       for (const pattern of config.remotePatterns as any[]) {
         const hostMatch = pattern.hostname
-          ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+          ? new RegExp(
+              `^${pattern.hostname
+                .replace(/[\\^$.+?()[\]{}|]/g, '\\$&')
+                .replace(/\*/g, '.*')}$`
+            ).test(parsed.hostname)
           : true;
         const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
-        const portMatch = pattern.port ? parsed.port === pattern.port : true;
+        const portMatch = pattern.port ? parsed.port === String(pattern.port) : true;
         const pathMatch = pattern.pathname
           ? parsed.pathname.startsWith(pattern.pathname.replace(/\*\*$/, ''))
           : true;
