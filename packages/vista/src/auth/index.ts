@@ -293,7 +293,10 @@ async function handleAuthRequest(
       if (existing) {
         user.id = existing.id;
       } else {
-        await config.adapter.createUser?.(user);
+        const created = await config.adapter.createUser?.(user);
+        if (created) {
+          user.id = created.id;
+        }
         await config.adapter.linkAccount?.(user.id, {
           provider: provider.id,
           type: 'oauth',

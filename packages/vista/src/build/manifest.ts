@@ -81,7 +81,7 @@ export function createVistaDirectories(cwd: string, mode: 'legacy' | 'rsc' = 'le
   fs.mkdirSync(root, { recursive: true });
 
   if (mode === 'rsc') {
-    [dirs.root, dirs.cache, dirs.imageCache, dirs.server, dirs.static, dirs.chunks, dirs.media, dirs.types].forEach((dir) => {
+    [dirs.root, dirs.cache, dirs.imageCache, dirs.server, dirs.static, dirs.chunks, dirs.css, dirs.media, dirs.types].forEach((dir) => {
       fs.mkdirSync(dir, { recursive: true });
     });
   }
@@ -648,11 +648,20 @@ export function cleanOldCache(vistaDir: string, keepBuilds: number = 5): void {
 
   const entries = fs
     .readdirSync(cacheDir)
-    .map((name) => ({
-      name,
-      path: path.join(cacheDir, name),
-      stat: fs.statSync(path.join(cacheDir, name)),
-    }))
+    .map((name) => {
+      const entryPath = path.join(cacheDir, name);
+      try {
+        return {
+          name,
+          path: entryPath,
+          stat: fs.statSync(entryPath),
+        };
+      } catch {
+        // Broken symlinks or inaccessible entries — skip them safely
+        return null;
+      }
+    })
+    .filter((e): e is { name: string; path: string; stat: fs.Stats } => e !== null)
     .filter((e) => e.stat.isDirectory())
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
