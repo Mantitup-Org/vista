@@ -118,14 +118,24 @@ export class Agent {
 
       telemetry.recordStepStart(currentStep);
 
-      const stepResult = await this.model.generateText({
-        messages: conversationHistory,
-        systemPrompt,
-        tools: toolsList.length > 0 ? toolsList : undefined,
-        temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        abortSignal,
-      });
+      let stepResult;
+      try {
+        stepResult = await this.model.generateText({
+          messages: conversationHistory,
+          systemPrompt,
+          tools: toolsList.length > 0 ? toolsList : undefined,
+          temperature: this.config.temperature,
+          maxTokens: this.config.maxTokens,
+          abortSignal,
+        });
+      } catch (err: any) {
+        // Model errors (rate limit, bad credentials, context length, network
+        // timeout) must reach observability.onError via telemetry before they
+        // propagate; run() previously let them escape uncaught.
+        const errorObj = err instanceof Error ? err : new Error(String(err));
+        telemetry.recordError(errorObj);
+        throw errorObj;
+      }
 
       const stepRecord: AgentStep = {
         stepNumber: currentStep,
