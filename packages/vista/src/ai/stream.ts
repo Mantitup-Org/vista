@@ -18,23 +18,40 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
   toDataStreamResponse(init?: ResponseInit): Response {
     const encoder = new TextEncoder();
     const source = this.source;
+    const iterator = source[Symbol.asyncIterator]();
+    let isDone = false;
 
     const stream = new ReadableStream({
-      async start(controller) {
+      async pull(controller) {
+        if (isDone) return;
         try {
-          for await (const chunk of source) {
-            const line = `data: ${JSON.stringify(chunk)}\n\n`;
-            controller.enqueue(encoder.encode(line));
+          const { value, done } = await iterator.next();
+          if (done) {
+            isDone = true;
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
           }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
+          const line = `data: ${JSON.stringify(value)}\n\n`;
+          controller.enqueue(encoder.encode(line));
         } catch (error: any) {
+          isDone = true;
           const errChunk: StreamChunk = {
             type: 'error',
             error: error?.message || 'Stream processing error',
           };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(errChunk)}\n\n`));
+          } catch {}
           controller.close();
+        }
+      },
+      async cancel(reason) {
+        isDone = true;
+        if (typeof iterator.return === 'function') {
+          try {
+            await iterator.return();
+          } catch {}
         }
       },
     });
@@ -57,18 +74,36 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
   toTextStreamResponse(init?: ResponseInit): Response {
     const encoder = new TextEncoder();
     const source = this.source;
+    const iterator = source[Symbol.asyncIterator]();
+    let isDone = false;
 
     const stream = new ReadableStream({
-      async start(controller) {
+      async pull(controller) {
+        if (isDone) return;
         try {
-          for await (const chunk of source) {
-            if (chunk.type === 'text-delta' && chunk.textDelta) {
-              controller.enqueue(encoder.encode(chunk.textDelta));
+          while (true) {
+            const { value, done } = await iterator.next();
+            if (done) {
+              isDone = true;
+              controller.close();
+              return;
+            }
+            if (value.type === 'text-delta' && value.textDelta) {
+              controller.enqueue(encoder.encode(value.textDelta));
+              return;
             }
           }
-          controller.close();
         } catch (error) {
+          isDone = true;
           controller.error(error);
+        }
+      },
+      async cancel(reason) {
+        isDone = true;
+        if (typeof iterator.return === 'function') {
+          try {
+            await iterator.return();
+          } catch {}
         }
       },
     });
