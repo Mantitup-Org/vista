@@ -26,6 +26,10 @@ const wrapperStyle: React.CSSProperties = {
 
 export type EnhancedImageProps = ImageProps;
 
+// Re-export the props helpers so consumers can build <picture> art direction
+// and CSS background images (Next.js-compatible getImageProps).
+export { getImgProps, getImageProps } from './get-img-props';
+
 export const Image = forwardRef<HTMLImageElement, EnhancedImageProps>((props, ref) => {
     const {
         placeholder,
