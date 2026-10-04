@@ -185,6 +185,7 @@ export function createAnthropicModel(options: ModelOptions): LanguageModel {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      const pendingToolCalls = new Map<number, { id: string; name: string; partialJson: string }>();
 
       try {
         while (true) {
@@ -203,8 +204,42 @@ export function createAnthropicModel(options: ModelOptions): LanguageModel {
 
             try {
               const event = JSON.parse(payload);
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
-                yield { type: 'text-delta', textDelta: event.delta.text };
+              if (event.type === 'content_block_start') {
+                if (event.content_block?.type === 'tool_use') {
+                  pendingToolCalls.set(event.index, {
+                    id: event.content_block.id || '',
+                    name: event.content_block.name || '',
+                    partialJson: '',
+                  });
+                }
+              } else if (event.type === 'content_block_delta') {
+                if (event.delta?.type === 'text_delta') {
+                  yield { type: 'text-delta', textDelta: event.delta.text };
+                } else if (event.delta?.type === 'input_json_delta') {
+                  const pending = pendingToolCalls.get(event.index);
+                  if (pending && event.delta.partial_json) {
+                    pending.partialJson += event.delta.partial_json;
+                  }
+                }
+              } else if (event.type === 'content_block_stop') {
+                const pending = pendingToolCalls.get(event.index);
+                if (pending) {
+                  let args: any = {};
+                  try {
+                    args = pending.partialJson ? JSON.parse(pending.partialJson) : {};
+                  } catch {
+                    args = {};
+                  }
+                  yield {
+                    type: 'tool-call',
+                    toolCall: {
+                      id: pending.id,
+                      name: pending.name,
+                      arguments: args,
+                    },
+                  };
+                  pendingToolCalls.delete(event.index);
+                }
               }
             } catch {
               // Ignore partial JSON parse errors
