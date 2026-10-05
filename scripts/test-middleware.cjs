@@ -122,7 +122,11 @@ async function runTests() {
   assert.equal(re.test('/api/users'), true);
   assert.equal(re.test('/api/users/123/settings'), true);
   assert.equal(re.test('/pages/home'), false);
-  console.log('  ✓ Path matching with wildcards');
+  const reLiteral = patternToRegExp('/blog/post.html');
+  assert.equal(reLiteral.test('/blog/post.html'), true);
+  assert.equal(reLiteral.test('/blog/postXhtml'), false);
+  console.log('  ✓ Path matching with wildcards and escaped metacharacters');
+
 
   // Test 2: Global middleware with { request, next }
   console.log('\n[Suite 2] Global Middleware');

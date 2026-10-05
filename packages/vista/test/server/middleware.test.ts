@@ -111,6 +111,19 @@ test('patternToRegExp correctly matches path patterns and wildcards', () => {
   assert.equal(re3.test('/other'), false);
 });
 
+test('patternToRegExp escapes literal regex metacharacters (#141)', () => {
+  const re = patternToRegExp('/blog/post.html');
+  assert.equal(re.test('/blog/post.html'), true);
+  assert.equal(re.test('/blog/post.html/'), true);
+  assert.equal(re.test('/blog/postXhtml'), false);
+  assert.equal(re.test('/blog/post1html'), false);
+
+  const reParam = patternToRegExp('/items/:id.json');
+  assert.equal(reParam.test('/items/123.json'), true);
+  assert.equal(reParam.test('/items/123Xjson'), false);
+});
+
+
 test('discoverGlobalMiddleware finds root and src middleware files', () => {
   clearMiddlewareCaches();
   const tmp = makeTempProject();

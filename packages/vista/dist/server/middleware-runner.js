@@ -154,13 +154,36 @@ function patternToRegExp(pattern) {
     //   /foo/:path*  → /foo(?:/(.*))?
     //   /foo/:bar    → /foo/[^/]+
     //   /foo/*       → /foo(?:/(.*))?
-    let re = pattern
-        .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
-        .replace(/:[^/]+\*/g, '(.*)') // bare :path*
-        .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
-        .replace(/\/\*/g, '(?:/(.*))?') // /*
-        .replace(/\*/g, '(.*)'); // bare *
-    return new RegExp(`^${re}/?$`);
+    // Literal regex metacharacters (e.g. '.', '+', etc.) must be escaped
+    // so they are not treated as unescaped wildcards (#141).
+    const placeholders = [];
+    const tokenRegex = /\/:[a-zA-Z0-9_-]+\*|:[a-zA-Z0-9_-]+\*|:[a-zA-Z0-9_-]+|\/\*|\*/g;
+    const tokenized = pattern.replace(tokenRegex, (match) => {
+        let replacement = '';
+        if (match.startsWith('/:')) {
+            replacement = '(?:/(.*))?';
+        }
+        else if (match.startsWith(':') && match.endsWith('*')) {
+            replacement = '(.*)';
+        }
+        else if (match.startsWith(':')) {
+            replacement = '[^/]+';
+        }
+        else if (match === '/*') {
+            replacement = '(?:/(.*))?';
+        }
+        else if (match === '*') {
+            replacement = '(.*)';
+        }
+        const id = `__VISTA_TOKEN_${placeholders.length}__`;
+        placeholders.push({ id, replacement });
+        return id;
+    });
+    let escaped = tokenized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const { id, replacement } of placeholders) {
+        escaped = escaped.replace(id, replacement);
+    }
+    return new RegExp(`^${escaped}/?$`);
 }
 function shouldRunMiddleware(middlewareModule, pathname, request) {
     const config = middlewareModule.config;
