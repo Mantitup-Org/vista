@@ -284,19 +284,24 @@ async function resolveStaticParams(
  * Expand a route pattern with params to get a concrete URL.
  * e.g., '/blog/:slug' + { slug: 'hello' } → '/blog/hello'
  */
-function expandPattern(pattern: string, params: Record<string, string | string[]>): string {
+export function expandPattern(pattern: string, params: Record<string, string | string[]>): string {
   let url = pattern;
 
-  for (const [key, value] of Object.entries(params)) {
+  // Sort keys by descending length to prevent shorter param names from colliding
+  // with longer names that share the same prefix (e.g. :id vs :idType) (#143)
+  const sortedEntries = Object.entries(params).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [key, value] of sortedEntries) {
     const param = Array.isArray(value) ? value.join('/') : value;
     // Handle catch-all :param* and optional catch-all :param*?
-    url = url.replace(new RegExp(`:${key}\\*\\??`), param);
-    // Handle regular :param
-    url = url.replace(`:${key}`, param);
+    url = url.replace(new RegExp(`:${key}\\*\\??(?![a-zA-Z0-9_])`, 'g'), param);
+    // Handle regular :param with token boundary check
+    url = url.replace(new RegExp(`:${key}(?![a-zA-Z0-9_])`, 'g'), param);
   }
 
   return url;
 }
+
 
 // ---------------------------------------------------------------------------
 // Page pre-rendering
