@@ -47,7 +47,7 @@ const IMAGE_ROUTE_STEMS = new Set(['opengraph-image', 'twitter-image']);
 const ROUTE_FILE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'] as const;
 const STATIC_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'] as const;
 
-class BodyLimitError extends Error {
+export class BodyLimitError extends Error {
   status = 413;
 
   constructor(limitBytes: number) {
@@ -56,7 +56,7 @@ class BodyLimitError extends Error {
   }
 }
 
-class BodyParseError extends Error {
+export class BodyParseError extends Error {
   status = 400;
 
   constructor(message: string) {
@@ -64,6 +64,7 @@ class BodyParseError extends Error {
     this.name = 'BodyParseError';
   }
 }
+
 
 type TypedRouteResult =
   | { kind: 'handled'; status: number; payload: unknown }
@@ -274,13 +275,27 @@ async function parseRequestBody(req: express.Request, bodySizeLimitBytes: number
   return raw;
 }
 
-async function sendFetchResponse(res: express.Response, response: Response): Promise<void> {
+export async function sendFetchResponse(res: express.Response, response: Response): Promise<void> {
+  const setCookies =
+    typeof (response.headers as any).getSetCookie === 'function'
+      ? (response.headers as any).getSetCookie()
+      : typeof (response.headers as any).raw === 'function'
+      ? (response.headers as any).raw()['set-cookie']
+      : response.headers.get('set-cookie');
+
+
   response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') return;
     res.setHeader(key, value);
   });
 
+  if (setCookies && (!Array.isArray(setCookies) || setCookies.length > 0)) {
+    res.setHeader('Set-Cookie', setCookies);
+  }
+
   const method = String((res as any).req?.method || '').toUpperCase();
   res.status(response.status);
+
 
   if (method === 'HEAD' || !response.body) {
     res.end();
@@ -769,12 +784,13 @@ export async function runLegacyApiRoute(options: {
       res.status(204).end();
       return;
     } catch (error) {
-      if (error instanceof BodyLimitError) {
+      if (error instanceof BodyLimitError || error instanceof BodyParseError) {
         res.status(error.status).json({ error: error.message });
         return;
       }
       throw error;
     }
+
   }
 
   // MetadataRoute + OG image conventions: default export returning data or Response.

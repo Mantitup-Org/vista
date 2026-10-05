@@ -50,6 +50,9 @@ class BodyParseError extends Error {
         this.name = 'BodyParseError';
     }
 }
+exports.BodyLimitError = BodyLimitError;
+exports.BodyParseError = BodyParseError;
+
 const DEFAULT_ROUTE_BODY_LIMIT_BYTES = 1024 * 1024;
 function isWebResponse(value) {
     return typeof Response !== 'undefined' && value instanceof Response;
@@ -220,11 +223,22 @@ async function parseRequestBody(req, bodySizeLimitBytes) {
     return raw;
 }
 async function sendFetchResponse(res, response) {
+    const setCookies = typeof response.headers?.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : typeof response.headers?.raw === 'function'
+            ? response.headers.raw()['set-cookie']
+            : response.headers?.get?.('set-cookie');
     response.headers.forEach((value, key) => {
+        if (key.toLowerCase() === 'set-cookie')
+            return;
         res.setHeader(key, value);
     });
+    if (setCookies && (!Array.isArray(setCookies) || setCookies.length > 0)) {
+        res.setHeader('Set-Cookie', setCookies);
+    }
     const method = String(res.req?.method || '').toUpperCase();
     res.status(response.status);
+
     if (method === 'HEAD' || !response.body) {
         res.end();
         return;
@@ -257,7 +271,9 @@ async function sendFetchResponse(res, response) {
     }
     res.end(body);
 }
+exports.sendFetchResponse = sendFetchResponse;
 function applyRuntimeTraceHeaders(res, segmentConfig, mode) {
+
     res.setHeader('X-Vista-Route-Runtime', segmentConfig.runtime);
     res.setHeader('X-Vista-Advanced-Runtime', mode);
 }
@@ -583,12 +599,13 @@ async function runLegacyApiRoute(options) {
             return;
         }
         catch (error) {
-            if (error instanceof BodyLimitError) {
+            if (error instanceof BodyLimitError || error instanceof BodyParseError) {
                 res.status(error.status).json({ error: error.message });
                 return;
             }
             throw error;
         }
+
     }
     // MetadataRoute + OG image conventions: default export returning data or Response.
     const metadataStem = getMetadataStemForRequest(requestPath);
