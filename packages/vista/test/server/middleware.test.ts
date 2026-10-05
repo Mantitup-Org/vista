@@ -111,6 +111,17 @@ test('patternToRegExp correctly matches path patterns and wildcards', () => {
   assert.equal(re3.test('/other'), false);
 });
 
+test('patternToRegExp treats path metacharacters as literals', () => {
+  // Issue #141: '.' must not act as a regex wildcard in matchers.
+  const html = patternToRegExp('/blog/post.html');
+  assert.equal(html.test('/blog/post.html'), true);
+  assert.equal(html.test('/blog/postXhtml'), false);
+
+  const version = patternToRegExp('/api/v1.0');
+  assert.equal(version.test('/api/v1.0'), true);
+  assert.equal(version.test('/api/v1X0'), false);
+});
+
 test('discoverGlobalMiddleware finds root and src middleware files', () => {
   clearMiddlewareCaches();
   const tmp = makeTempProject();

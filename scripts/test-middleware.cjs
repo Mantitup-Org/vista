@@ -124,6 +124,14 @@ async function runTests() {
   assert.equal(re.test('/pages/home'), false);
   console.log('  ✓ Path matching with wildcards');
 
+  const html = patternToRegExp('/blog/post.html');
+  assert.equal(html.test('/blog/post.html'), true);
+  assert.equal(html.test('/blog/postXhtml'), false);
+  const versioned = patternToRegExp('/api/v1.0');
+  assert.equal(versioned.test('/api/v1.0'), true);
+  assert.equal(versioned.test('/api/v1X0'), false);
+  console.log('  ✓ Literal metacharacters in matchers (issue #141)');
+
   // Test 2: Global middleware with { request, next }
   console.log('\n[Suite 2] Global Middleware');
   const tmp1 = makeTempProject();

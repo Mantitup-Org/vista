@@ -264,13 +264,21 @@ export function patternToRegExp(pattern: string): RegExp {
   //   /foo/:path*  → /foo(?:/(.*))?
   //   /foo/:bar    → /foo/[^/]+
   //   /foo/*       → /foo(?:/(.*))?
-  let re = pattern
-    .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
-    .replace(/:[^/]+\*/g, '(.*)') // bare :path*
-    .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
-    .replace(/\/\*/g, '(?:/(.*))?') // /*
-    .replace(/\*/g, '(.*)'); // bare *
-
+  // Stamp param/wildcard slots, escape literal metacharacters, then restore — #141.
+  const slots: string[] = [];
+  const stamp = (replacement: string) => {
+    const token = `\u0000${slots.length}\u0000`;
+    slots.push(replacement);
+    return token;
+  };
+  const stamped = pattern
+    .replace(/\/:[^/]+\*/g, () => stamp('(?:/(.*))?')) // /:path* (0 or more sub-paths)
+    .replace(/:[^/]+\*/g, () => stamp('(.*)')) // bare :path*
+    .replace(/:[^/]+/g, () => stamp('[^/]+')) // :param (single segment)
+    .replace(/\/\*/g, () => stamp('(?:/(.*))?')) // /*
+    .replace(/\*/g, () => stamp('(.*)')); // bare *
+  const escaped = stamped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = escaped.replace(/\u0000(\d+)\u0000/g, (_, index) => slots[Number(index)]!);
   return new RegExp(`^${re}/?$`);
 }
 
