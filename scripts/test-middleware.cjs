@@ -122,7 +122,16 @@ async function runTests() {
   assert.equal(re.test('/api/users'), true);
   assert.equal(re.test('/api/users/123/settings'), true);
   assert.equal(re.test('/pages/home'), false);
-  console.log('  ✓ Path matching with wildcards');
+
+  // Literal regex metacharacters (. and + etc.) must not act as wildcards (#141)
+  const reStaticExt = patternToRegExp('/blog/post.html');
+  assert.equal(reStaticExt.test('/blog/post.html'), true);
+  assert.equal(reStaticExt.test('/blog/postXhtml'), false);
+
+  const reVersion = patternToRegExp('/api/v1.0');
+  assert.equal(reVersion.test('/api/v1.0'), true);
+  assert.equal(reVersion.test('/api/v1X0'), false);
+  console.log('  ✓ Path matching with wildcards and literal metacharacters');
 
   // Test 2: Global middleware with { request, next }
   console.log('\n[Suite 2] Global Middleware');

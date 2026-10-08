@@ -264,12 +264,37 @@ export function patternToRegExp(pattern: string): RegExp {
   //   /foo/:path*  → /foo(?:/(.*))?
   //   /foo/:bar    → /foo/[^/]+
   //   /foo/*       → /foo(?:/(.*))?
-  let re = pattern
-    .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
-    .replace(/:[^/]+\*/g, '(.*)') // bare :path*
-    .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
-    .replace(/\/\*/g, '(?:/(.*))?') // /*
-    .replace(/\*/g, '(.*)'); // bare *
+  // Literal characters (such as '.' in /blog/post.html) must be escaped to prevent regex injection (#141)
+  const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tokenRegex = /(\/:[^/]+\*|:[^/]+\*|:[^/]+|\/\*|\*)/g;
+  let re = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(pattern)) !== null) {
+    const literal = pattern.slice(lastIndex, match.index);
+    if (literal) {
+      re += escapeRegex(literal);
+    }
+    const token = match[0];
+    if (token.startsWith('/:')) {
+      re += '(?:/(.*))?';
+    } else if (token.startsWith(':') && token.endsWith('*')) {
+      re += '(.*)';
+    } else if (token.startsWith(':')) {
+      re += '[^/]+';
+    } else if (token === '/*') {
+      re += '(?:/(.*))?';
+    } else if (token === '*') {
+      re += '(.*)';
+    }
+    lastIndex = tokenRegex.lastIndex;
+  }
+
+  const remainder = pattern.slice(lastIndex);
+  if (remainder) {
+    re += escapeRegex(remainder);
+  }
 
   return new RegExp(`^${re}/?$`);
 }

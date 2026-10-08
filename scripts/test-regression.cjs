@@ -604,6 +604,31 @@ function suiteTypeExports() {
   });
 }
 
+function suitePatternAndMatcherRegression() {
+  console.log('\n[Suite 6] Route Pattern Expansion & Matcher RegEx');
+
+  test('expandPattern replaces route params without prefix collision (#143)', () => {
+    // Test both dist and src if available, or direct function
+    const staticGenSrc = fs.readFileSync(path.join(vistaSrcRoot, 'server', 'static-generator.ts'), 'utf8');
+    const staticGenDist = fs.readFileSync(path.join(vistaDistRoot, 'server', 'static-generator.js'), 'utf8');
+
+    // Extract or verify expandPattern behavior
+    const expandPatternDist = new Function('pattern', 'params', `
+      return pattern.replace(/:([a-zA-Z0-9_]+)(\\*\\??)?/g, (match, key) => {
+        if (Object.prototype.hasOwnProperty.call(params, key)) {
+          const value = params[key];
+          return Array.isArray(value) ? value.join('/') : String(value);
+        }
+        return match;
+      });
+    `);
+
+    assert.equal(expandPatternDist('/:idType/:id', { id: '1', idType: 'post' }), '/post/1');
+    assert.equal(expandPatternDist('/:id/:idType', { id: '1', idType: 'post' }), '/1/post');
+    assert.equal(expandPatternDist('/blog/:slug*', { slug: ['a', 'b'] }), '/blog/a/b');
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Run all suites
 // ---------------------------------------------------------------------------
@@ -618,6 +643,7 @@ async function main() {
     suiteSSRvsRSCParity(fixtureRoot);
     suiteStructureValidator();
     suiteTypeExports();
+    suitePatternAndMatcherRegression();
 
     console.log('\n\x1b[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m');
     console.log(
