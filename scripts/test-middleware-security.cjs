@@ -179,6 +179,53 @@ async function main() {
     fs.rmSync(tmp2, { recursive: true, force: true });
   }
 
+  const { cors, chain } = require(
+    path.join(vistaSrc, 'server', 'middleware-security.ts')
+  );
+
+  // Test Issue #137: cors wildcard with credentials
+  const corsHandler = cors({ origin: '*', credentials: true });
+  const corsReqWithOrigin = new Request('http://localhost:3000/api/data', {
+    headers: { origin: 'https://app.example.com' },
+  });
+  const corsHeaders1 = corsHandler(corsReqWithOrigin);
+  assert.equal(corsHeaders1.get('Access-Control-Allow-Origin'), 'https://app.example.com');
+  assert.equal(corsHeaders1.get('Access-Control-Allow-Credentials'), 'true');
+  assert.equal(corsHeaders1.get('Vary'), 'Origin');
+
+  const corsReqNoOrigin = new Request('http://localhost:3000/api/data');
+  const corsHeaders2 = corsHandler(corsReqNoOrigin);
+  assert.equal(corsHeaders2.get('Access-Control-Allow-Origin'), null);
+  assert.equal(corsHeaders2.get('Access-Control-Allow-Credentials'), 'true');
+
+  const corsStandardWildcard = cors({ origin: '*', credentials: false });
+  const corsHeaders3 = corsStandardWildcard(corsReqWithOrigin);
+  assert.equal(corsHeaders3.get('Access-Control-Allow-Origin'), '*');
+  assert.equal(corsHeaders3.get('Access-Control-Allow-Credentials'), null);
+
+  // Test Issue #139: chain() with onion pattern (await ctx.next() without returning)
+  let mw1Before = false;
+  let mw1After = false;
+  let mw2Executed = false;
+  const chained = chain([
+    async (ctx) => {
+      mw1Before = true;
+      await ctx.next();
+      mw1After = true;
+      // does not return ctx.next() result, returns undefined
+    },
+    async () => {
+      mw2Executed = true;
+      return new Response('from mw2');
+    },
+  ]);
+  const chainRes = await chained({ request: new Request('http://localhost:3000/') });
+  assert.equal(mw1Before, true);
+  assert.equal(mw2Executed, true);
+  assert.equal(mw1After, true);
+  assert.equal(chainRes instanceof Response, true);
+  assert.equal(await chainRes.text(), 'from mw2');
+
   console.log('[test:middleware-security] ALL PASSED');
 }
 

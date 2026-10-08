@@ -110,7 +110,15 @@ export function cors(options: {
     const headers = new Headers();
     const requestOrigin = request.headers.get('origin');
     if (origin === '*') {
-      headers.set('Access-Control-Allow-Origin', '*');
+      if (options.credentials) {
+        // When credentials: true, wildcard '*' is invalid per CORS spec; reflect caller Origin and add Vary: Origin (#137)
+        if (requestOrigin) {
+          headers.set('Access-Control-Allow-Origin', requestOrigin);
+          headers.set('Vary', 'Origin');
+        }
+      } else {
+        headers.set('Access-Control-Allow-Origin', '*');
+      }
     } else if (Array.isArray(origin)) {
       if (requestOrigin && origin.includes(requestOrigin)) {
         headers.set('Access-Control-Allow-Origin', requestOrigin);
@@ -118,6 +126,9 @@ export function cors(options: {
       }
     } else if (origin) {
       headers.set('Access-Control-Allow-Origin', origin);
+      if (origin !== '*') {
+        headers.set('Vary', 'Origin');
+      }
     }
     headers.set('Access-Control-Allow-Methods', methods);
     headers.set('Access-Control-Allow-Headers', allowHeaders);
@@ -188,12 +199,24 @@ export function chain(middlewares: MiddlewareLike[]): MiddlewareLike {
       index = current;
       const fn = middlewares[current];
       if (!fn) {
-        return originalNext();
+        return originalNext ? originalNext() : (undefined as any);
       }
-      const next = async () => dispatch(current + 1);
+      let called = false;
+      let nextResult: any;
+      const next = async () => {
+        if (called) {
+          throw new Error('next() called multiple times');
+        }
+        called = true;
+        nextResult = await dispatch(current + 1);
+        return nextResult;
+      };
       const result = await fn({ ...context, next });
       if (result instanceof Response) {
         return result;
+      }
+      if (called) {
+        return nextResult;
       }
       return next();
     };
@@ -201,3 +224,4 @@ export function chain(middlewares: MiddlewareLike[]): MiddlewareLike {
     return dispatch(0);
   };
 }
+
