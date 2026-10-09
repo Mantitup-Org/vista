@@ -123,7 +123,9 @@ function isAllowedRemoteUrl(url, config) {
         if (config.remotePatterns.length > 0) {
             for (const pattern of config.remotePatterns) {
                 const hostMatch = pattern.hostname
-                    ? new RegExp(`^${pattern.hostname.replace(/\*/g, '.*')}$`).test(parsed.hostname)
+                    ? new RegExp(`^${pattern.hostname
+                        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+                        .replace(/\*/g, '.*')}$`).test(parsed.hostname)
                     : true;
                 const protocolMatch = pattern.protocol ? parsed.protocol === `${pattern.protocol}:` : true;
                 const portMatch = pattern.port ? parsed.port === pattern.port : true;
