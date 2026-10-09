@@ -290,9 +290,9 @@ function expandPattern(pattern: string, params: Record<string, string | string[]
   for (const [key, value] of Object.entries(params)) {
     const param = Array.isArray(value) ? value.join('/') : value;
     // Handle catch-all :param* and optional catch-all :param*?
-    url = url.replace(new RegExp(`:${key}\\*\\??`), param);
-    // Handle regular :param
-    url = url.replace(`:${key}`, param);
+    url = url.replace(new RegExp(`:${key}\\*\\??`, 'g'), param);
+    // Handle regular :param, ensuring we don't match prefixes of other params (like :id matching :idType)
+    url = url.replace(new RegExp(`:${key}(?=[^a-zA-Z0-9_]|$)`, 'g'), param);
   }
 
   return url;
