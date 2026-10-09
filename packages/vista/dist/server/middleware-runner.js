@@ -154,12 +154,16 @@ function patternToRegExp(pattern) {
     //   /foo/:path*  → /foo(?:/(.*))?
     //   /foo/:bar    → /foo/[^/]+
     //   /foo/*       → /foo(?:/(.*))?
-    let re = pattern
-        .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
-        .replace(/:[^/]+\*/g, '(.*)') // bare :path*
-        .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
-        .replace(/\/\*/g, '(?:/(.*))?') // /*
-        .replace(/\*/g, '(.*)'); // bare *
+    const re = pattern.replace(/(\/:[^/]+\*)|(:[^/]+\*)|(:[^/]+)|(\/\*)|(\*)|([^*:]+)|(.)/g, (match, slashParamStar, paramStar, param, slashStar, star, literal, anyChar) => {
+        if (slashParamStar) return '(?:/(.*))?';
+        if (paramStar) return '(.*)';
+        if (param) return '[^/]+';
+        if (slashStar) return '(?:/(.*))?';
+        if (star) return '(.*)';
+        if (literal) return literal.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        if (anyChar) return anyChar.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+        return '';
+    });
     return new RegExp(`^${re}/?$`);
 }
 function shouldRunMiddleware(middlewareModule, pathname, request) {
