@@ -17,17 +17,19 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
    */
   toDataStreamResponse(init?: ResponseInit): Response {
     const encoder = new TextEncoder();
-    const source = this.source;
+    const iterator = this.source[Symbol.asyncIterator]();
 
     const stream = new ReadableStream({
-      async start(controller) {
+      async pull(controller) {
         try {
-          for await (const chunk of source) {
-            const line = `data: ${JSON.stringify(chunk)}\n\n`;
-            controller.enqueue(encoder.encode(line));
+          const { value, done } = await iterator.next();
+          if (done) {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
           }
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
+          const line = `data: ${JSON.stringify(value)}\n\n`;
+          controller.enqueue(encoder.encode(line));
         } catch (error: any) {
           const errChunk: StreamChunk = {
             type: 'error',
@@ -37,6 +39,11 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
           controller.close();
         }
       },
+      async cancel(reason) {
+        if (iterator.return) {
+          await iterator.return(reason);
+        }
+      }
     });
 
     const headers = new Headers(init?.headers);
@@ -56,21 +63,31 @@ export class AgentStream implements AsyncIterable<StreamChunk> {
    */
   toTextStreamResponse(init?: ResponseInit): Response {
     const encoder = new TextEncoder();
-    const source = this.source;
+    const iterator = this.source[Symbol.asyncIterator]();
 
     const stream = new ReadableStream({
-      async start(controller) {
+      async pull(controller) {
         try {
-          for await (const chunk of source) {
-            if (chunk.type === 'text-delta' && chunk.textDelta) {
-              controller.enqueue(encoder.encode(chunk.textDelta));
+          while (true) {
+            const { value, done } = await iterator.next();
+            if (done) {
+              controller.close();
+              return;
+            }
+            if (value.type === 'text-delta' && value.textDelta) {
+              controller.enqueue(encoder.encode(value.textDelta));
+              return;
             }
           }
-          controller.close();
         } catch (error) {
           controller.error(error);
         }
       },
+      async cancel(reason) {
+        if (iterator.return) {
+          await iterator.return(reason);
+        }
+      }
     });
 
     const headers = new Headers(init?.headers);
