@@ -122,10 +122,17 @@ function decodeSuperJson(value: unknown): unknown {
 }
 
 function cloneJson(value: unknown): unknown {
+  if (value === undefined) {
+    return undefined;
+  }
   return JSON.parse(JSON.stringify(value));
 }
 
 export function serializeWithMode(value: unknown, mode: StackSerializationMode = 'json'): unknown {
+  if (value === undefined) {
+    return undefined;
+  }
+
   if (mode === 'superjson') {
     return encodeSuperJson(value);
   }

@@ -92,9 +92,15 @@ function decodeSuperJson(value) {
     return value;
 }
 function cloneJson(value) {
+    if (value === undefined) {
+        return undefined;
+    }
     return JSON.parse(JSON.stringify(value));
 }
 function serializeWithMode(value, mode = 'json') {
+    if (value === undefined) {
+        return undefined;
+    }
     if (mode === 'superjson') {
         return encodeSuperJson(value);
     }
