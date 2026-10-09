@@ -69,9 +69,11 @@ export function ThemeProvider({
   defaultTheme = 'system',
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<ThemeMode>(defaultTheme);
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => getSystemTheme());
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setSystemTheme(getSystemTheme());
     const nextTheme = sanitizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY), defaultTheme);
     setThemeState(nextTheme);
     applyTheme(nextTheme);
@@ -90,6 +92,7 @@ export function ThemeProvider({
     const media = window.matchMedia(MEDIA_QUERY);
 
     const handleMediaChange = () => {
+      setSystemTheme(getSystemTheme());
       const currentTheme = sanitizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY), defaultTheme);
       if (currentTheme === 'system') {
         applyTheme('system');
@@ -132,15 +135,17 @@ export function ThemeProvider({
     });
   }, []);
 
+  const resolvedTheme = theme === 'system' ? systemTheme : theme;
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme,
-      resolvedTheme: resolveTheme(theme),
+      resolvedTheme,
       setTheme,
       cycleTheme,
       mounted,
     }),
-    [cycleTheme, mounted, setTheme, theme]
+    [cycleTheme, mounted, setTheme, theme, resolvedTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
