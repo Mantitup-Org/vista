@@ -23,4 +23,5 @@ export function Image(props: EnhancedImageProps): React.ReactElement {
   );
 }
 
+export { getImgProps, getImgProps as getImageProps, type ImageProps } from './get-img-props';
 export default Image;

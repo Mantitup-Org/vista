@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.default = exports.Image = exports.getImageProps = exports.getImgProps = void 0;
 exports.Image = Image;
 const jsx_runtime_1 = require("react/jsx-runtime");
 const get_img_props_1 = require("./get-img-props");
+exports.getImgProps = get_img_props_1.getImgProps;
+exports.getImageProps = get_img_props_1.getImageProps;
 const image_config_1 = require("./image-config");
 const image_loader_1 = require("./image-loader");
 /**
