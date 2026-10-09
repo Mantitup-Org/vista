@@ -107,7 +107,13 @@ function cors(options = {}) {
         const headers = new Headers();
         const requestOrigin = request.headers.get('origin');
         if (origin === '*') {
-            headers.set('Access-Control-Allow-Origin', '*');
+            if (options.credentials && requestOrigin) {
+                headers.set('Access-Control-Allow-Origin', requestOrigin);
+                headers.set('Vary', 'Origin');
+            }
+            else {
+                headers.set('Access-Control-Allow-Origin', '*');
+            }
         }
         else if (Array.isArray(origin)) {
             if (requestOrigin && origin.includes(requestOrigin)) {
