@@ -756,8 +756,10 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
             metadata // parent metadata
           );
           metadata = deepMergeMetadata(metadata, dynamicMeta);
-        } catch (e) {
-          console.error('Error in generateMetadata:', e);
+        } catch (e: any) {
+          if (!e?.message?.includes('generateMetadata is on the client')) {
+            console.error('Error in generateMetadata:', e);
+          }
         }
       }
 

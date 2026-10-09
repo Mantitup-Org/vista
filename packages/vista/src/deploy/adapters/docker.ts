@@ -4,7 +4,7 @@ import path from 'path';
 import { isCliAvailable, runCliCommand } from '../cli-runner';
 import { runStandalonePreflight } from '../preflight';
 import type { DeployAdapter } from '../types';
-import { writeFileIfAllowed } from '../utils';
+import { getEmitPath, writeFileIfAllowed } from '../utils';
 
 export const DOCKERFILE_TEMPLATE = `# syntax=docker/dockerfile:1
 
@@ -48,8 +48,8 @@ export const dockerAdapter: DeployAdapter = {
   },
 
   async emit(ctx) {
-    const dockerfilePath = path.join(ctx.cwd, 'Dockerfile');
-    const dockerignorePath = path.join(ctx.cwd, '.dockerignore');
+    const dockerfilePath = getEmitPath(ctx, 'Dockerfile');
+    const dockerignorePath = getEmitPath(ctx, '.dockerignore');
 
     writeFileIfAllowed(dockerfilePath, DOCKERFILE_TEMPLATE, ctx.force);
     writeFileIfAllowed(dockerignorePath, DOCKERIGNORE_TEMPLATE, ctx.force);

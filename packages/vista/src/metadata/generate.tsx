@@ -45,13 +45,7 @@ function resolveTitle(
     return title.absolute;
   }
 
-  const baseTitle = title.default ?? '';
-  const activeTemplate = title.template || template;
-  if (activeTemplate && baseTitle) {
-    return activeTemplate.replace('%s', baseTitle);
-  }
-
-  return baseTitle;
+  return title.default ?? null;
 }
 
 function resolveUrl(

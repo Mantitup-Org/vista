@@ -4,7 +4,7 @@ import path from 'path';
 import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runner';
 import { runStandalonePreflight } from '../preflight';
 import type { DeployAdapter, DeployContext, DeployResult } from '../types';
-import { writeFileIfAllowed } from '../utils';
+import { getEmitPath, writeFileIfAllowed } from '../utils';
 
 const RENDER_YAML_TEMPLATE = `services:
   - type: web
@@ -34,7 +34,7 @@ export const renderAdapter: DeployAdapter = {
   },
 
   async emit(ctx) {
-    const renderYamlPath = path.join(ctx.cwd, 'render.yaml');
+    const renderYamlPath = getEmitPath(ctx, 'render.yaml');
     const result = writeFileIfAllowed(renderYamlPath, RENDER_YAML_TEMPLATE, ctx.force);
     const artifactPaths = [path.join(ctx.vistaDir, 'standalone', 'server.js')];
     if (result.written || result.skipped) {

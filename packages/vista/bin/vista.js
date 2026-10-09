@@ -29,12 +29,41 @@ function normalizeEngineVariant(raw) {
   return null;
 }
 
+function loadEnvFiles(cwd, nodeEnv) {
+  const envFiles = [
+    `.env.${nodeEnv}.local`,
+    `.env.local`,
+    `.env.${nodeEnv}`,
+    `.env`
+  ];
+  for (const file of envFiles) {
+    const envPath = path.join(cwd, file);
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      content.split('\n').forEach(line => {
+        if (line.trim().startsWith('#')) return;
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+        if (match) {
+          const key = match[1];
+          let value = match[2] || '';
+          if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1).replace(/\\n/g, '\n');
+          else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+          if (process.env[key] === undefined) {
+            process.env[key] = value;
+          }
+        }
+      });
+    }
+  }
+}
+
 function forceRuntimeEnv(mode) {
   if (mode === 'development') {
     process.env.NODE_ENV = 'development';
-    return;
+  } else {
+    process.env.NODE_ENV = 'production';
   }
-  process.env.NODE_ENV = 'production';
+  loadEnvFiles(process.cwd(), process.env.NODE_ENV);
 }
 
 if (command === 'g' || command === 'generate') {

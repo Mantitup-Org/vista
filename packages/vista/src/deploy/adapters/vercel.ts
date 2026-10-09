@@ -9,6 +9,7 @@ import {
   STATIC_HOST_ROUTE_RULES,
   copyStaticHostAssets,
   ensureDir,
+  getEmitPath,
   writeFileIfAllowed,
 } from '../utils';
 
@@ -76,7 +77,7 @@ export function writeVercelBuildOutput(options: BuildHookOptions & { force?: boo
 }
 
 function writeVercelJson(ctx: DeployContext, fullRuntime: boolean): string | null {
-  const targetFile = path.join(ctx.cwd, 'vercel.json');
+  const targetFile = getEmitPath(ctx, 'vercel.json');
   const payload = fullRuntime
     ? {
         version: 2,
