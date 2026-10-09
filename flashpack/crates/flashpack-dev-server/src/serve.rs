@@ -400,9 +400,9 @@ fn handle_client(mut stream: TcpStream, shared: &Shared) -> Result<()> {
         );
     }
 
-    let html = index_html(shared, path);
-    log_page(method, path, 200, started.elapsed());
-    write_response(&mut stream, 200, "text/html; charset=utf-8", html.as_bytes(), method == "HEAD")
+    let (status, html) = index_html(shared, path);
+    log_page(method, path, status, started.elapsed());
+    write_response(&mut stream, status, "text/html; charset=utf-8", html.as_bytes(), method == "HEAD")
 }
 
 fn header_value(request: &str, name: &str) -> Option<String> {
@@ -541,16 +541,23 @@ fn status_json(shared: &Shared) -> String {
     )
 }
 
-fn index_html(shared: &Shared, request_path: &str) -> String {
+fn index_html(shared: &Shared, request_path: &str) -> (u16, String) {
     let mut errors = shared
         .errors
         .lock()
         .ok()
         .map(|items| items.join("\n"))
         .unwrap_or_default();
+    let mut status = 200;
     let markup = match render_ssr(shared, request_path) {
-        Ok(html) => html,
+        Ok(html) => {
+            if !errors.is_empty() {
+                status = 500;
+            }
+            html
+        }
         Err(ssr_error) => {
+            status = 500;
             if !errors.is_empty() {
                 errors.push('\n');
             }
@@ -560,7 +567,7 @@ fn index_html(shared: &Shared, request_path: &str) -> String {
         }
     };
     let generation = shared.generation.load(Ordering::Relaxed);
-    app_document(&errors, &markup, generation, request_path)
+    (status, app_document(&errors, &markup, generation, request_path))
 }
 
 fn write_ssr_assets(cwd: &Path) -> Result<()> {
