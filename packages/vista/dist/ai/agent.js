@@ -81,127 +81,134 @@ class Agent {
         let currentStep = 1;
         let finalAnswer = '';
         let finishReason = 'stop';
-        while (currentStep <= maxSteps) {
-            if (abortSignal?.aborted) {
-                throw new Error('Agent execution aborted');
-            }
-            telemetry.recordStepStart(currentStep);
-            const stepResult = await this.model.generateText({
-                messages: conversationHistory,
-                systemPrompt,
-                tools: toolsList.length > 0 ? toolsList : undefined,
-                temperature: this.config.temperature,
-                maxTokens: this.config.maxTokens,
-                abortSignal,
-            });
-            const stepRecord = {
-                stepNumber: currentStep,
-                prompt: [...conversationHistory],
-                text: stepResult.text,
-                toolCalls: stepResult.toolCalls,
-                usage: stepResult.usage,
-            };
-            // 1. If no tool calls requested, we have reached the final answer
-            if (!stepResult.toolCalls || stepResult.toolCalls.length === 0) {
-                finalAnswer = stepResult.text;
-                finishReason = stepResult.finishReason || 'stop';
+        try {
+            while (currentStep <= maxSteps) {
+                if (abortSignal?.aborted) {
+                    throw new Error('Agent execution aborted');
+                }
+                telemetry.recordStepStart(currentStep);
+                const stepResult = await this.model.generateText({
+                    messages: conversationHistory,
+                    systemPrompt,
+                    tools: toolsList.length > 0 ? toolsList : undefined,
+                    temperature: this.config.temperature,
+                    maxTokens: this.config.maxTokens,
+                    abortSignal,
+                });
+                const stepRecord = {
+                    stepNumber: currentStep,
+                    prompt: [...conversationHistory],
+                    text: stepResult.text,
+                    toolCalls: stepResult.toolCalls,
+                    usage: stepResult.usage,
+                };
+                // 1. If no tool calls requested, we have reached the final answer
+                if (!stepResult.toolCalls || stepResult.toolCalls.length === 0) {
+                    finalAnswer = stepResult.text;
+                    finishReason = stepResult.finishReason || 'stop';
+                    conversationHistory.push({
+                        role: 'assistant',
+                        content: finalAnswer,
+                    });
+                    telemetry.recordStepFinish(stepRecord);
+                    steps.push(stepRecord);
+                    if (this.config.onStepFinish) {
+                        await this.config.onStepFinish(stepRecord);
+                    }
+                    break;
+                }
+                // 2. Model requested tool calls
                 conversationHistory.push({
                     role: 'assistant',
-                    content: finalAnswer,
+                    content: stepResult.text,
+                    toolCalls: stepResult.toolCalls,
                 });
+                const toolResults = [];
+                for (const call of stepResult.toolCalls) {
+                    telemetry.recordToolCall(call);
+                    const registeredTool = this.toolsMap.get(call.name);
+                    if (!registeredTool) {
+                        const errRes = {
+                            toolCallId: call.id,
+                            name: call.name,
+                            result: `Error: Tool "${call.name}" is not registered on agent "${this.name}".`,
+                            isError: true,
+                        };
+                        toolResults.push(errRes);
+                        telemetry.recordToolResult(errRes);
+                        conversationHistory.push({
+                            role: 'tool',
+                            name: call.name,
+                            toolCallId: call.id,
+                            content: errRes.result,
+                        });
+                        continue;
+                    }
+                    const toolCtx = {
+                        step: currentStep,
+                        messages: conversationHistory,
+                        agentName: this.name,
+                        abortSignal,
+                    };
+                    try {
+                        const args = typeof call.arguments === 'object' && call.arguments !== null
+                            ? call.arguments
+                            : typeof call.arguments === 'string'
+                                ? JSON.parse(call.arguments || '{}')
+                                : {};
+                        const rawOutput = await registeredTool.execute(args, toolCtx);
+                        const serializedOutput = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
+                        const successRes = {
+                            toolCallId: call.id,
+                            name: call.name,
+                            result: rawOutput,
+                        };
+                        toolResults.push(successRes);
+                        telemetry.recordToolResult(successRes);
+                        conversationHistory.push({
+                            role: 'tool',
+                            name: call.name,
+                            toolCallId: call.id,
+                            content: serializedOutput,
+                        });
+                    }
+                    catch (toolError) {
+                        const errMessage = toolError?.message || 'Tool execution failed';
+                        const failureRes = {
+                            toolCallId: call.id,
+                            name: call.name,
+                            result: `Error executing ${call.name}: ${errMessage}`,
+                            isError: true,
+                        };
+                        toolResults.push(failureRes);
+                        telemetry.recordToolResult(failureRes);
+                        conversationHistory.push({
+                            role: 'tool',
+                            name: call.name,
+                            toolCallId: call.id,
+                            content: failureRes.result,
+                        });
+                    }
+                }
+                stepRecord.toolResults = toolResults;
                 telemetry.recordStepFinish(stepRecord);
                 steps.push(stepRecord);
                 if (this.config.onStepFinish) {
                     await this.config.onStepFinish(stepRecord);
                 }
-                break;
-            }
-            // 2. Model requested tool calls
-            conversationHistory.push({
-                role: 'assistant',
-                content: stepResult.text,
-                toolCalls: stepResult.toolCalls,
-            });
-            const toolResults = [];
-            for (const call of stepResult.toolCalls) {
-                telemetry.recordToolCall(call);
-                const registeredTool = this.toolsMap.get(call.name);
-                if (!registeredTool) {
-                    const errRes = {
-                        toolCallId: call.id,
-                        name: call.name,
-                        result: `Error: Tool "${call.name}" is not registered on agent "${this.name}".`,
-                        isError: true,
-                    };
-                    toolResults.push(errRes);
-                    telemetry.recordToolResult(errRes);
-                    conversationHistory.push({
-                        role: 'tool',
-                        name: call.name,
-                        toolCallId: call.id,
-                        content: errRes.result,
-                    });
-                    continue;
-                }
-                const toolCtx = {
-                    step: currentStep,
-                    messages: conversationHistory,
-                    agentName: this.name,
-                    abortSignal,
-                };
-                try {
-                    const args = typeof call.arguments === 'object' && call.arguments !== null
-                        ? call.arguments
-                        : typeof call.arguments === 'string'
-                            ? JSON.parse(call.arguments || '{}')
-                            : {};
-                    const rawOutput = await registeredTool.execute(args, toolCtx);
-                    const serializedOutput = typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput);
-                    const successRes = {
-                        toolCallId: call.id,
-                        name: call.name,
-                        result: rawOutput,
-                    };
-                    toolResults.push(successRes);
-                    telemetry.recordToolResult(successRes);
-                    conversationHistory.push({
-                        role: 'tool',
-                        name: call.name,
-                        toolCallId: call.id,
-                        content: serializedOutput,
-                    });
-                }
-                catch (toolError) {
-                    const errMessage = toolError?.message || 'Tool execution failed';
-                    const failureRes = {
-                        toolCallId: call.id,
-                        name: call.name,
-                        result: `Error executing ${call.name}: ${errMessage}`,
-                        isError: true,
-                    };
-                    toolResults.push(failureRes);
-                    telemetry.recordToolResult(failureRes);
-                    conversationHistory.push({
-                        role: 'tool',
-                        name: call.name,
-                        toolCallId: call.id,
-                        content: failureRes.result,
-                    });
+                currentStep++;
+                if (currentStep > maxSteps) {
+                    finishReason = 'length';
+                    finalAnswer =
+                        stepResult.text ||
+                            `Agent reached maximum step limit (${maxSteps}) before arriving at final answer.`;
                 }
             }
-            stepRecord.toolResults = toolResults;
-            telemetry.recordStepFinish(stepRecord);
-            steps.push(stepRecord);
-            if (this.config.onStepFinish) {
-                await this.config.onStepFinish(stepRecord);
-            }
-            currentStep++;
-            if (currentStep > maxSteps) {
-                finishReason = 'length';
-                finalAnswer =
-                    stepResult.text ||
-                        `Agent reached maximum step limit (${maxSteps}) before arriving at final answer.`;
-            }
+        }
+        catch (err) {
+            const errorObj = err instanceof Error ? err : new Error(String(err));
+            telemetry.recordError(errorObj);
+            throw errorObj;
         }
         // Save updated memory if configured
         if (this.memory && sessionId) {
