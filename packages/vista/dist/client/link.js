@@ -140,9 +140,11 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
     // Check if link is active (current route)
     (0, react_1.useEffect)(() => {
         if (typeof window !== 'undefined') {
+            const currentClean = (pathname || '').split(/[?#]/)[0];
+            const targetClean = targetPath.split(/[?#]/)[0];
             // Exact match or starts-with for nested routes
-            const exact = pathname === targetPath;
-            const partial = targetPath !== '/' && pathname.startsWith(targetPath + '/');
+            const exact = currentClean === targetClean;
+            const partial = targetClean !== '/' && currentClean.startsWith(targetClean + '/');
             setIsActive(exact || partial);
         }
     }, [targetPath, pathname]);
@@ -215,12 +217,21 @@ exports.Link = react_1.default.forwardRef(({ href, as, replace, scroll = true, s
             return; // only left-click
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
             return; // modifier = new tab
-        if (target === '_blank')
-            return; // explicit new tab
+        if (target && target !== '_self')
+            return; // frame targets / new tab
+        if (props.download !== undefined && props.download !== false)
+            return; // native download
         if (!href)
             return;
         if (!internal)
             return; // external / mailto / tel
+        const targetPathname = targetPath.split(/[?#]/)[0];
+        const currentPathname = (pathname || '').split(/[?#]/)[0];
+        const hasHash = targetPath.includes('#');
+        // Same-page hash navigation: bypass router and let browser handle smooth scroll
+        if (hasHash && targetPathname === currentPathname) {
+            return;
+        }
         if (!rscRouter && !legacyRouter)
             return; // No router provider -> allow native navigation
         e.preventDefault();
@@ -280,7 +291,9 @@ exports.useLinkStatus = useLinkStatus;
  */
 const useIsActive = (path) => {
     const pathname = (0, router_1.usePathname)();
-    return pathname === path;
+    const currentClean = (pathname || '').split(/[?#]/)[0];
+    const targetClean = (path || '').split(/[?#]/)[0];
+    return currentClean === targetClean;
 };
 exports.useIsActive = useIsActive;
 exports.default = exports.Link;
