@@ -171,12 +171,16 @@ function chain(middlewares) {
             if (!fn) {
                 return originalNext();
             }
-            const next = async () => dispatch(current + 1);
+            let nextPromise;
+            const next = async () => {
+                nextPromise = dispatch(current + 1);
+                return nextPromise;
+            };
             const result = await fn({ ...context, next });
             if (result instanceof Response) {
                 return result;
             }
-            return next();
+            return nextPromise ?? next();
         };
         return dispatch(0);
     };

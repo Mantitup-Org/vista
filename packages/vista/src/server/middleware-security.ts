@@ -190,12 +190,16 @@ export function chain(middlewares: MiddlewareLike[]): MiddlewareLike {
       if (!fn) {
         return originalNext();
       }
-      const next = async () => dispatch(current + 1);
+      let nextPromise: Promise<Response> | undefined;
+      const next = async () => {
+        nextPromise = dispatch(current + 1);
+        return nextPromise;
+      };
       const result = await fn({ ...context, next });
       if (result instanceof Response) {
         return result;
       }
-      return next();
+      return nextPromise ?? next();
     };
 
     return dispatch(0);
