@@ -51,7 +51,12 @@ function encodeSuperJson(value) {
     if (isPlainObject(value)) {
         const encoded = {};
         for (const [key, entry] of Object.entries(value)) {
-            encoded[key] = encodeSuperJson(entry);
+            Object.defineProperty(encoded, key, {
+                value: encodeSuperJson(entry),
+                enumerable: true,
+                configurable: true,
+                writable: true,
+            });
         }
         return encoded;
     }
@@ -85,7 +90,12 @@ function decodeSuperJson(value) {
     if (isPlainObject(value)) {
         const decoded = {};
         for (const [key, entry] of Object.entries(value)) {
-            decoded[key] = decodeSuperJson(entry);
+            Object.defineProperty(decoded, key, {
+                value: decodeSuperJson(entry),
+                enumerable: true,
+                configurable: true,
+                writable: true,
+            });
         }
         return decoded;
     }
