@@ -245,7 +245,7 @@ function createImageHandler(cwd, isDev) {
     return async function handleImageRequest(req, res) {
         try {
             const url = req.query.url;
-            const width = parseInt(req.query.w, 10) || 0;
+            let width = parseInt(req.query.w, 10) || 0;
             const quality = parseInt(req.query.q, 10) || 75;
             if (!url) {
                 res.status(400).send('Missing "url" parameter');
@@ -264,6 +264,7 @@ function createImageHandler(cwd, isDev) {
                 if (Math.abs(width - nearest) / nearest > 0.1) {
                     // Not a valid size — use nearest
                     req.query.w = String(nearest);
+                    width = nearest;
                 }
             }
             // Determine accepted output formats from Accept header
