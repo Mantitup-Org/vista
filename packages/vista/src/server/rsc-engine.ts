@@ -608,7 +608,11 @@ async function createRenderableRouteModuleElement(
   }
 
   if (options.evaluateMetadata && typeof RouteModule.generateMetadata === 'function') {
-    await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
+    try {
+      await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
+    } catch (e: any) {
+      if (!e?.message?.includes('generateMetadata is on the client')) throw e;
+    }
   }
 
   const routeProps =
@@ -806,8 +810,12 @@ async function createRouteElement(
     metadata = deepMergeMetadata(metadata, PageModule.metadata);
   }
   if (typeof PageModule.generateMetadata === 'function') {
-    const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-    metadata = deepMergeMetadata(metadata, dynamicMeta);
+    try {
+      const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+      metadata = deepMergeMetadata(metadata, dynamicMeta);
+    } catch (e: any) {
+      if (!e?.message?.includes('generateMetadata is on the client')) throw e;
+    }
   }
 
   const element = await renderAppSubtreeElement({
@@ -2038,11 +2046,15 @@ export function startRSCServer(options: RSCEngineOptions = {}): express.Express 
             const searchParams = Object.fromEntries(
               new URLSearchParams(req.query as any).entries()
             );
-            const dynamicMeta = await PageModule.generateMetadata(
-              { params, searchParams },
-              metadata
-            );
-            metadata = deepMergeMetadata(metadata, dynamicMeta);
+            try {
+              const dynamicMeta = await PageModule.generateMetadata(
+                { params, searchParams },
+                metadata
+              );
+              metadata = deepMergeMetadata(metadata, dynamicMeta);
+            } catch (e: any) {
+              if (!e?.message?.includes('generateMetadata is on the client')) throw e;
+            }
           }
           const { generateMetadataHtml } = require('../metadata/generate');
           metadataHtml = metadata ? generateMetadataHtml(metadata) : '';

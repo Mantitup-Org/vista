@@ -374,7 +374,11 @@ async function createRenderableRouteModuleElement(
   }
 
   if (options.evaluateMetadata && typeof RouteModule.generateMetadata === 'function') {
-    await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
+    try {
+      await RouteModule.generateMetadata({ params, searchParams }, RouteModule.metadata ?? {});
+    } catch (e: any) {
+      if (!e?.message?.includes('generateMetadata is on the client')) throw e;
+    }
   }
 
   const routeProps =

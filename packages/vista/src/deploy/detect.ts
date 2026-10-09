@@ -21,12 +21,18 @@ function detectFromEnv(): ResolvedDeployTarget | null {
 }
 
 function detectFromProjectFiles(cwd: string): ResolvedDeployTarget | null {
+  const matches: ResolvedDeployTarget[] = [];
   for (const entry of PLATFORM_FILES) {
     if (fs.existsSync(path.join(cwd, entry.file))) {
-      return entry.target;
+      matches.push(entry.target);
     }
   }
-  return null;
+  if (matches.length > 1) {
+    throw new Error(
+      `[vista:deploy] Ambiguous deployment target. Found configuration files for multiple platforms: ${matches.join(', ')}. Pass --target <target> to specify which one to use.`
+    );
+  }
+  return matches[0] || null;
 }
 
 export function normalizeResolvedTarget(raw: unknown): ResolvedDeployTarget | null {
@@ -65,7 +71,7 @@ export function resolveDeployTarget(
   if (fromFiles) return fromFiles;
 
   throw new Error(
-    '[vista:deploy] Unable to detect deployment target. Pass --target <render|vercel|cloudflare|netlify|docker> or set deploy.target in vista.config.ts.'
+    '[vista:deploy] Unable to auto-detect deployment target (no platform environment variables or configuration files found). Pass --target <render|vercel|cloudflare|netlify|docker> or set deploy.target in vista.config.ts.'
   );
 }
 

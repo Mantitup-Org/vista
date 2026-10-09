@@ -61,6 +61,15 @@ export function copyFileIfPresent(sourceFile: string, targetFile: string): void 
   fs.copyFileSync(sourceFile, targetFile);
 }
 
+export function getEmitPath(ctx: import('./types').DeployContext, filename: string): string {
+  if (ctx.dryRun) {
+    const dir = path.join(ctx.vistaDir, 'deploy', ctx.target);
+    ensureDir(dir);
+    return path.join(dir, filename);
+  }
+  return path.join(ctx.cwd, filename);
+}
+
 export function writeFileIfAllowed(
   targetFile: string,
   content: string,

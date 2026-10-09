@@ -180,6 +180,14 @@ export function useTheme() {
   if (!value) throw new Error("useTheme must be used within a ThemeProvider.");
   return value;
 }
+export function ThemeScript({ defaultTheme }) {
+  const fallback = defaultTheme || "system";
+  return jsxDEV("script", {
+    dangerouslySetInnerHTML: {
+      __html: `(function(){var runtime=Function('return this')();var storageKey='vista-theme';var defaultTheme='${fallback}';var mediaQuery='(prefers-color-scheme: dark)';function sanitize(value){return value==='system'||value==='light'||value==='dark'?value:defaultTheme;}function resolve(theme){if(theme==='system'){return runtime.matchMedia(mediaQuery).matches?'dark':'light';}return theme;}function apply(theme){var resolved=resolve(theme);var root=runtime['doc'+'ument'].documentElement;root.classList.remove('light','dark');root.classList.add(resolved);root.dataset.theme=theme;root.style.colorScheme=resolved;}var stored=sanitize(runtime['local'+'Storage'].getItem(storageKey));apply(stored);}());`
+    }
+  }, void 0, false, void 0, void 0);
+}
 "#;
 
 pub const LINK_SHIM: &str = r#"import { jsxDEV } from "/_flashpack/mod/react/jsx-dev-runtime";

@@ -9,7 +9,7 @@ import {
   writeCloudflareFullRuntimeToml,
 } from '../runtime-pack';
 import type { DeployAdapter, DeployContext } from '../types';
-import { copyStaticHostAssets, ensureDir, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
+import { copyStaticHostAssets, ensureDir, getEmitPath, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
 import { DOCKERFILE_TEMPLATE } from './docker';
 
 const CLOUDFLARE_OUTPUT_DIR = '.vista/deploy/cloudflare';
@@ -19,7 +19,7 @@ function getCloudflareOutputDir(ctx: DeployContext): string {
 }
 
 function writeStaticWranglerToml(ctx: DeployContext, outputDir: string): string {
-  const targetFile = path.join(ctx.cwd, 'wrangler.toml');
+  const targetFile = getEmitPath(ctx, 'wrangler.toml');
   const relativeOutput = path.relative(ctx.cwd, outputDir).replace(/\\/g, '/');
   const content = `name = "my-vista-app"
 compatibility_date = "2024-09-01"
@@ -64,7 +64,7 @@ export const cloudflareAdapter: DeployAdapter = {
     copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
     writeCloudflareContainerWorker(outputDir);
     const wranglerPath = writeCloudflareFullRuntimeToml(ctx);
-    const dockerfilePath = path.join(ctx.cwd, 'Dockerfile');
+    const dockerfilePath = getEmitPath(ctx, 'Dockerfile');
     writeFileIfAllowed(dockerfilePath, DOCKERFILE_TEMPLATE, ctx.force);
 
     return {
