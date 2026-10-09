@@ -13,4 +13,5 @@
  * Falls back to a passthrough proxy when sharp is not installed.
  */
 import type { Request, Response } from 'express';
-export declare function createImageHandler(cwd: string, isDev: boolean): (req: Request, res: Response) => Promise<void>;
+import type { ImageConfigComplete } from '../image/image-config';
+export declare function createImageHandler(cwd: string, isDev: boolean, customConfig?: Partial<ImageConfigComplete>): (req: Request, res: Response) => Promise<void>;

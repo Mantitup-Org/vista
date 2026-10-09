@@ -78,17 +78,30 @@ function fetchLocalFile(filePath, cwd) {
     }
     throw new Error(`Image not found: ${filePath}`);
 }
-function fetchRemoteImage(url) {
+function fetchRemoteImage(url, config, maxRedirects = 5) {
     return new Promise((resolve, reject) => {
+        if (maxRedirects <= 0) {
+            return reject(new Error('Too many redirects fetching remote image'));
+        }
         const parsedUrl = new url_1.URL(url);
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+            return reject(new Error(`Invalid protocol: ${parsedUrl.protocol}`));
+        }
         const client = parsedUrl.protocol === 'https:' ? https_1.default : http_1.default;
         const request = client.get(url, { timeout: 10000 }, (response) => {
             if (response.statusCode &&
                 response.statusCode >= 300 &&
                 response.statusCode < 400 &&
                 response.headers.location) {
+                // Resolve redirect URL
+                const redirectUrl = new url_1.URL(response.headers.location, url).toString();
+                // Re-validate against allowlist
+                if (!isAllowedRemoteUrl(redirectUrl, config)) {
+                    request.destroy();
+                    return reject(new Error(`Redirect to disallowed remote URL: ${redirectUrl}`));
+                }
                 // Follow redirect
-                fetchRemoteImage(response.headers.location).then(resolve).catch(reject);
+                fetchRemoteImage(redirectUrl, config, maxRedirects - 1).then(resolve).catch(reject);
                 return;
             }
             if (response.statusCode && response.statusCode !== 200) {
@@ -235,13 +248,13 @@ async function processPassthrough(sourceBuffer) {
 // ---------------------------------------------------------------------------
 // Express handler
 // ---------------------------------------------------------------------------
-function createImageHandler(cwd, isDev) {
+function createImageHandler(cwd, isDev, customConfig) {
     const sharpAvailable = detectSharp();
     if (!sharpAvailable && isDev && process.env.VISTA_DEBUG) {
         console.log('[vista:image] sharp not found — images served without optimization. ' +
             'Install sharp for resizing and format conversion: pnpm add sharp');
     }
-    const config = { ...image_config_1.imageConfigDefault };
+    const config = { ...image_config_1.imageConfigDefault, ...customConfig };
     return async function handleImageRequest(req, res) {
         try {
             const url = req.query.url;
@@ -308,7 +321,7 @@ function createImageHandler(cwd, isDev) {
                         .send('SVG images are not allowed. Set dangerouslyAllowSVG in image config.');
                     return;
                 }
-                sourceBuffer = await fetchRemoteImage(url);
+                sourceBuffer = await fetchRemoteImage(url, config);
             }
             else {
                 // Local file
