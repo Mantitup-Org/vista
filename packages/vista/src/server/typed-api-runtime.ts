@@ -275,9 +275,26 @@ async function parseRequestBody(req: express.Request, bodySizeLimitBytes: number
 }
 
 async function sendFetchResponse(res: express.Response, response: Response): Promise<void> {
+  let setCookies: string[] = [];
+  if (typeof (response.headers as any).getSetCookie === 'function') {
+    setCookies = (response.headers as any).getSetCookie();
+  } else if (typeof (response.headers as any).raw === 'function') {
+    setCookies = (response.headers as any).raw()['set-cookie'] || [];
+  } else {
+    const raw = response.headers.get('set-cookie');
+    if (raw) {
+      setCookies = [raw];
+    }
+  }
+
   response.headers.forEach((value, key) => {
+    if (key.toLowerCase() === 'set-cookie') return;
     res.setHeader(key, value);
   });
+
+  if (setCookies && setCookies.length > 0) {
+    res.setHeader('Set-Cookie', setCookies);
+  }
 
   const method = String((res as any).req?.method || '').toUpperCase();
   res.status(response.status);
@@ -768,8 +785,8 @@ export async function runLegacyApiRoute(options: {
 
       res.status(204).end();
       return;
-    } catch (error) {
-      if (error instanceof BodyLimitError) {
+    } catch (error: any) {
+      if (error instanceof BodyLimitError || error instanceof BodyParseError) {
         res.status(error.status).json({ error: error.message });
         return;
       }
