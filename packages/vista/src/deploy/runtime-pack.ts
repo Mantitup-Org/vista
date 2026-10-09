@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import type { DeployContext } from './types';
-import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, writeFileIfAllowed } from './utils';
+import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, getEmitPath, writeFileIfAllowed } from './utils';
 
 export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
   if (ctx.deployConfig.output === 'static') {
@@ -267,7 +267,7 @@ export default {
 }
 
 export function writeCloudflareFullRuntimeToml(ctx: DeployContext): string {
-  const targetFile = path.join(ctx.cwd, 'wrangler.toml');
+  const targetFile = getEmitPath(ctx, 'wrangler.toml');
   const content = `name = "vista-app"
 compatibility_date = "2026-09-20"
 main = ".vista/deploy/cloudflare/worker.js"
