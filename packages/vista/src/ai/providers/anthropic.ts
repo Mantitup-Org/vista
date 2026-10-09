@@ -186,6 +186,8 @@ export function createAnthropicModel(options: ModelOptions): LanguageModel {
       const decoder = new TextDecoder();
       let buffer = '';
 
+      const activeToolCalls = new Map<number, { id: string; name: string; argsJson: string }>();
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -203,7 +205,37 @@ export function createAnthropicModel(options: ModelOptions): LanguageModel {
 
             try {
               const event = JSON.parse(payload);
-              if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+              
+              if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+                activeToolCalls.set(event.index, {
+                  id: event.content_block.id,
+                  name: event.content_block.name,
+                  argsJson: '',
+                });
+              } else if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+                const tool = activeToolCalls.get(event.index);
+                if (tool) {
+                  tool.argsJson += event.delta.partial_json;
+                }
+              } else if (event.type === 'content_block_stop') {
+                const tool = activeToolCalls.get(event.index);
+                if (tool) {
+                  let parsedArgs: any = tool.argsJson;
+                  try {
+                    parsedArgs = JSON.parse(tool.argsJson || '{}');
+                  } catch (e) {}
+                  
+                  yield {
+                    type: 'tool-call',
+                    toolCall: {
+                      id: tool.id,
+                      name: tool.name,
+                      arguments: parsedArgs
+                    }
+                  };
+                  activeToolCalls.delete(event.index);
+                }
+              } else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
                 yield { type: 'text-delta', textDelta: event.delta.text };
               }
             } catch {
