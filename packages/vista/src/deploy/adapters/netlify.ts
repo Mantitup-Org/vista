@@ -5,7 +5,7 @@ import { extractDeploymentUrl, isCliAvailable, runCliCommand } from '../cli-runn
 import { runStandalonePreflight, runStaticHostPreflight, splitPreflightMessages } from '../preflight';
 import { isStaticOnlyDeploy, packRuntimeNodeModules, writeNetlifySsrHandler } from '../runtime-pack';
 import type { DeployAdapter } from '../types';
-import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
+import { copyDirectoryRecursive, copyStaticHostAssets, ensureDir, getEmitPath, prepareStaticCdnOutput, writeFileIfAllowed } from '../utils';
 
 const NETLIFY_OUTPUT_DIR = '.vista/deploy/netlify';
 
@@ -13,8 +13,8 @@ function getNetlifyOutputDir(ctx: { cwd: string }): string {
   return path.join(ctx.cwd, NETLIFY_OUTPUT_DIR);
 }
 
-function writeStaticNetlifyToml(ctx: { cwd: string; force: boolean }): string {
-  const targetFile = path.join(ctx.cwd, 'netlify.toml');
+function writeStaticNetlifyToml(ctx: import('../types').DeployContext): string {
+  const targetFile = getEmitPath(ctx, 'netlify.toml');
   const content = `[build]
   command = "npm run build"
   publish = ".vista/deploy/netlify"
@@ -27,8 +27,8 @@ function writeStaticNetlifyToml(ctx: { cwd: string; force: boolean }): string {
   return targetFile;
 }
 
-function writeFullRuntimeNetlifyToml(ctx: { cwd: string; force: boolean }): string {
-  const targetFile = path.join(ctx.cwd, 'netlify.toml');
+function writeFullRuntimeNetlifyToml(ctx: import('../types').DeployContext): string {
+  const targetFile = getEmitPath(ctx, 'netlify.toml');
   const content = `[build]
   command = "npm run build"
   publish = ".vista/deploy/netlify"

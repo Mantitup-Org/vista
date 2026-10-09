@@ -468,11 +468,13 @@ async function prerenderPage(
             if (dynamicMeta && typeof dynamicMeta === 'object') {
               metadata = deepMergeMetadata(metadata as any, dynamicMeta) as any;
             }
-          } catch (metadataError) {
-            console.warn(
-              `[vista:ssg] generateMetadata failed for ${urlPath}:`,
-              (metadataError as Error)?.message || String(metadataError)
-            );
+          } catch (metadataError: any) {
+            if (!metadataError?.message?.includes('generateMetadata is on the client')) {
+              console.warn(
+                `[vista:ssg] generateMetadata failed for ${urlPath}:`,
+                metadataError?.message || String(metadataError)
+              );
+            }
           }
         }
 
