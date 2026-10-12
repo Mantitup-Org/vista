@@ -49,12 +49,22 @@ describe('generateMetadataHtml', () => {
       alternates: { canonical: '/docs' },
       metadataBase: 'https://example.com',
     });
-    assert.match(html, /<title>Home \| Vista<\/title>/);
+    // title.default is used as-is, not formatted by template (#171)
+    assert.match(html, /<title>Home<\/title>/);
     assert.match(html, /name="description" content="Hello"/);
     assert.match(html, /name="googlebot"[^>]*max-image-preview:large/);
     assert.match(html, /name="theme-color" content="#111111"/);
     assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);
     assert.match(html, /name="format-detection" content="telephone=no"/);
     assert.match(html, /rel="canonical" href="https:\/\/example.com\/docs"/);
+  });
+
+  it('formats child page string title with parent template', () => {
+    const { generateMetadataHtml } = require(generatePath);
+    const html = generateMetadataHtml(
+      { title: 'Docs' },
+      '%s | Vista'
+    );
+    assert.match(html, /<title>Docs \| Vista<\/title>/);
   });
 });

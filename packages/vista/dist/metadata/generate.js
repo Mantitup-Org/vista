@@ -20,12 +20,8 @@ function resolveTitle(title, template) {
     if (title.absolute) {
         return title.absolute;
     }
-    const baseTitle = title.default ?? '';
-    const activeTemplate = title.template || template;
-    if (activeTemplate && baseTitle) {
-        return activeTemplate.replace('%s', baseTitle);
-    }
-    return baseTitle;
+    // Next.js metadata semantics: title.default provides fallback as-is, never formatted by template (#171)
+    return title.default ?? null;
 }
 function resolveUrl(url, base) {
     if (!url)
