@@ -21,12 +21,19 @@ function detectFromEnv(): ResolvedDeployTarget | null {
 }
 
 function detectFromProjectFiles(cwd: string): ResolvedDeployTarget | null {
+  const detected: ResolvedDeployTarget[] = [];
   for (const entry of PLATFORM_FILES) {
     if (fs.existsSync(path.join(cwd, entry.file))) {
-      return entry.target;
+      detected.push(entry.target);
     }
   }
-  return null;
+  if (detected.length > 1) {
+    throw new Error(
+      `[vista:deploy] Multiple platform files detected: ${detected.join(', ')}. ` +
+        'Pass --target explicitly to disambiguate.'
+    );
+  }
+  return detected[0] || null;
 }
 
 export function normalizeResolvedTarget(raw: unknown): ResolvedDeployTarget | null {
