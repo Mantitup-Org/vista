@@ -31,7 +31,8 @@ function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
     }
     if (seen.has(realSource))
         return;
-    seen.add(realSource);
+    // Track ancestors per branch so sibling aliases are copied, not mistaken for cycles.
+    seen = new Set(seen).add(realSource);
     ensureDir(targetDir);
     const entries = fs_1.default.readdirSync(sourceDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -136,10 +137,7 @@ function flattenPrerenderedFlight(pagesDir, targetDir) {
 }
 function writeStaticRscRedirects(pagesDir, targetDir) {
     const redirectsPath = path_1.default.join(targetDir, '_redirects');
-    const lines = [
-        '/rsc /rsc/index.rsc 200',
-        '/rsc/ /rsc/index.rsc 200',
-    ];
+    const lines = ['/rsc /rsc/index.rsc 200', '/rsc/ /rsc/index.rsc 200'];
     walkFiles(pagesDir, (_absolutePath, relativePath) => {
         const posix = relativePath.replace(/\\/g, '/');
         if (!posix.endsWith('.rsc'))

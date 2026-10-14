@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -15,6 +16,8 @@ const {
 } = require('../../dist/deploy/detect');
 const { runDeploy } = require('../../dist/deploy/index');
 const { runDeployCommand } = require('../../dist/bin/deploy');
+const { packVercelFullRuntime } = require('../../dist/deploy/runtime-pack');
+const { copyDirectoryRecursive } = require('../../dist/deploy/utils');
 
 function makeTempWorkspace() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'vista-deploy-'));
@@ -64,6 +67,81 @@ function writeMinimalVistaArtifacts(cwd) {
 
   fs.writeFileSync(path.join(vistaDir, 'static', 'pages', 'index.html'), '<html></html>', 'utf8');
 }
+
+test('directory copy preserves sibling aliases while stopping ancestor cycles', () => {
+  const cwd = makeTempWorkspace();
+  try {
+    const source = path.join(cwd, 'source');
+    const target = path.join(cwd, 'target');
+    const dependency = path.join(source, '.pnpm', 'dependency');
+    fs.mkdirSync(dependency, { recursive: true });
+    fs.writeFileSync(path.join(dependency, 'index.js'), 'module.exports = "copied";');
+    const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(dependency, path.join(source, 'first-alias'), linkType);
+    fs.symlinkSync(dependency, path.join(source, 'second-alias'), linkType);
+    fs.symlinkSync(source, path.join(dependency, 'cycle'), linkType);
+
+    copyDirectoryRecursive(source, target);
+
+    for (const relative of ['.pnpm/dependency', 'first-alias', 'second-alias']) {
+      assert.equal(
+        fs.readFileSync(path.join(target, relative, 'index.js'), 'utf8'),
+        'module.exports = "copied";'
+      );
+      assert.equal(fs.existsSync(path.join(target, relative, 'cycle')), false);
+    }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('relocated Vercel handler loads a dependency alias after its store was copied', () => {
+  const cwd = makeTempWorkspace();
+  try {
+    const app = path.join(cwd, 'app');
+    writeMinimalVistaArtifacts(app);
+    fs.writeFileSync(path.join(app, 'package.json'), '{}');
+    const modules = path.join(app, 'node_modules');
+    const dependency = path.join(modules, '.pnpm', 'leaf@1.0.0', 'node_modules', 'leaf');
+    fs.mkdirSync(dependency, { recursive: true });
+    fs.writeFileSync(path.join(dependency, 'index.js'), 'module.exports = "packaged";');
+    fs.symlinkSync(
+      dependency,
+      path.join(modules, 'leaf'),
+      process.platform === 'win32' ? 'junction' : 'dir'
+    );
+    fs.writeFileSync(
+      path.join(app, '.vista', 'standalone', 'server.js'),
+      'const value = require("leaf"); exports.createRequestListener = () => (req, res) => res.end(value);'
+    );
+    packVercelFullRuntime({
+      cwd: app,
+      vistaDir: path.join(app, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({ deploy: { output: 'standalone' } }),
+      target: 'vercel',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+    const relocated = path.join(cwd, 'relocated');
+    fs.cpSync(path.join(app, '.vercel', 'output', 'functions', 'index.func'), relocated, {
+      recursive: true,
+    });
+    fs.rmSync(app, { recursive: true, force: true });
+    const result = spawnSync(
+      process.execPath,
+      ['-e', 'require("./index.js")({}, { end: value => process.stdout.write(value) });'],
+      { cwd: relocated, encoding: 'utf8', timeout: 60000 }
+    );
+    assert.equal(result.status, 0, result.error?.message || result.stderr);
+    assert.equal(result.stdout, 'packaged');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test('resolveDeployTarget prefers CLI flag over config and env', () => {
   const cwd = makeTempWorkspace();
@@ -139,7 +217,18 @@ test('vercel adapter dry-run emits build output when forced', async () => {
     assert.equal(result.status, 'emitted');
     assert.equal(fs.existsSync(path.join(cwd, '.vercel', 'output', 'config.json')), true);
     assert.equal(
-      fs.existsSync(path.join(cwd, '.vercel', 'output', 'functions', 'index.func', '.vista', 'standalone', 'server.js')),
+      fs.existsSync(
+        path.join(
+          cwd,
+          '.vercel',
+          'output',
+          'functions',
+          'index.func',
+          '.vista',
+          'standalone',
+          'server.js'
+        )
+      ),
       true
     );
   } finally {
@@ -197,11 +286,27 @@ test('cloudflare static emit flattens pages and copies /_vista/static', async ()
     fs.mkdirSync(path.join(cwd, 'public'), { recursive: true });
     fs.writeFileSync(path.join(cwd, 'public', 'vista.svg'), '<svg></svg>', 'utf8');
     fs.mkdirSync(path.join(cwd, '.vista', 'static', 'chunks'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'chunks', 'main.js'), 'console.log(1)', 'utf8');
+    fs.writeFileSync(
+      path.join(cwd, '.vista', 'static', 'chunks', 'main.js'),
+      'console.log(1)',
+      'utf8'
+    );
     fs.mkdirSync(path.join(cwd, '.vista', 'static', 'pages', 'docs'), { recursive: true });
-    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'docs.html'), '<html>docs</html>', 'utf8');
-    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'index.rsc'), 'flight-index', 'utf8');
-    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'docs.rsc'), 'flight-docs', 'utf8');
+    fs.writeFileSync(
+      path.join(cwd, '.vista', 'static', 'pages', 'docs.html'),
+      '<html>docs</html>',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(cwd, '.vista', 'static', 'pages', 'index.rsc'),
+      'flight-index',
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(cwd, '.vista', 'static', 'pages', 'docs.rsc'),
+      'flight-docs',
+      'utf8'
+    );
 
     const adapter = getDeployAdapter('cloudflare');
     const result = await adapter.emit({
@@ -222,7 +327,10 @@ test('cloudflare static emit flattens pages and copies /_vista/static', async ()
     assert.equal(fs.existsSync(path.join(outputDir, 'index.html')), true);
     assert.equal(fs.existsSync(path.join(outputDir, 'docs', 'index.html')), true);
     assert.equal(fs.existsSync(path.join(outputDir, 'vista.svg')), true);
-    assert.equal(fs.existsSync(path.join(outputDir, '_vista', 'static', 'chunks', 'main.js')), true);
+    assert.equal(
+      fs.existsSync(path.join(outputDir, '_vista', 'static', 'chunks', 'main.js')),
+      true
+    );
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'index.rsc'), 'utf8'), 'flight-index');
     assert.equal(fs.readFileSync(path.join(outputDir, 'rsc', 'docs.rsc'), 'utf8'), 'flight-docs');
     const redirects = fs.readFileSync(path.join(outputDir, '_redirects'), 'utf8');
@@ -357,7 +465,10 @@ test('netlify adapter emit packs Flight function with .vista standalone', async 
     );
     const handler = fs.readFileSync(path.join(cwd, 'netlify', 'functions', 'ssr.js'), 'utf8');
     assert.match(handler, /http\.ServerResponse/);
-    assert.match(fs.readFileSync(path.join(cwd, 'netlify.toml'), 'utf8'), /\.netlify\/functions\/ssr/);
+    assert.match(
+      fs.readFileSync(path.join(cwd, 'netlify.toml'), 'utf8'),
+      /\.netlify\/functions\/ssr/
+    );
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
