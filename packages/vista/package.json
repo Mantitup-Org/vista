@@ -159,6 +159,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "node --test \"test/**/*.test.cjs\"",
     "stage:flashpack": "node scripts/stage-flashpack-binary.mjs"
   },
   "dependencies": {
