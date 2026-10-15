@@ -37,6 +37,57 @@ function forceRuntimeEnv(mode) {
   process.env.NODE_ENV = 'production';
 }
 
+function parseEnvLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+  const withoutExport = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+  const eq = withoutExport.indexOf('=');
+  if (eq <= 0) return null;
+  const key = withoutExport.slice(0, eq).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return null;
+  let value = withoutExport.slice(eq + 1).trim();
+  if (!value.startsWith('"') && !value.startsWith("'")) {
+    const hashIndex = value.indexOf(' #');
+    if (hashIndex !== -1) value = value.slice(0, hashIndex).trim();
+  }
+  if (
+    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+  ) {
+    value = value.slice(1, -1);
+  }
+  return [key, value];
+}
+
+function loadEnvFile(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return;
+  }
+  for (const line of content.split(/\r?\n/)) {
+    const parsed = parseEnvLine(line);
+    if (!parsed) continue;
+    const [key, value] = parsed;
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+function loadProjectEnv(cwd, commandName) {
+  const files = [];
+  if (commandName === 'dev') {
+    files.push('.env.development.local', '.env.local', '.env.development', '.env');
+  } else if (commandName === 'build' || commandName === 'start' || commandName === 'deploy') {
+    files.push('.env.production.local', '.env.local', '.env.production', '.env');
+  } else {
+    files.push('.env.local', '.env');
+  }
+  for (const file of files) loadEnvFile(path.join(cwd, file));
+}
+
+loadProjectEnv(process.cwd(), command);
+
 if (command === 'g' || command === 'generate') {
   const { runGenerateCommand } = require('../dist/bin/generate');
   runGenerateCommand(flags).then((code) => {

@@ -743,21 +743,29 @@ export function startServer(port: number = 3003, compiler?: webpack.Compiler) {
         }
       }
 
-      // Get page static metadata (overrides layouts)
-      if (PageModule.metadata) {
-        metadata = deepMergeMetadata(metadata, PageModule.metadata);
-      }
+      // Page-level metadata is only resolvable for server pages. For
+      // 'use client' pages the module loaded here is a client-reference
+      // proxy: property access fabricates callable references that throw
+      // when invoked, so skip page metadata and keep the layout chain.
+      const { isClientComponent } = require('./client-boundary');
+      const pageIsClientComponent = isClientComponent(pagePath);
+      if (!pageIsClientComponent) {
+        // Get page static metadata (overrides layouts)
+        if (PageModule.metadata) {
+          metadata = deepMergeMetadata(metadata, PageModule.metadata);
+        }
 
-      // Get dynamic metadata from generateMetadata function
-      if (typeof PageModule.generateMetadata === 'function') {
-        try {
-          const dynamicMeta = await PageModule.generateMetadata(
-            { params, searchParams: req.query },
-            metadata // parent metadata
-          );
-          metadata = deepMergeMetadata(metadata, dynamicMeta);
-        } catch (e) {
-          console.error('Error in generateMetadata:', e);
+        // Get dynamic metadata from generateMetadata function
+        if (typeof PageModule.generateMetadata === 'function') {
+          try {
+            const dynamicMeta = await PageModule.generateMetadata(
+              { params, searchParams: req.query },
+              metadata // parent metadata
+            );
+            metadata = deepMergeMetadata(metadata, dynamicMeta);
+          } catch (e) {
+            console.error('Error in generateMetadata:', e);
+          }
         }
       }
 

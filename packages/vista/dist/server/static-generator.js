@@ -334,18 +334,24 @@ async function prerenderPage(urlPath, route, params, cwd, vistaDirRoot, appPprEn
                     // Ignore layout metadata failures for static generation.
                 }
             }
-            if (pageModule.metadata && typeof pageModule.metadata === 'object') {
-                metadata = deepMergeMetadata(metadata, pageModule.metadata);
-            }
-            if (typeof pageModule.generateMetadata === 'function') {
-                try {
-                    const dynamicMeta = await pageModule.generateMetadata({ params: params || {}, searchParams }, metadata);
-                    if (dynamicMeta && typeof dynamicMeta === 'object') {
-                        metadata = deepMergeMetadata(metadata, dynamicMeta);
-                    }
+            // Client pages cannot resolve metadata on the server (client-reference
+            // proxies throw on invocation); keep layout metadata only.
+            const { isClientComponent } = require('./client-boundary');
+            const pageIsClientComponent = isClientComponent(route.pagePath);
+            if (!pageIsClientComponent) {
+                if (pageModule.metadata && typeof pageModule.metadata === 'object') {
+                    metadata = deepMergeMetadata(metadata, pageModule.metadata);
                 }
-                catch (metadataError) {
-                    console.warn(`[vista:ssg] generateMetadata failed for ${urlPath}:`, metadataError?.message || String(metadataError));
+                if (typeof pageModule.generateMetadata === 'function') {
+                    try {
+                        const dynamicMeta = await pageModule.generateMetadata({ params: params || {}, searchParams }, metadata);
+                        if (dynamicMeta && typeof dynamicMeta === 'object') {
+                            metadata = deepMergeMetadata(metadata, dynamicMeta);
+                        }
+                    }
+                    catch (metadataError) {
+                        console.warn(`[vista:ssg] generateMetadata failed for ${urlPath}:`, metadataError?.message || String(metadataError));
+                    }
                 }
             }
             let metadataHtml = '';

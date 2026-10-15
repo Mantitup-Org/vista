@@ -455,24 +455,30 @@ async function prerenderPage(
           }
         }
 
-        if (pageModule.metadata && typeof pageModule.metadata === 'object') {
-          metadata = deepMergeMetadata(metadata as any, pageModule.metadata) as any;
-        }
+        // Client pages cannot resolve metadata on the server (client-reference
+        // proxies throw on invocation); keep layout metadata only.
+        const { isClientComponent } = require('./client-boundary');
+        const pageIsClientComponent = isClientComponent(route.pagePath);
+        if (!pageIsClientComponent) {
+          if (pageModule.metadata && typeof pageModule.metadata === 'object') {
+            metadata = deepMergeMetadata(metadata as any, pageModule.metadata) as any;
+          }
 
-        if (typeof pageModule.generateMetadata === 'function') {
-          try {
-            const dynamicMeta = await pageModule.generateMetadata(
-              { params: params || {}, searchParams },
-              metadata
-            );
-            if (dynamicMeta && typeof dynamicMeta === 'object') {
-              metadata = deepMergeMetadata(metadata as any, dynamicMeta) as any;
+          if (typeof pageModule.generateMetadata === 'function') {
+            try {
+              const dynamicMeta = await pageModule.generateMetadata(
+                { params: params || {}, searchParams },
+                metadata
+              );
+              if (dynamicMeta && typeof dynamicMeta === 'object') {
+                metadata = deepMergeMetadata(metadata as any, dynamicMeta) as any;
+              }
+            } catch (metadataError) {
+              console.warn(
+                `[vista:ssg] generateMetadata failed for ${urlPath}:`,
+                (metadataError as Error)?.message || String(metadataError)
+              );
             }
-          } catch (metadataError) {
-            console.warn(
-              `[vista:ssg] generateMetadata failed for ${urlPath}:`,
-              (metadataError as Error)?.message || String(metadataError)
-            );
           }
         }
 

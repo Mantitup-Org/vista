@@ -39,6 +39,8 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isClientComponent = isClientComponent;
+exports.resetClientComponentCache = resetClientComponentCache;
 exports.resetMountCounter = resetMountCounter;
 exports.ClientBoundary = ClientBoundary;
 exports.wrapClientComponent = wrapClientComponent;
@@ -47,6 +49,14 @@ const React = __importStar(require("react"));
 const fs = __importStar(require("fs"));
 // Cache for component detection
 const clientComponentCache = new Map();
+/**
+ * Clear the client-component detection cache.
+ * Called by the dev server when it invalidates project modules so a flipped
+ * 'use client' directive is picked up without a restart.
+ */
+function resetClientComponentCache() {
+    clientComponentCache.clear();
+}
 /**
  * Check if a file is a client component by checking for 'use client' directive
  */

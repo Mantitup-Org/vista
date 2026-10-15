@@ -154,6 +154,8 @@ function shouldInvalidateDevModule(modulePath, cwd) {
     return /\.(?:[cm]?[jt]sx?|json)$/i.test(normalized);
 }
 function clearProjectRequireCache(cwd) {
+    const { resetClientComponentCache } = require('./client-boundary');
+    resetClientComponentCache();
     for (const key of Object.keys(require.cache)) {
         if (!shouldInvalidateDevModule(key, cwd))
             continue;
@@ -633,12 +635,16 @@ async function createRouteElement(route, context, isDev, rootLayout, runtimeRoot
         layoutMetadata.push(rootLayout.metadata);
     }
     let metadata = mergeMetadataChain(layoutMetadata);
-    if (PageModule.metadata) {
-        metadata = deepMergeMetadata(metadata, PageModule.metadata);
-    }
-    if (typeof PageModule.generateMetadata === 'function') {
-        const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-        metadata = deepMergeMetadata(metadata, dynamicMeta);
+    const { isClientComponent } = require('./client-boundary');
+    const pageIsClientComponent = isClientComponent(route.pagePath);
+    if (!pageIsClientComponent) {
+        if (PageModule.metadata) {
+            metadata = deepMergeMetadata(metadata, PageModule.metadata);
+        }
+        if (typeof PageModule.generateMetadata === 'function') {
+            const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+            metadata = deepMergeMetadata(metadata, dynamicMeta);
+        }
     }
     const element = await renderAppSubtreeElement({
         subtreeRootDir: (0, app_dir_1.resolveAppDir)(runtimeRoot),
@@ -1667,14 +1673,18 @@ function startRSCServer(options = {}) {
                             layoutMetadata.push(rootLayout.metadata);
                         }
                         let metadata = mergeMetadataChain(layoutMetadata);
-                        if (PageModule.metadata) {
-                            metadata = deepMergeMetadata(metadata, PageModule.metadata);
-                        }
-                        if (typeof PageModule.generateMetadata === 'function') {
-                            const params = extractParams(req.path, route);
-                            const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
-                            const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
-                            metadata = deepMergeMetadata(metadata, dynamicMeta);
+                        const { isClientComponent } = require('./client-boundary');
+                        const pageIsClientComponent = isClientComponent(route.pagePath);
+                        if (!pageIsClientComponent) {
+                            if (PageModule.metadata) {
+                                metadata = deepMergeMetadata(metadata, PageModule.metadata);
+                            }
+                            if (typeof PageModule.generateMetadata === 'function') {
+                                const params = extractParams(req.path, route);
+                                const searchParams = Object.fromEntries(new URLSearchParams(req.query).entries());
+                                const dynamicMeta = await PageModule.generateMetadata({ params, searchParams }, metadata);
+                                metadata = deepMergeMetadata(metadata, dynamicMeta);
+                            }
                         }
                         const { generateMetadataHtml } = require('../metadata/generate');
                         metadataHtml = metadata ? generateMetadataHtml(metadata) : '';
