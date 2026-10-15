@@ -140,17 +140,26 @@ function writeStaticRscRedirects(pagesDir, targetDir) {
         '/rsc /rsc/index.rsc 200',
         '/rsc/ /rsc/index.rsc 200',
     ];
+    // Identity rewrites MUST come before the extensionless aliases below:
+    // Cloudflare Pages evaluates rules top-to-bottom, first match wins, so a
+    // `/rsc/foo.rsc` request must hit its own identity rule before any
+    // extensionless alias could rewrite it.
+    const identityLines = [];
+    const aliasLines = [];
     walkFiles(pagesDir, (_absolutePath, relativePath) => {
         const posix = relativePath.replace(/\\/g, '/');
         if (!posix.endsWith('.rsc'))
             return;
         const routePath = posix.replace(/\.rsc$/, '');
         const flightPath = `/rsc/${posix}`;
-        lines.push(`${flightPath} ${flightPath} 200`);
-        if (routePath === 'index')
-            return;
-        lines.push(`/rsc/${routePath} ${flightPath} 200`);
+        // Identity rewrite for EVERY .rsc file (index included).
+        identityLines.push(`${flightPath} ${flightPath} 200`);
+        // Extensionless alias for `/rsc/foo` (the request path the client emits).
+        if (routePath !== 'index') {
+            aliasLines.push(`/rsc/${routePath} ${flightPath} 200`);
+        }
     });
+    lines.push(...identityLines, ...aliasLines);
     fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
 }
 /** Copy webpack assets to `/_vista/static` and flatten HTML + Flight for file-based CDNs. */
