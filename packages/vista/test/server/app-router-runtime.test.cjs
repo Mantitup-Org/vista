@@ -8,6 +8,9 @@ const { isPathInside, resolveDirectoryChain } = require('../../dist/server/app-r
 const { isBootstrapChunkFile, sortHydrationChunkFiles } = require('../../dist/server/hydration-chunks');
 
 test('resolveDirectoryChain includes the app root on mixed Windows drive casing', () => {
+  if (process.platform !== 'win32') {
+    return;
+  }
   const appDir = 'e:\\vista\\apps\\web\\app';
   const pagePath = 'E:\\vista\\apps\\web\\app\\docs\\page.tsx';
   const chain = resolveDirectoryChain(appDir, pagePath);

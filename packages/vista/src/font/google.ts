@@ -99,12 +99,18 @@ function buildGoogleUrl(family: string, opts: GoogleFontOptions): string {
     // Static weights
     const tuples: string[] = [];
     for (const w of weights) {
-      if (hasNormal) tuples.push(hasItalic ? `0,${w}` : w);
-      if (hasItalic) tuples.push(hasItalic && hasNormal ? `1,${w}` : w);
+      if (hasItalic) {
+        // The CSS2 API requires an explicit `ital` tuple whenever italic is
+        // requested; normal-only requests omit it entirely.
+        if (hasNormal) tuples.push(`0,${w}`);
+        tuples.push(`1,${w}`);
+      } else {
+        tuples.push(w);
+      }
     }
     // Deduplicate and sort
     const uniqueTuples = [...new Set(tuples)].sort();
-    if (hasItalic && hasNormal) {
+    if (hasItalic) {
       familyParam = `${family}:ital,wght@${uniqueTuples.join(';')}`;
     } else {
       familyParam = `${family}:wght@${uniqueTuples.join(';')}`;
