@@ -245,7 +245,7 @@ function createImageHandler(cwd, isDev) {
     return async function handleImageRequest(req, res) {
         try {
             const url = req.query.url;
-            const width = parseInt(req.query.w, 10) || 0;
+            let width = parseInt(req.query.w, 10) || 0;
             const quality = parseInt(req.query.q, 10) || 75;
             if (!url) {
                 res.status(400).send('Missing "url" parameter');
@@ -262,7 +262,9 @@ function createImageHandler(cwd, isDev) {
                 const nearest = allSizes.reduce((prev, curr) => Math.abs(curr - width) < Math.abs(prev - width) ? curr : prev);
                 // Allow if within 10% tolerance, otherwise use nearest
                 if (Math.abs(width - nearest) / nearest > 0.1) {
-                    // Not a valid size — use nearest
+                    // Not a valid size — snap to nearest so the cache key and sharp
+                    // resize both use the standard size instead of the arbitrary one.
+                    width = nearest;
                     req.query.w = String(nearest);
                 }
             }
