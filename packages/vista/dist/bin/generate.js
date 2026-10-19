@@ -385,15 +385,38 @@ function patchRootWithSessionProvider(cwd) {
     if (source.includes('AuthSessionProvider')) {
         return { path: absolutePath, patched: false };
     }
-    if (!source.includes('<ThemeProvider')) {
+    if (!source.includes('{children}')) {
         return { path: absolutePath, patched: false };
     }
-    if (!source.includes("from '../components/auth-session-provider'")) {
-        source = source.replace(/from 'vista\/theme';/, "from 'vista/theme';\nimport { AuthSessionProvider } from '../components/auth-session-provider';");
+    // Wrap the session provider around {children}. Prefer wrapping just inside an
+    // existing <ThemeProvider> (whitespace/newline tolerant), otherwise wrap the
+    // bare {children} so roots without a ThemeProvider are still wired.
+    const themeWrap = /<ThemeProvider([^>]*)>(\s*)\{children\}(\s*)<\/ThemeProvider>/;
+    let next;
+    if (themeWrap.test(source)) {
+        next = source.replace(themeWrap, '<ThemeProvider$1>$2<AuthSessionProvider>{children}</AuthSessionProvider>$3</ThemeProvider>');
     }
-    const next = source.replace(/<ThemeProvider([^>]*)>\{children\}<\/ThemeProvider>/, '<ThemeProvider$1><AuthSessionProvider>{children}</AuthSessionProvider></ThemeProvider>');
+    else {
+        next = source.replace(/\{children\}/, '<AuthSessionProvider>{children}</AuthSessionProvider>');
+    }
     if (next === source) {
         return { path: absolutePath, patched: false };
+    }
+    // Ensure the AuthSessionProvider import is present.
+    if (!next.includes("from '../components/auth-session-provider'")) {
+        const importLine = "import { AuthSessionProvider } from '../components/auth-session-provider';";
+        if (/from 'vista\/theme';/.test(next)) {
+            next = next.replace(/from 'vista\/theme';/, `from 'vista/theme';\n${importLine}`);
+        }
+        else {
+            const firstImport = next.match(/^import[^\n]*\n/m);
+            if (firstImport) {
+                next = next.replace(firstImport[0], `${firstImport[0]}${importLine}\n`);
+            }
+            else {
+                next = `${importLine}\n${next}`;
+            }
+        }
     }
     fs_1.default.writeFileSync(absolutePath, next, 'utf8');
     return { path: absolutePath, patched: true };
