@@ -100,11 +100,13 @@ function buildGoogleUrl(family: string, opts: GoogleFontOptions): string {
     const tuples: string[] = [];
     for (const w of weights) {
       if (hasNormal) tuples.push(hasItalic ? `0,${w}` : w);
-      if (hasItalic) tuples.push(hasItalic && hasNormal ? `1,${w}` : w);
+      // Italic-only requests need the ital tuple as well: without the leading 1 the
+      // generated URL asks Google for upright glyphs (issue #204).
+      if (hasItalic) tuples.push(`1,${w}`);
     }
     // Deduplicate and sort
     const uniqueTuples = [...new Set(tuples)].sort();
-    if (hasItalic && hasNormal) {
+    if (hasItalic) {
       familyParam = `${family}:ital,wght@${uniqueTuples.join(';')}`;
     } else {
       familyParam = `${family}:wght@${uniqueTuples.join(';')}`;
