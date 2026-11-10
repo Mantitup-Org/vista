@@ -37,6 +37,12 @@ function isStaticOnlyDeploy(ctx) {
                 return false;
             }
         }
+        const standaloneServer = path_1.default.join(ctx.vistaDir, 'standalone', 'server.js');
+        const staticPagesDir = path_1.default.join(ctx.vistaDir, 'static', 'pages');
+        const hasDockerfile = fs_1.default.existsSync(path_1.default.join(ctx.cwd, 'Dockerfile'));
+        if (!hasDockerfile && !fs_1.default.existsSync(standaloneServer) && fs_1.default.existsSync(staticPagesDir)) {
+            return true;
+        }
     }
     return false;
 }

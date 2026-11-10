@@ -288,6 +288,37 @@ test('cloudflare adapter auto-detects static Pages from wrangler.toml', async ()
   }
 });
 
+test('cloudflare adapter defaults to static Pages when no wrangler.toml and only static pages exist', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    // Remove standalone server.js to simulate static-only build
+    fs.rmSync(path.join(cwd, '.vista', 'standalone', 'server.js'), { force: true });
+    fs.mkdirSync(path.join(cwd, '.vista', 'static', 'pages'), { recursive: true });
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'index.html'), '<html>index</html>');
+
+    const adapter = getDeployAdapter('cloudflare');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: {},
+      deployConfig: resolveDeployConfig({}),
+      target: 'cloudflare',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+    assert.equal(result.status, 'emitted');
+    assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), false, 'Should not emit Dockerfile for static build');
+    const wrangler = fs.readFileSync(path.join(cwd, 'wrangler.toml'), 'utf8');
+    assert.match(wrangler, /pages_build_output_dir/, 'Should emit static pages wrangler.toml');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('svg Image props skip /_vista/image srcSet', () => {
   const { getImgProps } = require('../../dist/image/get-img-props');
   const { defaultLoader } = require('../../dist/image/image-loader');

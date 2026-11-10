@@ -25,6 +25,14 @@ export function isStaticOnlyDeploy(ctx: DeployContext): boolean {
         return false;
       }
     }
+    // If no wrangler.toml exists and there is no Dockerfile or explicit standalone config,
+    // default to Cloudflare Pages (static CDN) if static pages exist and standalone server.js does not.
+    const standaloneServer = path.join(ctx.vistaDir, 'standalone', 'server.js');
+    const staticPagesDir = path.join(ctx.vistaDir, 'static', 'pages');
+    const hasDockerfile = fs.existsSync(path.join(ctx.cwd, 'Dockerfile'));
+    if (!hasDockerfile && !fs.existsSync(standaloneServer) && fs.existsSync(staticPagesDir)) {
+      return true;
+    }
   }
   return false;
 }
