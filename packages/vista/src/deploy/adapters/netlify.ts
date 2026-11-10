@@ -73,14 +73,20 @@ export const netlifyAdapter: DeployAdapter = {
     fs.rmSync(outputDir, { recursive: true, force: true });
     ensureDir(outputDir);
 
+    // Guard: do not write `netlify.toml` during dry-runs. A dry-run written
+    // toml is detected by `detectFromProjectFiles` on subsequent invocations,
+    // silently fixing the target to `netlify` even when the user intended to
+    // auto-detect a different platform (see issue #174 / #62).
+    const allowConfigWrite = !ctx.dryRun;
+
     if (isStaticOnlyDeploy(ctx)) {
       copyStaticHostAssets(ctx.cwd, ctx.vistaDir, outputDir);
       prepareStaticCdnOutput(outputDir);
-      const netlifyTomlPath = writeStaticNetlifyToml(ctx);
+      const netlifyTomlPath = allowConfigWrite ? writeStaticNetlifyToml(ctx) : null;
       return {
         status: 'emitted',
         target: 'netlify',
-        artifactPaths: [outputDir, netlifyTomlPath],
+        artifactPaths: netlifyTomlPath ? [outputDir, netlifyTomlPath] : [outputDir],
         instructions: ['Static mode: Netlify serves pre-rendered pages only.'],
       };
     }
@@ -96,12 +102,14 @@ export const netlifyAdapter: DeployAdapter = {
     writeNetlifySsrHandler(functionDir);
     copyDirectoryRecursive(ctx.vistaDir, path.join(functionDir, '.vista'));
     packRuntimeNodeModules(ctx.cwd, functionDir);
-    const netlifyTomlPath = writeFullRuntimeNetlifyToml(ctx);
+    const netlifyTomlPath = allowConfigWrite ? writeFullRuntimeNetlifyToml(ctx) : null;
 
     return {
       status: 'emitted',
       target: 'netlify',
-      artifactPaths: [outputDir, functionDir, netlifyTomlPath],
+      artifactPaths: netlifyTomlPath
+        ? [outputDir, functionDir, netlifyTomlPath]
+        : [outputDir, functionDir],
       instructions: [
         'Netlify Functions run the Vista Flight SSR server.',
         'Deploy with: netlify deploy --prod --dir=".vista/deploy/netlify" --functions="netlify/functions"',

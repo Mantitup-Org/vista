@@ -115,6 +115,12 @@ export const vercelAdapter: DeployAdapter = {
     const warnings: string[] = [];
     const staticOnly = isStaticOnlyDeploy(ctx);
 
+    // In dry-run mode we emit build output but must NOT write `vercel.json`
+    // to the project root.  A dry-run-written vercel.json would be picked up
+    // by `detectFromProjectFiles` on the next real run, silently overriding
+    // the auto-detected target (bug introduced in #174).
+    const allowConfigWrite = !ctx.dryRun;
+
     if (staticOnly) {
       const wrote = writeVercelBuildOutput({
         cwd: ctx.cwd,
@@ -128,7 +134,7 @@ export const vercelAdapter: DeployAdapter = {
       artifactPaths.push(...packVercelFullRuntime(ctx));
     }
 
-    const vercelJson = writeVercelJson(ctx, !staticOnly);
+    const vercelJson = allowConfigWrite ? writeVercelJson(ctx, !staticOnly) : null;
     if (vercelJson) artifactPaths.push(vercelJson);
 
     return {
