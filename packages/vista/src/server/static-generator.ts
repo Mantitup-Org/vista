@@ -287,12 +287,16 @@ async function resolveStaticParams(
 function expandPattern(pattern: string, params: Record<string, string | string[]>): string {
   let url = pattern;
 
-  for (const [key, value] of Object.entries(params)) {
+  // Sort by key length descending so that longer param names (e.g. :idType)
+  // are replaced before shorter prefixes (e.g. :id).  Without this, `:id`
+  // would clobber the first two characters of `:idType`, producing corrupt URLs.
+  const sortedEntries = Object.entries(params).sort(([a], [b]) => b.length - a.length);
+
+  for (const [key, value] of sortedEntries) {
     const param = Array.isArray(value) ? value.join('/') : value;
     // Handle catch-all :param* and optional catch-all :param*?
-    url = url.replace(new RegExp(`:${key}\\*\\??`), param);
-    // Handle regular :param
-    url = url.replace(`:${key}`, param);
+    url = url.replace(new RegExp(`:${key}\\*\\??`), param);    // catch-all
+    url = url.replace(new RegExp(`:${key}(?![\\w-])`, 'g'), param); // exact match only
   }
 
   return url;

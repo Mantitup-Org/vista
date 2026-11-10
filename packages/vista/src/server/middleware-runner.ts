@@ -265,6 +265,7 @@ export function patternToRegExp(pattern: string): RegExp {
   //   /foo/:bar    → /foo/[^/]+
   //   /foo/*       → /foo(?:/(.*))?
   let re = pattern
+    .replace(/\./g, '\\.') // escape literal dots – they must NOT match any char
     .replace(/\/:[^/]+\*/g, '(?:/(.*))?') // /:path* (0 or more sub-paths)
     .replace(/:[^/]+\*/g, '(.*)') // bare :path*
     .replace(/:[^/]+/g, '[^/]+') // :param (single segment)
