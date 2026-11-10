@@ -149,7 +149,9 @@ function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
 
     const routePath = posix.replace(/\.rsc$/, '');
     const flightPath = `/rsc/${posix}`;
-    lines.push(`${flightPath} ${flightPath} 200`);
+    // Prerendered files exist on disk at /rsc/*.rsc. Cloudflare Pages serves them directly.
+    // Self-referential identity rules (/rsc/x.rsc /rsc/x.rsc 200) trigger Cloudflare HTML
+    // normalization and break Flight text/x-component streaming.
 
     if (routePath === 'index') return;
     lines.push(`/rsc/${routePath} ${flightPath} 200`);
