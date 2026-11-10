@@ -788,6 +788,10 @@ export async function runLegacyApiRoute(options: {
         res.status(error.status).json({ error: error.message });
         return;
       }
+      if (error instanceof SyntaxError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
       if (error instanceof BodyLimitError) {
         res.status(error.status).json({ error: error.message });
         return;
