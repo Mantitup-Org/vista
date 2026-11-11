@@ -138,9 +138,11 @@ export const netlifyAdapter: DeployAdapter = {
       };
     }
 
+    const staticOnly = isStaticOnlyDeploy(ctx);
+    const functionsFlag = staticOnly ? '' : ' --functions="netlify/functions"';
     const command = ctx.prod
-      ? 'netlify deploy --prod --dir=".vista/deploy/netlify" --functions="netlify/functions"'
-      : 'netlify deploy --dir=".vista/deploy/netlify" --functions="netlify/functions"';
+      ? `netlify deploy --prod --dir=".vista/deploy/netlify"${functionsFlag}`
+      : `netlify deploy --dir=".vista/deploy/netlify"${functionsFlag}`;
     const result = runCliCommand(command, { cwd: ctx.cwd, dryRun: ctx.dryRun });
     if (!result.ok) {
       return {

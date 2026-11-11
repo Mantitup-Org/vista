@@ -362,3 +362,68 @@ test('netlify adapter emit packs Flight function with .vista standalone', async 
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('copyDirectoryRecursive materializes shared symlinked packages across branches while preventing cycles', () => {
+  const { copyDirectoryRecursive } = require('../../dist/deploy/utils');
+  const cwd = makeTempWorkspace();
+  try {
+    const srcRoot = path.join(cwd, 'src');
+    const dstRoot = path.join(cwd, 'dst');
+    const pnpmPkg = path.join(srcRoot, '.pnpm', 'pkg-a@1.0.0', 'node_modules', 'pkg-a');
+    fs.mkdirSync(pnpmPkg, { recursive: true });
+    fs.writeFileSync(path.join(pnpmPkg, 'index.js'), 'module.exports = 42;', 'utf8');
+
+    const topAliasParent = path.join(srcRoot, 'top');
+    fs.mkdirSync(topAliasParent, { recursive: true });
+    const symlinkType = process.platform === 'win32' ? 'junction' : 'dir';
+    fs.symlinkSync(pnpmPkg, path.join(topAliasParent, 'pkg-a'), symlinkType);
+    // Circular self-link inside pnpmPkg to verify cycle guard
+    fs.symlinkSync(srcRoot, path.join(pnpmPkg, 'cycle-root'), symlinkType);
+
+    copyDirectoryRecursive(srcRoot, dstRoot);
+
+    assert.equal(
+      fs.readFileSync(path.join(dstRoot, '.pnpm', 'pkg-a@1.0.0', 'node_modules', 'pkg-a', 'index.js'), 'utf8'),
+      'module.exports = 42;'
+    );
+    assert.equal(
+      fs.readFileSync(path.join(dstRoot, 'top', 'pkg-a', 'index.js'), 'utf8'),
+      'module.exports = 42;'
+    );
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('vercel static-only emit flattens pages and Flight .rsc payloads', async () => {
+  const cwd = makeTempWorkspace();
+  try {
+    writeMinimalVistaArtifacts(cwd);
+    fs.rmSync(path.join(cwd, '.vista', 'standalone', 'server.js'), { force: true });
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'about.html'), '<html>about</html>', 'utf8');
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'index.rsc'), 'flight-home', 'utf8');
+    fs.writeFileSync(path.join(cwd, '.vista', 'static', 'pages', 'about.rsc'), 'flight-about', 'utf8');
+
+    const adapter = getDeployAdapter('vercel');
+    const result = await adapter.emit({
+      cwd,
+      vistaDir: path.join(cwd, '.vista'),
+      config: { deploy: { target: 'vercel', output: 'static' } },
+      deployConfig: resolveDeployConfig({ deploy: { target: 'vercel', output: 'static' } }),
+      target: 'vercel',
+      dryRun: true,
+      skipBuild: true,
+      prod: true,
+      preview: false,
+      force: true,
+    });
+
+    assert.equal(result.status, 'emitted');
+    const staticOut = path.join(cwd, '.vercel', 'output', 'static');
+    assert.equal(fs.existsSync(path.join(staticOut, 'index.html')), true);
+    assert.equal(fs.existsSync(path.join(staticOut, 'about', 'index.html')), true);
+    assert.equal(fs.readFileSync(path.join(staticOut, 'rsc', 'about.rsc'), 'utf8'), 'flight-about');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

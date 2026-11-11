@@ -19,7 +19,7 @@ function ensureDir(absolutePath) {
     fs_1.default.mkdirSync(absolutePath, { recursive: true });
 }
 const SKIP_COPY_DIRECTORY_NAMES = new Set(['.cache', '.turbo', '.vite', 'coverage']);
-function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
+function copyDirectoryRecursive(sourceDir, targetDir, ancestorRealPaths = new Set()) {
     if (!fs_1.default.existsSync(sourceDir))
         return;
     let realSource = sourceDir;
@@ -29,9 +29,10 @@ function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
     catch {
         return;
     }
-    if (seen.has(realSource))
+    if (ancestorRealPaths.has(realSource))
         return;
-    seen.add(realSource);
+    const branchAncestors = new Set(ancestorRealPaths);
+    branchAncestors.add(realSource);
     ensureDir(targetDir);
     const entries = fs_1.default.readdirSync(sourceDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -43,7 +44,7 @@ function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
             try {
                 const targetStat = fs_1.default.statSync(from);
                 if (targetStat.isDirectory()) {
-                    copyDirectoryRecursive(from, to, seen);
+                    copyDirectoryRecursive(from, to, branchAncestors);
                 }
                 else if (targetStat.isFile()) {
                     ensureDir(path_1.default.dirname(to));
@@ -56,7 +57,7 @@ function copyDirectoryRecursive(sourceDir, targetDir, seen = new Set()) {
             continue;
         }
         if (entry.isDirectory()) {
-            copyDirectoryRecursive(from, to, seen);
+            copyDirectoryRecursive(from, to, branchAncestors);
         }
         else if (entry.isFile()) {
             fs_1.default.copyFileSync(from, to);
@@ -89,9 +90,9 @@ exports.STATIC_HOST_ROUTE_RULES = [
     { handle: 'filesystem' },
     { src: '^/_vista/static/(.*)$', dest: '/static/$1' },
     { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
-    { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
+    { src: '^/(?:rsc|_rsc)/(.+?)(?:\\.rsc)?$', dest: '/static/pages/$1.rsc' },
     { src: '^/$', dest: '/static/pages/index.html' },
-    { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+    { src: '^/(.+?)(?:\\.html)?$', dest: '/static/pages/$1.html' },
 ];
 function walkFiles(dir, visitor, prefix = '') {
     if (!fs_1.default.existsSync(dir))
@@ -139,6 +140,8 @@ function writeStaticRscRedirects(pagesDir, targetDir) {
     const lines = [
         '/rsc /rsc/index.rsc 200',
         '/rsc/ /rsc/index.rsc 200',
+        '/_rsc /rsc/index.rsc 200',
+        '/_rsc/ /rsc/index.rsc 200',
     ];
     walkFiles(pagesDir, (_absolutePath, relativePath) => {
         const posix = relativePath.replace(/\\/g, '/');
@@ -147,9 +150,11 @@ function writeStaticRscRedirects(pagesDir, targetDir) {
         const routePath = posix.replace(/\.rsc$/, '');
         const flightPath = `/rsc/${posix}`;
         lines.push(`${flightPath} ${flightPath} 200`);
+        lines.push(`/_rsc/${posix} ${flightPath} 200`);
         if (routePath === 'index')
             return;
         lines.push(`/rsc/${routePath} ${flightPath} 200`);
+        lines.push(`/_rsc/${routePath} ${flightPath} 200`);
     });
     fs_1.default.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
 }

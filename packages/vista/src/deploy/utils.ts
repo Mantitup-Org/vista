@@ -10,7 +10,7 @@ const SKIP_COPY_DIRECTORY_NAMES = new Set(['.cache', '.turbo', '.vite', 'coverag
 export function copyDirectoryRecursive(
   sourceDir: string,
   targetDir: string,
-  seen: Set<string> = new Set()
+  ancestorRealPaths: Set<string> = new Set()
 ): void {
   if (!fs.existsSync(sourceDir)) return;
 
@@ -20,8 +20,9 @@ export function copyDirectoryRecursive(
   } catch {
     return;
   }
-  if (seen.has(realSource)) return;
-  seen.add(realSource);
+  if (ancestorRealPaths.has(realSource)) return;
+  const branchAncestors = new Set(ancestorRealPaths);
+  branchAncestors.add(realSource);
 
   ensureDir(targetDir);
   const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
@@ -36,7 +37,7 @@ export function copyDirectoryRecursive(
       try {
         const targetStat = fs.statSync(from);
         if (targetStat.isDirectory()) {
-          copyDirectoryRecursive(from, to, seen);
+          copyDirectoryRecursive(from, to, branchAncestors);
         } else if (targetStat.isFile()) {
           ensureDir(path.dirname(to));
           fs.copyFileSync(from, to);
@@ -48,7 +49,7 @@ export function copyDirectoryRecursive(
     }
 
     if (entry.isDirectory()) {
-      copyDirectoryRecursive(from, to, seen);
+      copyDirectoryRecursive(from, to, branchAncestors);
     } else if (entry.isFile()) {
       fs.copyFileSync(from, to);
     }
@@ -86,9 +87,9 @@ export const STATIC_HOST_ROUTE_RULES = [
   { handle: 'filesystem' as const },
   { src: '^/_vista/static/(.*)$', dest: '/static/$1' },
   { src: '^/(?:rsc|_rsc)/?$', dest: '/static/pages/index.rsc' },
-  { src: '^/(?:rsc|_rsc)/(.+)$', dest: '/static/pages/$1.rsc' },
+  { src: '^/(?:rsc|_rsc)/(.+?)(?:\\.rsc)?$', dest: '/static/pages/$1.rsc' },
   { src: '^/$', dest: '/static/pages/index.html' },
-  { src: '^/(.+)$', dest: '/static/pages/$1.html' },
+  { src: '^/(.+?)(?:\\.html)?$', dest: '/static/pages/$1.html' },
 ];
 
 function walkFiles(
@@ -141,6 +142,8 @@ function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
   const lines = [
     '/rsc /rsc/index.rsc 200',
     '/rsc/ /rsc/index.rsc 200',
+    '/_rsc /rsc/index.rsc 200',
+    '/_rsc/ /rsc/index.rsc 200',
   ];
 
   walkFiles(pagesDir, (_absolutePath, relativePath) => {
@@ -150,9 +153,11 @@ function writeStaticRscRedirects(pagesDir: string, targetDir: string): void {
     const routePath = posix.replace(/\.rsc$/, '');
     const flightPath = `/rsc/${posix}`;
     lines.push(`${flightPath} ${flightPath} 200`);
+    lines.push(`/_rsc/${posix} ${flightPath} 200`);
 
     if (routePath === 'index') return;
     lines.push(`/rsc/${routePath} ${flightPath} 200`);
+    lines.push(`/_rsc/${routePath} ${flightPath} 200`);
   });
 
   fs.writeFileSync(redirectsPath, `${lines.join('\n')}\n`, 'utf8');
