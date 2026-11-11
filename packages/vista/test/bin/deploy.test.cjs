@@ -314,6 +314,16 @@ test('cloudflare adapter defaults to static Pages when no wrangler.toml and only
     assert.equal(fs.existsSync(path.join(cwd, 'Dockerfile')), false, 'Should not emit Dockerfile for static build');
     const wrangler = fs.readFileSync(path.join(cwd, 'wrangler.toml'), 'utf8');
     assert.match(wrangler, /pages_build_output_dir/, 'Should emit static pages wrangler.toml');
+
+    // Also verify runDeploy end-to-end succeeds without standalone/server.js
+    const e2e = await runDeploy({
+      cwd,
+      target: 'cloudflare',
+      dryRun: true,
+      skipBuild: true,
+      force: true,
+    });
+    assert.equal(e2e.status, 'emitted');
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

@@ -118,7 +118,11 @@ export const defaultConfig: VistaConfig = {
   validation: {
     structure: { ...defaultStructureValidationConfig },
   },
-  deploy: { ...defaultDeployConfig },
+  deploy: {
+    target: defaultDeployConfig.target,
+    prod: defaultDeployConfig.prod,
+    preferBuildOutputApi: defaultDeployConfig.preferBuildOutputApi,
+  },
   experimental: {
     typedApi: { ...defaultTypedApiConfig },
     cacheComponents: { ...defaultCacheComponentsConfig },
@@ -324,7 +328,7 @@ function mergeConfig(userConfig: VistaConfig): VistaConfig {
       ...(userConfig.server ?? {}),
     },
     deploy: {
-      ...defaultDeployConfig,
+      ...(defaultConfig.deploy ?? {}),
       ...(userConfig.deploy ?? {}),
     },
     validation: {

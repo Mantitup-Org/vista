@@ -45,7 +45,11 @@ exports.defaultConfig = {
     validation: {
         structure: { ...exports.defaultStructureValidationConfig },
     },
-    deploy: { ...exports.defaultDeployConfig },
+    deploy: {
+        target: exports.defaultDeployConfig.target,
+        prod: exports.defaultDeployConfig.prod,
+        preferBuildOutputApi: exports.defaultDeployConfig.preferBuildOutputApi,
+    },
     experimental: {
         typedApi: { ...exports.defaultTypedApiConfig },
         cacheComponents: { ...exports.defaultCacheComponentsConfig },
@@ -207,7 +211,7 @@ function mergeConfig(userConfig) {
             ...(userConfig.server ?? {}),
         },
         deploy: {
-            ...exports.defaultDeployConfig,
+            ...(exports.defaultConfig.deploy ?? {}),
             ...(userConfig.deploy ?? {}),
         },
         validation: {
