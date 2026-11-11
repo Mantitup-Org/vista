@@ -12,6 +12,7 @@ const path_1 = __importDefault(require("path"));
 const config_1 = require("../config");
 const artifact_validator_1 = require("../server/artifact-validator");
 const app_dir_1 = require("../server/app-dir");
+const runtime_pack_1 = require("./runtime-pack");
 const utils_1 = require("./utils");
 function hasDynamicOnlyRoutes(vistaDir) {
     const routesManifest = (0, utils_1.readJsonSafe)(path_1.default.join(vistaDir, 'routes-manifest.json'));
@@ -29,7 +30,11 @@ function hasDynamicOnlyRoutes(vistaDir) {
     return false;
 }
 function validateBuildArtifacts(ctx) {
-    const missing = (0, artifact_validator_1.validateVistaArtifacts)(ctx.cwd, 'rsc');
+    let missing = (0, artifact_validator_1.validateVistaArtifacts)(ctx.cwd, 'rsc');
+    if ((0, runtime_pack_1.isStaticOnlyDeploy)(ctx)) {
+        const standaloneEntry = path_1.default.join('standalone', 'server.js');
+        missing = missing.filter((entry) => entry !== standaloneEntry);
+    }
     if (missing.length > 0) {
         return missing.map((entry) => `Missing build artifact: ${entry}`);
     }

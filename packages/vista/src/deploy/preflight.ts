@@ -3,6 +3,7 @@ import path from 'path';
 import { resolveTypedApiConfig } from '../config';
 import { validateVistaArtifacts } from '../server/artifact-validator';
 import { resolveAppDir } from '../server/app-dir';
+import { isStaticOnlyDeploy } from './runtime-pack';
 import type { DeployContext } from './types';
 import { readJsonSafe } from './utils';
 
@@ -41,7 +42,11 @@ function hasDynamicOnlyRoutes(vistaDir: string): boolean {
 }
 
 export function validateBuildArtifacts(ctx: DeployContext): string[] {
-  const missing = validateVistaArtifacts(ctx.cwd, 'rsc');
+  let missing = validateVistaArtifacts(ctx.cwd, 'rsc');
+  if (isStaticOnlyDeploy(ctx)) {
+    const standaloneEntry = path.join('standalone', 'server.js');
+    missing = missing.filter((entry) => entry !== standaloneEntry);
+  }
   if (missing.length > 0) {
     return missing.map((entry) => `Missing build artifact: ${entry}`);
   }
