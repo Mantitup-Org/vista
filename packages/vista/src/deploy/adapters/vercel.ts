@@ -9,6 +9,7 @@ import {
   STATIC_HOST_ROUTE_RULES,
   copyStaticHostAssets,
   ensureDir,
+  prepareStaticCdnOutput,
   writeFileIfAllowed,
 } from '../utils';
 
@@ -43,6 +44,7 @@ export function writeVercelBuildOutput(options: BuildHookOptions & { force?: boo
     fs.rmSync(vercelOutputDir, { recursive: true, force: true });
     ensureDir(vercelStaticDir);
     copyStaticHostAssets(cwd, vistaDir, vercelStaticDir);
+    prepareStaticCdnOutput(vercelStaticDir);
     fs.writeFileSync(
       path.join(vercelOutputDir, 'config.json'),
       JSON.stringify({ version: 3, routes: STATIC_HOST_ROUTE_RULES }, null, 2)

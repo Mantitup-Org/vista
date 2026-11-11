@@ -38,6 +38,7 @@ function writeVercelBuildOutput(options) {
         fs_1.default.rmSync(vercelOutputDir, { recursive: true, force: true });
         (0, utils_1.ensureDir)(vercelStaticDir);
         (0, utils_1.copyStaticHostAssets)(cwd, vistaDir, vercelStaticDir);
+        (0, utils_1.prepareStaticCdnOutput)(vercelStaticDir);
         fs_1.default.writeFileSync(path_1.default.join(vercelOutputDir, 'config.json'), JSON.stringify({ version: 3, routes: utils_1.STATIC_HOST_ROUTE_RULES }, null, 2));
         return true;
     }
